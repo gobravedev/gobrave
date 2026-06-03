@@ -106,6 +106,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// must(container.Provide(handler.NewEntityTranslationHandler))
 	// must(container.Provide(handler.NewArticleEntityHandler))
 	must(container.Provide(handler.NewAuthHandler))
+	must(container.Provide(handler.NewProxyHandler))
 	// must(container.Provide(handler.NewTraceHandler))
 
 	// must(container.Provide(grpcserver.NewTraceServer))

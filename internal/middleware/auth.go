@@ -24,12 +24,15 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/oidc/callback": {"GET"},
 	"/api/v1/auth/refresh":       {"POST"},
 	// "/api/v1/files/presigned":    {"GET"},
-	"/api/v1/articles/cursor": {"POST"},
-	"/":                       {"GET"},
-	"/assets/*":               {"GET"},
-	"/favicon.svg":            {"GET"},
-	"icons.svg":               {"GET"},
-	"/audio*":                 {"GET"},
+	"/api/v1/articles/cursor":   {"POST"},
+	"/":                         {"GET"},
+	"/assets/*":                 {"GET"},
+	"/favicon.svg":              {"GET"},
+	"icons.svg":                 {"GET"},
+	"/audio*":                   {"GET"},
+	"/brave-api/ping":           {"GET"},
+	"/brave-api/ws-group":       {"GET"},
+	"/brave-api/pipeline-dir/*": {"GET"},
 }
 
 // 检查请求是否在无需认证的API列表中

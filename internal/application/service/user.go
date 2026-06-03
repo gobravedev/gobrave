@@ -43,6 +43,12 @@ func getJwtSecret() string {
 			return
 		}
 
+		// Keep secret stable across restarts when JWT_SECRET is not configured.
+		if tenantKey := strings.TrimSpace(os.Getenv("TENANT_AES_KEY")); tenantKey != "" {
+			jwtSecret = tenantKey
+			return
+		}
+
 		randomBytes := make([]byte, 32)
 		if _, err := rand.Read(randomBytes); err != nil {
 			panic(fmt.Sprintf("failed to generate JWT secret: %v", err))
@@ -112,10 +118,6 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	// }
 
 	// createdTenant, err := s.tenantService.CreateTenant(ctx, tenant)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to create tenant")
-		return nil, errors.New("failed to create workspace")
-	}
 
 	// Create user
 	user := &types.User{
@@ -435,8 +437,12 @@ func (s *userService) GenerateTokens(
 		UpdatedAt: time.Now(),
 	}
 
-	_ = s.tokenRepo.CreateToken(ctx, accessTokenRecord)
-	_ = s.tokenRepo.CreateToken(ctx, refreshTokenRecord)
+	if err := s.tokenRepo.CreateToken(ctx, accessTokenRecord); err != nil {
+		return "", "", fmt.Errorf("failed to persist access token: %w", err)
+	}
+	if err := s.tokenRepo.CreateToken(ctx, refreshTokenRecord); err != nil {
+		return "", "", fmt.Errorf("failed to persist refresh token: %w", err)
+	}
 
 	return accessToken, refreshToken, nil
 }

@@ -1,6 +1,11 @@
 package router
 
 import (
+	"context"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -9,8 +14,10 @@ import (
 
 	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/handler"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/middleware"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/dig"
@@ -18,9 +25,10 @@ import (
 
 type RouterParams struct {
 	dig.In
-	Config      *config.Config
-	UserService interfaces.UserService
-	AuthHandler *handler.AuthHandler
+	Config       *config.Config
+	UserService  interfaces.UserService
+	AuthHandler  *handler.AuthHandler
+	ProxyHandler *handler.ProxyHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -57,12 +65,16 @@ func NewRouter(params RouterParams) *gin.Engine {
 			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
 		))
 	}
-	// r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+	serveFrontendStatic(r)
+
+	r.Use(middleware.Auth(params.UserService, params.Config))
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
 
 	}
+	// /brave-api
+	r.NoRoute(params.ProxyHandler.FallbackProxy)
 	return r
 }
 
@@ -78,4 +90,60 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	// r.POST("/auth/logout", handler.Logout)
 	// r.GET("/auth/me", handler.GetCurrentUser)
 	// r.POST("/auth/change-password", handler.ChangePassword)
+}
+
+func serveFrontendStatic(r *gin.Engine) {
+	absDir, err := utils.ResolveExternalPath("web")
+	if err != nil {
+		return
+	}
+	indexPath := filepath.Join(absDir, "index.html")
+	if _, err := os.Stat(indexPath); err != nil {
+		return
+	}
+
+	logger.Infof(context.Background(), "[Router] Serving frontend static files from %s", absDir)
+	fs := http.Dir(absDir)
+	fileServer := http.FileServer(fs)
+
+	r.Use(func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Next()
+			return
+		}
+		path := c.Request.URL.Path
+		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") {
+			c.Next()
+			return
+		}
+		fullPath := filepath.Join(absDir, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			setFrontendCacheHeaders(c.Writer, path)
+			fileServer.ServeHTTP(c.Writer, c.Request)
+			c.Abort()
+			return
+		}
+
+		// BrowserRouter fallback: route-like paths should return index.html,
+		// but missing static assets (e.g. *.js, *.css) should stay 404.
+		if ext := filepath.Ext(path); ext != "" {
+			c.Next()
+			return
+		}
+
+		setFrontendCacheHeaders(c.Writer, "/index.html")
+		c.File(indexPath)
+		c.Abort()
+	})
+}
+
+// setFrontendCacheHeaders sets Cache-Control headers for frontend static resources.
+// Vite 构建产物中 /assets/* 的文件名带 hash，可长期缓存；其余（index.html、config.js、favicon 等）
+// 每次都需 revalidate，避免前端升级后用户看到旧版本。
+func setFrontendCacheHeaders(w http.ResponseWriter, path string) {
+	if strings.HasPrefix(path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 }
