@@ -25,10 +25,11 @@ import (
 
 type RouterParams struct {
 	dig.In
-	Config       *config.Config
-	UserService  interfaces.UserService
-	AuthHandler  *handler.AuthHandler
-	ProxyHandler *handler.ProxyHandler
+	Config         *config.Config
+	UserService    interfaces.UserService
+	AuthHandler    *handler.AuthHandler
+	ProjectHandler *handler.ProjectHandler
+	ProxyHandler   *handler.ProxyHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -71,9 +72,11 @@ func NewRouter(params RouterParams) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
-
+		RegisterProjectRoutes(v1, params.ProjectHandler)
 	}
-	// /brave-api
+
+	r.Any("/brave-api", params.ProxyHandler.FallbackProxy)
+	r.Any("/brave-api/*proxyPath", params.ProxyHandler.FallbackProxy)
 	r.NoRoute(params.ProxyHandler.FallbackProxy)
 	return r
 }
@@ -90,6 +93,11 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	// r.POST("/auth/logout", handler.Logout)
 	// r.GET("/auth/me", handler.GetCurrentUser)
 	// r.POST("/auth/change-password", handler.ChangePassword)
+}
+
+func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler) {
+	r.GET("/project/list-project", handler.ListProject)
+	r.POST("/project/add-user-project", handler.AddUserProject)
 }
 
 func serveFrontendStatic(r *gin.Engine) {

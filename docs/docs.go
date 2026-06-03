@@ -309,6 +309,106 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/project/add-user-project": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "将当前登录用户与指定项目关联（写入 user_project 中间表）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "关联用户与项目",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.addUserProjectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "关联成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误或已存在关联",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/list-project": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回与当前登录用户关联的所有项目（通过 user_project 关系表过滤）",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "获取当前用户的项目列表",
+                "responses": {
+                    "200": {
+                        "description": "项目列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_handler.projectListItem"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -497,6 +597,41 @@ const docTemplate = `{
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_handler.addUserProjectRequest": {
+            "type": "object",
+            "required": [
+                "project_id"
+            ],
+            "properties": {
+                "project_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.projectListItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metadata_form": {},
+                "parameter": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "project_name": {
+                    "type": "string"
+                },
+                "research": {
+                    "type": "string"
                 }
             }
         }

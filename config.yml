@@ -7,7 +7,7 @@ database:
   port: 53306
   user: root
   password: "123456"
-  name: go_brave
+  name: brave
 
 # ingest:
 #   enabled: true

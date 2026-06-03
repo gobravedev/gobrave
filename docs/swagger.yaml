@@ -143,6 +143,29 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_handler.addUserProjectRequest:
+    properties:
+      project_id:
+        type: string
+    required:
+    - project_id
+    type: object
+  internal_handler.projectListItem:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      metadata_form: {}
+      parameter:
+        type: string
+      project_id:
+        type: string
+      project_name:
+        type: string
+      research:
+        type: string
+    type: object
 info:
   contact:
     name: AiAgentGo Github
@@ -338,6 +361,69 @@ paths:
       summary: 验证令牌
       tags:
       - 认证
+  /project/add-user-project:
+    post:
+      consumes:
+      - application/json
+      description: 将当前登录用户与指定项目关联（写入 user_project 中间表）
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.addUserProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 关联成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误或已存在关联
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 关联用户与项目
+      tags:
+      - 项目
+  /project/list-project:
+    get:
+      description: 返回与当前登录用户关联的所有项目（通过 user_project 关系表过滤）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 项目列表
+          schema:
+            items:
+              $ref: '#/definitions/internal_handler.projectListItem'
+            type: array
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取当前用户的项目列表
+      tags:
+      - 项目
 securityDefinitions:
   ApiKeyAuth:
     description: 租户身份认证：输入 sk- 开头的 API Key

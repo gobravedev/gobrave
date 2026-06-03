@@ -67,6 +67,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// must(container.Provide(repository.NewSystemSettingRepository))
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
+	must(container.Provide(repository.NewProjectRepository))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
 	// must(container.Provide(repository.NewRSSSourceRepository))
@@ -89,6 +90,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// must(container.Provide(service.NewArticleEntityService))
 	// must(container.Provide(service.NewTenantService))
 	must(container.Provide(service.NewUserService))
+	must(container.Provide(service.NewProjectService))
 	// must(container.Provide(service.NewTraceService))
 	// must(container.Provide(service.NewAuthService))
 	// must(container.Provide(service.NewRSSSourceService))
@@ -106,6 +108,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// must(container.Provide(handler.NewEntityTranslationHandler))
 	// must(container.Provide(handler.NewArticleEntityHandler))
 	must(container.Provide(handler.NewAuthHandler))
+	must(container.Provide(handler.NewProjectHandler))
 	must(container.Provide(handler.NewProxyHandler))
 	// must(container.Provide(handler.NewTraceHandler))
 
@@ -258,6 +261,8 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// &types.SystemSetting{},
 		&types.User{},
 		// &types.Tenant{},
+		&types.Project{},
+		&types.UserProject{},
 		&types.AuthToken{},
 	// &types.Trace{},
 	// &types.RSSSource{},
