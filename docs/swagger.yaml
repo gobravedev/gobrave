@@ -1,0 +1,352 @@
+basePath: /api/v1
+definitions:
+  github_com_gobravedev_gobrave_internal_errors.AppError:
+    properties:
+      code:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.ErrorCode'
+      details: {}
+      message:
+        type: string
+    type: object
+  github_com_gobravedev_gobrave_internal_errors.ErrorCode:
+    enum:
+    - 1000
+    - 1001
+    - 1002
+    - 1003
+    - 1004
+    - 1005
+    - 1006
+    - 1007
+    - 1008
+    - 1009
+    - 1010
+    - 2000
+    - 2001
+    - 2002
+    - 2003
+    - 2004
+    - 2100
+    - 2101
+    - 2102
+    - 2103
+    type: integer
+    x-enum-varnames:
+    - ErrBadRequest
+    - ErrUnauthorized
+    - ErrForbidden
+    - ErrNotFound
+    - ErrMethodNotAllowed
+    - ErrConflict
+    - ErrTooManyRequests
+    - ErrInternalServer
+    - ErrServiceUnavailable
+    - ErrTimeout
+    - ErrValidation
+    - ErrTenantNotFound
+    - ErrTenantAlreadyExists
+    - ErrTenantInactive
+    - ErrTenantNameRequired
+    - ErrTenantInvalidStatus
+    - ErrAgentMissingThinkingModel
+    - ErrAgentMissingAllowedTools
+    - ErrAgentInvalidMaxIterations
+    - ErrAgentInvalidTemperature
+  github_com_gobravedev_gobrave_internal_types.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 6
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  github_com_gobravedev_gobrave_internal_types.LoginResponse:
+    properties:
+      message:
+        type: string
+      refresh_token:
+        type: string
+      success:
+        type: boolean
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.User'
+    type: object
+  github_com_gobravedev_gobrave_internal_types.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      username:
+        maxLength: 50
+        minLength: 2
+        type: string
+    required:
+    - email
+    - password
+    - username
+    type: object
+  github_com_gobravedev_gobrave_internal_types.RegisterResponse:
+    properties:
+      message:
+        type: string
+      success:
+        type: boolean
+      user:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.User'
+    type: object
+  github_com_gobravedev_gobrave_internal_types.User:
+    properties:
+      avatar:
+        description: Avatar URL of the user
+        type: string
+      can_access_all_tenants:
+        description: Whether the user can access all tenants (cross-tenant access)
+        type: boolean
+      created_at:
+        description: Creation time of the user
+        type: string
+      deleted_at:
+        allOf:
+        - $ref: '#/definitions/gorm.DeletedAt'
+        description: Deletion time of the user
+      email:
+        description: Email address of the user
+        type: string
+      id:
+        description: Unique identifier of the user
+        type: string
+      is_active:
+        description: |-
+          Tenant ID that the user belongs to
+          TenantID uint64 `json:"tenant_id"  gorm:"index"`
+          Whether the user is active
+        type: boolean
+      updated_at:
+        description: Last updated time of the user
+        type: string
+      username:
+        description: Username of the user
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+info:
+  contact:
+    name: AiAgentGo Github
+    url: https://github.com/minebiome/ai-agent-go
+  description: AiAgentGo 是一个基于 Go 语言构建的 AI Agent 框架，旨在提供高性能、可扩展的解决方案，帮助开发者快速构建智能代理应用。
+  termsOfService: http://swagger.io/terms/
+  title: AiAgentGo API
+  version: "1.0"
+paths:
+  /auth/change-password:
+    post:
+      consumes:
+      - application/json
+      description: 修改当前用户的登录密码
+      parameters:
+      - description: 密码修改请求
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            old_password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 修改密码
+      tags:
+      - 认证
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 用户登录并获取访问令牌
+      parameters:
+      - description: 登录请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.LoginResponse'
+        "401":
+          description: 认证失败
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      summary: 用户登录
+      tags:
+      - 认证
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: 撤销当前访问令牌并登出
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登出成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 用户登出
+      tags:
+      - 认证
+  /auth/me:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前登录用户的详细信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用户信息
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取当前用户信息
+      tags:
+      - 认证
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: 使用刷新令牌获取新的访问令牌
+      parameters:
+      - description: 刷新令牌
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            refreshToken:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 新令牌
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 令牌无效
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      summary: 刷新令牌
+      tags:
+      - 认证
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 注册新用户账号
+      parameters:
+      - description: 注册请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.RegisterResponse'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "403":
+          description: 注册功能已禁用
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      summary: 用户注册
+      tags:
+      - 认证
+  /auth/validate:
+    get:
+      consumes:
+      - application/json
+      description: 验证访问令牌是否有效
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 令牌有效
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 令牌无效
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 验证令牌
+      tags:
+      - 认证
+securityDefinitions:
+  ApiKeyAuth:
+    description: 租户身份认证：输入 sk- 开头的 API Key
+    in: header
+    name: X-API-Key
+    type: apiKey
+  Bearer:
+    description: 用户登录认证：输入 Bearer {token} 格式的 JWT 令牌
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
