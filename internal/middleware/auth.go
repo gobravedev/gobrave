@@ -156,23 +156,24 @@ func Auth(
 				// c.Set(types.TenantInfoContextKey.String(), tenant)
 				c.Set(types.UserContextKey.String(), user)
 				c.Set(types.UserIDContextKey.String(), user.ID)
-				// c.Request = c.Request.WithContext(
-				// 	context.WithValue(
-				// 		context.WithValue(
-				// 			context.WithValue(
-				// 				context.WithValue(c.Request.Context(), types.TenantIDContextKey, targetTenantID),
-				// 				types.TenantInfoContextKey, tenant,
-				// 			),
-				// 			types.UserContextKey, user,
-				// 		),
-				// 		types.UserIDContextKey, user.ID,
-				// 	),
-				// )
-				ctx := context.WithValue(c.Request.Context(), types.ReqContextKey, &types.RequestContext{
-					User: user,
-					// Tenant: tenant,
-				})
-				c.Request = c.Request.WithContext(ctx)
+				c.Request = c.Request.WithContext(
+					context.WithValue(
+						context.WithValue(
+							// context.WithValue(
+							// 	context.WithValue(c.Request.Context(), types.TenantIDContextKey, targetTenantID),
+							// 	types.TenantInfoContextKey, tenant,
+							// ),
+							c.Request.Context(),
+							types.UserContextKey, user,
+						),
+						types.UserIDContextKey, user.ID,
+					),
+				)
+				// ctx := context.WithValue(c.Request.Context(), types.UserContextKey, &types.RequestContext{
+				// 	User: user,
+				// 	// Tenant: tenant,
+				// })
+				// c.Request = c.Request.WithContext(ctx)
 				c.Next()
 				return
 			}
