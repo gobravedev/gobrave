@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -78,6 +79,7 @@ func buildReverseProxy(target string) (*httputil.ReverseProxy, error) {
 		headers.Del("Access-Control-Expose-Headers")
 		headers.Del("Access-Control-Max-Age")
 		rewriteRedirectLocation(resp)
+		rewriteSetCookiePath(resp)
 		return nil
 	}
 
@@ -105,7 +107,9 @@ func rewriteRedirectLocation(resp *http.Response) {
 	}
 
 	clientProto := firstNonEmpty(firstForwardedValue(resp.Request.Header.Get("X-Forwarded-Proto")), requestScheme(resp.Request))
+	clientPort := firstNonEmpty(firstForwardedValue(resp.Request.Header.Get("X-Forwarded-Port")), defaultPortForScheme(clientProto))
 	clientHost := firstNonEmpty(firstForwardedValue(resp.Request.Header.Get("X-Forwarded-Host")), resp.Request.Host)
+	clientHost = appendPortIfMissing(clientHost, clientPort, clientProto)
 	clientPrefix := normalizeForwardedPrefix(firstForwardedValue(resp.Request.Header.Get("X-Forwarded-Prefix")))
 
 	if parsedLocation.IsAbs() {
@@ -128,6 +132,48 @@ func rewriteRedirectLocation(resp *http.Response) {
 		parsedLocation.Path = prependPathPrefix(parsedLocation.Path, clientPrefix)
 		resp.Header.Set("Location", parsedLocation.String())
 	}
+}
+
+func rewriteSetCookiePath(resp *http.Response) {
+	if resp == nil || resp.Request == nil {
+		return
+	}
+	prefix := normalizeForwardedPrefix(firstForwardedValue(resp.Request.Header.Get("X-Forwarded-Prefix")))
+	if prefix == "" {
+		return
+	}
+
+	cookies := resp.Header.Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+
+	resp.Header.Del("Set-Cookie")
+	for _, raw := range cookies {
+		resp.Header.Add("Set-Cookie", rewriteOneCookiePath(raw, prefix))
+	}
+}
+
+func rewriteOneCookiePath(rawCookie, prefix string) string {
+	parts := strings.Split(rawCookie, ";")
+	if len(parts) <= 1 {
+		return rawCookie
+	}
+
+	for i := 1; i < len(parts); i++ {
+		attr := strings.TrimSpace(parts[i])
+		if len(attr) < 5 || !strings.EqualFold(attr[:5], "path=") {
+			continue
+		}
+		pathValue := strings.TrimSpace(attr[5:])
+		if pathValue == "" {
+			pathValue = "/"
+		}
+		parts[i] = " Path=" + prependPathPrefix(pathValue, prefix)
+		return strings.Join(parts, ";")
+	}
+
+	return rawCookie
 }
 
 func firstForwardedValue(v string) string {
@@ -191,6 +237,31 @@ func prependPathPrefix(path, prefix string) string {
 		return prefix + path
 	}
 	return prefix + "/" + path
+}
+
+func appendPortIfMissing(host, port, scheme string) string {
+	host = strings.TrimSpace(host)
+	port = strings.TrimSpace(port)
+	if host == "" || port == "" {
+		return host
+	}
+	if hasExplicitPort(host) || port == defaultPortForScheme(scheme) {
+		return host
+	}
+
+	plainHost := strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	if plainHost == "" {
+		return host
+	}
+	return net.JoinHostPort(plainHost, port)
+}
+
+func hasExplicitPort(host string) bool {
+	parsed, err := url.Parse("//" + strings.TrimSpace(host))
+	if err != nil {
+		return false
+	}
+	return parsed.Port() != ""
 }
 
 func (h *ProxyHandler) BraveAPIProxy(c *gin.Context) {
