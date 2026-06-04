@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -21,6 +22,11 @@ type AuthHandler struct {
 	userService interfaces.UserService
 	configInfo  *config.Config
 }
+
+const (
+	authTokenCookieName       = "Authorization"
+	authTokenCookieMaxAgeSecs = 24 * 60 * 60
+)
 
 func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService) *AuthHandler {
@@ -143,6 +149,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// User is already in the correct format from service
+	if strings.TrimSpace(response.Token) != "" {
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie(authTokenCookieName, response.Token, authTokenCookieMaxAgeSecs, "/", "", shouldUseSecureCookie(c), true)
+	}
 
 	logger.Infof(ctx, "User logged in successfully, email: %s", email)
 	c.JSON(http.StatusOK, response)
@@ -163,34 +173,25 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	logger.Info(ctx, "Start user logout")
 
-	// Extract token from Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		logger.Error(ctx, "Missing Authorization header")
-		appErr := errors.NewValidationError("Authorization header is required")
+	token, err := getAuthTokenFromHeaderOrCookie(c)
+	if err != nil {
+		logger.Error(ctx, "Failed to get auth token", err)
+		appErr := errors.NewValidationError(err.Error())
 		c.Error(appErr)
 		return
 	}
-
-	// Parse Bearer token
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		logger.Error(ctx, "Invalid Authorization header format")
-		appErr := errors.NewValidationError("Invalid Authorization header format")
-		c.Error(appErr)
-		return
-	}
-
-	token := tokenParts[1]
 
 	// Revoke token
-	err := h.userService.RevokeToken(ctx, token)
+	err = h.userService.RevokeToken(ctx, token)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to revoke token: %v", err)
 		appErr := errors.NewInternalServerError("Logout failed").WithDetails(err.Error())
 		c.Error(appErr)
 		return
 	}
+
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(authTokenCookieName, "", -1, "/", "", shouldUseSecureCookie(c), true)
 
 	logger.Info(ctx, "User logged out successfully")
 	c.JSON(http.StatusOK, gin.H{
@@ -353,25 +354,13 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 
 	logger.Info(ctx, "Start token validation")
 
-	// Extract token from Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		logger.Error(ctx, "Missing Authorization header")
-		appErr := errors.NewValidationError("Authorization header is required")
+	token, err := getAuthTokenFromHeaderOrCookie(c)
+	if err != nil {
+		logger.Error(ctx, "Failed to get auth token", err)
+		appErr := errors.NewValidationError(err.Error())
 		c.Error(appErr)
 		return
 	}
-
-	// Parse Bearer token
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-		logger.Error(ctx, "Invalid Authorization header format")
-		appErr := errors.NewValidationError("Invalid Authorization header format")
-		c.Error(appErr)
-		return
-	}
-
-	token := tokenParts[1]
 
 	// Validate token
 	user, err := h.userService.ValidateToken(ctx, token)
@@ -388,4 +377,32 @@ func (h *AuthHandler) ValidateToken(c *gin.Context) {
 		"message": "Token is valid",
 		"user":    user.ToUserInfo(),
 	})
+}
+
+func getAuthTokenFromHeaderOrCookie(c *gin.Context) (string, error) {
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	if authHeader != "" {
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			return "", fmt.Errorf("Invalid Authorization header format")
+		}
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		if token == "" {
+			return "", fmt.Errorf("Authorization token is required")
+		}
+		return token, nil
+	}
+
+	token, err := c.Cookie(authTokenCookieName)
+	if err != nil || strings.TrimSpace(token) == "" {
+		return "", fmt.Errorf("Authentication token is required")
+	}
+
+	return strings.TrimSpace(token), nil
+}
+
+func shouldUseSecureCookie(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 }

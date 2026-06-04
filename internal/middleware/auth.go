@@ -36,6 +36,8 @@ var noAuthAPI = map[string][]string{
 	"/brave-api/img/*":          {"GET"},
 }
 
+const authTokenCookieName = "Authorization"
+
 // 检查请求是否在无需认证的API列表中
 func isNoAuthAPI(path string, method string) bool {
 	for api, methods := range noAuthAPI {
@@ -89,9 +91,18 @@ func Auth(
 		}
 
 		// 尝试JWT Token认证
-		authHeader := c.GetHeader("Authorization")
+		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+		token := ""
 		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
+			token = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		}
+		if token == "" {
+			if cookieToken, err := c.Cookie(authTokenCookieName); err == nil {
+				token = strings.TrimSpace(cookieToken)
+			}
+		}
+
+		if token != "" {
 			user, err := userService.ValidateToken(c.Request.Context(), token)
 			if err == nil && user != nil {
 				// JWT Token认证成功
