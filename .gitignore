@@ -2,3 +2,5 @@ logs/
 __debug*
 web/
 config.yml
+gobrave
+gobrave.log
