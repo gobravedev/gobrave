@@ -4,24 +4,50 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gobravedev/gobrave/internal/config"
 )
 
-const defaultProxyTarget = "http://localhost:5000"
+const (
+	defaultBraveAPITarget  = "http://localhost:5000"
+	defaultContainerTarget = "http://localhost:8089"
+)
 
 type ProxyHandler struct {
-	proxy *httputil.ReverseProxy
+	braveAPIProxy  *httputil.ReverseProxy
+	containerProxy *httputil.ReverseProxy
 }
 
-func NewProxyHandler() (*ProxyHandler, error) {
-	target := strings.TrimSpace(os.Getenv("BRAVE_PROXY_TARGET"))
-	if target == "" {
-		target = defaultProxyTarget
+func NewProxyHandler(cfg *config.Config) (*ProxyHandler, error) {
+	braveAPITarget := defaultBraveAPITarget
+	containerTarget := defaultContainerTarget
+	if cfg != nil && cfg.Proxy != nil {
+		if v := strings.TrimSpace(cfg.Proxy.BraveAPI); v != "" {
+			braveAPITarget = v
+		}
+		if v := strings.TrimSpace(cfg.Proxy.Container); v != "" {
+			containerTarget = v
+		}
 	}
 
+	braveAPIProxy, err := buildReverseProxy(braveAPITarget)
+	if err != nil {
+		return nil, err
+	}
+	containerProxy, err := buildReverseProxy(containerTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ProxyHandler{
+		braveAPIProxy:  braveAPIProxy,
+		containerProxy: containerProxy,
+	}, nil
+}
+
+func buildReverseProxy(target string) (*httputil.ReverseProxy, error) {
 	targetURL, err := url.Parse(target)
 	if err != nil {
 		return nil, err
@@ -51,7 +77,17 @@ func NewProxyHandler() (*ProxyHandler, error) {
 		_, _ = rw.Write([]byte(`{"error":"proxy request failed"}`))
 	}
 
-	return &ProxyHandler{proxy: proxy}, nil
+	return proxy, nil
+}
+
+func (h *ProxyHandler) BraveAPIProxy(c *gin.Context) {
+	h.braveAPIProxy.ServeHTTP(c.Writer, c.Request)
+	c.Abort()
+}
+
+func (h *ProxyHandler) ContainerProxy(c *gin.Context) {
+	h.containerProxy.ServeHTTP(c.Writer, c.Request)
+	c.Abort()
 }
 
 func (h *ProxyHandler) FallbackProxy(c *gin.Context) {
@@ -60,6 +96,6 @@ func (h *ProxyHandler) FallbackProxy(c *gin.Context) {
 	// 	return
 	// }
 
-	h.proxy.ServeHTTP(c.Writer, c.Request)
+	h.braveAPIProxy.ServeHTTP(c.Writer, c.Request)
 	c.Abort()
 }

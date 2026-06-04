@@ -20,6 +20,10 @@ database:
 #   parser_dispatch_batch_size: 100
 #   parser_callback_secret: ""
 
+proxy:
+  brave_api: http://localhost:5000
+  container: http://localhost:8089
+
 tenant:
   # default_tenant_id: "default"
   # default_tenant_name: "Default Tenant"

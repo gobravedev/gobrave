@@ -15,9 +15,15 @@ type Config struct {
 	Server   *ServerConfig   `yaml:"server"   json:"server"`
 	Database *DatabaseConfig `yaml:"database" json:"database"`
 	Feed     *FeedConfig     `yaml:"feed"     json:"feed"`
+	Proxy    *ProxyConfig    `yaml:"proxy"    json:"proxy"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
 	// Audio  *AudioConfig  `yaml`
+}
+
+type ProxyConfig struct {
+	BraveAPI  string `yaml:"brave_api" json:"brave_api"`
+	Container string `yaml:"container" json:"container"`
 }
 
 // ServerConfig 服务器配置
@@ -98,6 +104,10 @@ func LoadConfig() (*Config, error) {
 			RetryMaxAttempts: 5,
 			RetryBaseDelayMs: 100,
 			RetryMaxDelayMs:  5000,
+		},
+		Proxy: &ProxyConfig{
+			BraveAPI:  "http://localhost:5000",
+			Container: "http://localhost:8089",
 		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,

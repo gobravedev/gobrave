@@ -75,8 +75,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterProjectRoutes(v1, params.ProjectHandler)
 	}
 
-	r.Any("/brave-api", params.ProxyHandler.FallbackProxy)
-	r.Any("/brave-api/*proxyPath", params.ProxyHandler.FallbackProxy)
+	r.Any("/brave-api", params.ProxyHandler.BraveAPIProxy)
+	r.Any("/brave-api/*proxyPath", params.ProxyHandler.BraveAPIProxy)
+	r.Any("/container", params.ProxyHandler.ContainerProxy)
+	r.Any("/container/*proxyPath", params.ProxyHandler.ContainerProxy)
 	r.NoRoute(params.ProxyHandler.FallbackProxy)
 	return r
 }
@@ -122,7 +124,7 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") {
+		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") {
 			c.Next()
 			return
 		}
