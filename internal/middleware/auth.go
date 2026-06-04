@@ -33,6 +33,7 @@ var noAuthAPI = map[string][]string{
 	"/brave-api/ping":           {"GET"},
 	"/brave-api/ws-group":       {"GET"},
 	"/brave-api/pipeline-dir/*": {"GET"},
+	"/brave-api/img/*":          {"GET"},
 }
 
 // 检查请求是否在无需认证的API列表中
