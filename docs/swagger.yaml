@@ -143,6 +143,13 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_handler.activateProjectRequest:
+    properties:
+      project_id:
+        type: string
+    required:
+    - project_id
+    type: object
   internal_handler.addUserProjectRequest:
     properties:
       project_id:
@@ -361,6 +368,75 @@ paths:
       summary: 验证令牌
       tags:
       - 认证
+  /project/activate-project:
+    post:
+      consumes:
+      - application/json
+      description: 按项目ID激活当前用户的项目，并将该用户其他项目全部置为未激活
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.activateProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 激活成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目未关联当前用户
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 激活当前用户项目
+      tags:
+      - 项目
+  /project/active-project:
+    get:
+      description: 返回当前登录用户唯一激活的项目
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 激活项目
+          schema:
+            $ref: '#/definitions/internal_handler.projectListItem'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 未找到激活项目
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取当前用户激活项目
+      tags:
+      - 项目
   /project/add-user-project:
     post:
       consumes:

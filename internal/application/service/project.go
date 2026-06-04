@@ -21,6 +21,10 @@ func (s *projectService) ListProjectByUserID(ctx context.Context, userID string)
 	return s.projectRepo.ListProjectByUserID(ctx, userID)
 }
 
+func (s *projectService) GetActiveProjectByUserID(ctx context.Context, userID string) (*types.Project, error) {
+	return s.projectRepo.GetActiveProjectByUserID(ctx, userID)
+}
+
 func (s *projectService) AddUserProject(ctx context.Context, userID, projectID string) error {
 	exists, err := s.projectRepo.ExistsUserProject(ctx, userID, projectID)
 	if err != nil {
@@ -34,4 +38,8 @@ func (s *projectService) AddUserProject(ctx context.Context, userID, projectID s
 		ProjectID: projectID,
 		CreatedAt: time.Now(),
 	})
+}
+
+func (s *projectService) ActivateUserProject(ctx context.Context, userID, projectID string) error {
+	return s.projectRepo.ActivateUserProject(ctx, userID, projectID)
 }
