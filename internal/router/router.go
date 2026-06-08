@@ -102,6 +102,11 @@ func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler) 
 	r.GET("/project/active-project", handler.GetActiveProject)
 	r.POST("/project/add-user-project", handler.AddUserProject)
 	r.POST("/project/activate-project", handler.ActivateProject)
+	r.POST("/project/add-project-report", handler.AddProjectReport)
+	r.POST("/project/update-project-report", handler.UpdateProjectReport)
+	r.POST("/project/delete-project-report", handler.DeleteProjectReport)
+	r.GET("/project/list-project-report", handler.ListProjectReport)
+	r.GET("/project/project-report-detail", handler.GetProjectReportDetail)
 }
 
 func serveFrontendStatic(r *gin.Engine) {

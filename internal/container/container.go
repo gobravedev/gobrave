@@ -263,6 +263,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// &types.Tenant{},
 		&types.Project{},
 		&types.UserProject{},
+		&types.ProjectReport{},
 		&types.AuthToken{},
 	// &types.Trace{},
 	// &types.RSSSource{},

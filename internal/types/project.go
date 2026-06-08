@@ -1,6 +1,11 @@
 package types
 
-import "time"
+import (
+	"time"
+
+	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/gorm"
+)
 
 // Project maps to Python brave's t_project table.
 type Project struct {
@@ -31,4 +36,25 @@ type UserProject struct {
 
 func (UserProject) TableName() string {
 	return "user_project"
+}
+
+type ProjectReport struct {
+	ID        int64     `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+	ProjectID string    `json:"project_id" gorm:"type:varchar(255);not null;index"`
+	Title     string    `json:"title" gorm:"type:varchar(255)"`
+	Content   string    `json:"content" gorm:"type:longtext"`
+	SortOrder int       `json:"sort_order" gorm:"default:0"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (t *ProjectReport) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
+}
+
+func (ProjectReport) TableName() string {
+	return "t_project_report"
 }

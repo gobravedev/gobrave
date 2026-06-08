@@ -76,6 +76,23 @@ definitions:
       user:
         $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.User'
     type: object
+  github_com_gobravedev_gobrave_internal_types.ProjectReport:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      project_id:
+        type: string
+      sort_order:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
   github_com_gobravedev_gobrave_internal_types.RegisterRequest:
     properties:
       email:
@@ -150,11 +167,35 @@ definitions:
     required:
     - project_id
     type: object
+  internal_handler.addProjectReportRequest:
+    properties:
+      content:
+        type: string
+      project_id:
+        type: string
+      sort_order:
+        type: integer
+      title:
+        type: string
+    required:
+    - project_id
+    - title
+    type: object
   internal_handler.addUserProjectRequest:
     properties:
       project_id:
         type: string
     required:
+    - project_id
+    type: object
+  internal_handler.deleteProjectReportRequest:
+    properties:
+      id:
+        type: integer
+      project_id:
+        type: string
+    required:
+    - id
     - project_id
     type: object
   internal_handler.projectListItem:
@@ -172,6 +213,38 @@ definitions:
         type: string
       research:
         type: string
+    type: object
+  internal_handler.projectReportListItem:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      project_id:
+        type: string
+      sort_order:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_handler.updateProjectReportRequest:
+    properties:
+      content:
+        type: string
+      id:
+        type: integer
+      project_id:
+        type: string
+      sort_order:
+        type: integer
+      title:
+        type: string
+    required:
+    - id
+    - project_id
+    - title
     type: object
 info:
   contact:
@@ -437,6 +510,46 @@ paths:
       summary: 获取当前用户激活项目
       tags:
       - 项目
+  /project/add-project-report:
+    post:
+      consumes:
+      - application/json
+      description: 向指定项目添加报告记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.addProjectReportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 创建成功
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目未关联当前用户
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 添加项目报告
+      tags:
+      - 项目
   /project/add-user-project:
     post:
       consumes:
@@ -475,6 +588,48 @@ paths:
       summary: 关联用户与项目
       tags:
       - 项目
+  /project/delete-project-report:
+    post:
+      consumes:
+      - application/json
+      description: 按报告ID删除指定项目下的报告
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.deleteProjectReportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目或报告不存在
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 删除项目报告
+      tags:
+      - 项目
   /project/list-project:
     get:
       description: 返回与当前登录用户关联的所有项目（通过 user_project 关系表过滤）
@@ -498,6 +653,126 @@ paths:
       security:
       - Bearer: []
       summary: 获取当前用户的项目列表
+      tags:
+      - 项目
+  /project/list-project-report:
+    get:
+      description: 根据 project_id 查询报告列表，不返回 content 字段，按 sort_order、created_at 升序排序
+      parameters:
+      - description: 项目ID
+        in: query
+        name: project_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 报告列表
+          schema:
+            items:
+              $ref: '#/definitions/internal_handler.projectReportListItem'
+            type: array
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目未关联当前用户
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 查询项目报告列表
+      tags:
+      - 项目
+  /project/project-report-detail:
+    get:
+      description: 根据 project_id 查询报告详情（包含 content）
+      parameters:
+      - description: 项目ID
+        in: query
+        name: project_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 报告详情
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport'
+            type: array
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目未关联当前用户
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 查询项目报告详情
+      tags:
+      - 项目
+  /project/update-project-report:
+    post:
+      consumes:
+      - application/json
+      description: 按报告ID更新指定项目下的报告
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.updateProjectReportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: 未认证
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: 项目或报告不存在
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 更新项目报告
       tags:
       - 项目
 securityDefinitions:

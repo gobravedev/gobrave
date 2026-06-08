@@ -25,3 +25,14 @@ swag init -g ./cmd/server/main.go  -o ./docs --parseDependency --parseInternal
         add_header Cache-Control no-cache;
     }
 ```
+
+```
+2026-06-05T14:30:38Z ERR Provider error, retrying in 983.06358ms error="Error response from daemon: client version 1.24 is too old. Minimum supported API version is 1.40, please upgrade your client to a newer version" providerName=docker
+^C2026-06-05T14:30:39Z ERR Cannot retrieve data error="context canceled" providerName=docker
+```
+`vim  /etc/docker/daemon.json`
+```
+{
+  "min-api-version": "1.24"
+}
+```

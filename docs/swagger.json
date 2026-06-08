@@ -412,6 +412,69 @@
                 }
             }
         },
+        "/project/add-project-report": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "向指定项目添加报告记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "添加项目报告",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.addProjectReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "创建成功",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "项目未关联当前用户",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/project/add-user-project": {
             "post": {
                 "security": [
@@ -472,6 +535,72 @@
                 }
             }
         },
+        "/project/delete-project-report": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按报告ID删除指定项目下的报告",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "删除项目报告",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.deleteProjectReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "项目或报告不存在",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/project/list-project": {
             "get": {
                 "security": [
@@ -499,6 +628,194 @@
                     },
                     "401": {
                         "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/list-project-report": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "根据 project_id 查询报告列表，不返回 content 字段，按 sort_order、created_at 升序排序",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "查询项目报告列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目ID",
+                        "name": "project_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "报告列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_handler.projectReportListItem"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "项目未关联当前用户",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/project-report-detail": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "根据 project_id 查询报告详情（包含 content）",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "查询项目报告详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目ID",
+                        "name": "project_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "报告详情",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "项目未关联当前用户",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/update-project-report": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按报告ID更新指定项目下的报告",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "更新项目报告",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.updateProjectReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "项目或报告不存在",
                         "schema": {
                             "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
                         }
@@ -609,6 +926,32 @@
                 }
             }
         },
+        "github_com_gobravedev_gobrave_internal_types.ProjectReport": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_gobravedev_gobrave_internal_types.RegisterRequest": {
             "type": "object",
             "required": [
@@ -713,12 +1056,48 @@
                 }
             }
         },
+        "internal_handler.addProjectReportRequest": {
+            "type": "object",
+            "required": [
+                "project_id",
+                "title"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.addUserProjectRequest": {
             "type": "object",
             "required": [
                 "project_id"
             ],
             "properties": {
+                "project_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.deleteProjectReportRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "project_id"
+            ],
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
                 "project_id": {
                     "type": "string"
                 }
@@ -744,6 +1123,54 @@
                     "type": "string"
                 },
                 "research": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.projectReportListItem": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.updateProjectReportRequest": {
+            "type": "object",
+            "required": [
+                "id",
+                "project_id",
+                "title"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "title": {
                     "type": "string"
                 }
             }

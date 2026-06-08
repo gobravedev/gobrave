@@ -91,3 +91,66 @@ func (r *projectRepository) ListProjectByUserID(ctx context.Context, userID stri
 
 	return projects, nil
 }
+
+func (r *projectRepository) AddProjectReport(ctx context.Context, report *types.ProjectReport) error {
+	return r.db.WithContext(ctx).Create(report).Error
+}
+
+func (r *projectRepository) GetProjectReportByID(ctx context.Context, reportID int64) (*types.ProjectReport, error) {
+	report := &types.ProjectReport{}
+	err := r.db.WithContext(ctx).
+		Where("id = ?", reportID).
+		Take(report).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return report, nil
+}
+
+func (r *projectRepository) UpdateProjectReport(ctx context.Context, report *types.ProjectReport) error {
+	return r.db.WithContext(ctx).
+		Model(&types.ProjectReport{}).
+		Where("id = ? AND project_id = ?", report.ID, report.ProjectID).
+		Updates(map[string]interface{}{
+			"title":      report.Title,
+			"content":    report.Content,
+			"sort_order": report.SortOrder,
+		}).Error
+}
+
+func (r *projectRepository) DeleteProjectReport(ctx context.Context, projectID string, reportID int64) error {
+	return r.db.WithContext(ctx).
+		Where("id = ? AND project_id = ?", reportID, projectID).
+		Delete(&types.ProjectReport{}).Error
+}
+
+func (r *projectRepository) ListProjectReportByProjectID(ctx context.Context, projectID string) ([]*types.ProjectReport, error) {
+	reports := make([]*types.ProjectReport, 0)
+	err := r.db.WithContext(ctx).
+		Model(&types.ProjectReport{}).
+		Select("id, project_id, title, sort_order, created_at, updated_at").
+		Where("project_id = ?", projectID).
+		Order("sort_order DESC").
+		Order("created_at ASC").
+		Find(&reports).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return reports, nil
+}
+
+func (r *projectRepository) ListProjectReportDetailByProjectID(ctx context.Context, projectID string) ([]*types.ProjectReport, error) {
+	reports := make([]*types.ProjectReport, 0)
+	err := r.db.WithContext(ctx).
+		Where("project_id = ?", projectID).
+		Order("sort_order DESC").
+		Order("created_at ASC").
+		Find(&reports).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return reports, nil
+}
