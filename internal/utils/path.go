@@ -3,6 +3,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const projectDirEnv = "AI_AGENT_GO_DIR"
@@ -21,4 +22,22 @@ func ResolveExternalPath(relativePath string) (string, error) {
 	}
 
 	return filepath.Abs(relativePath)
+}
+
+// ResolveConfiguredPath resolves storage path by this rule:
+// - when configuredPath is empty, use executableDir/defaultRelativeToExecutable
+// - otherwise, use configuredPath directly.
+func ResolveConfiguredPath(configuredPath string, defaultRelativeToExecutable string) (string, error) {
+	configuredPath = strings.TrimSpace(configuredPath)
+	if configuredPath != "" {
+		return configuredPath, nil
+	}
+
+	executablePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
+	executableDir := filepath.Dir(executablePath)
+	return filepath.Abs(filepath.Join(executableDir, defaultRelativeToExecutable))
 }

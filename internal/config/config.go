@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/logger"
@@ -16,9 +17,14 @@ type Config struct {
 	Database *DatabaseConfig `yaml:"database" json:"database"`
 	Feed     *FeedConfig     `yaml:"feed"     json:"feed"`
 	Proxy    *ProxyConfig    `yaml:"proxy"    json:"proxy"`
+	Storage  *StorageConfig  `yaml:"storage"  json:"storage"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
 	// Audio  *AudioConfig  `yaml`
+}
+
+type StorageConfig struct {
+	ImageDir string `yaml:"image_dir" json:"image_dir"`
 }
 
 type ProxyConfig struct {
@@ -109,6 +115,9 @@ func LoadConfig() (*Config, error) {
 			BraveAPI:  "http://localhost:5000",
 			Container: "http://localhost:8089",
 		},
+		Storage: &StorageConfig{
+			ImageDir: "",
+		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,
 		// 	FetchIntervalSec:        300,
@@ -140,6 +149,12 @@ func LoadConfig() (*Config, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", configPath, err)
+	}
+
+	if cfg.Storage == nil {
+		cfg.Storage = &StorageConfig{ImageDir: ""}
+	} else if strings.TrimSpace(cfg.Storage.ImageDir) == "" {
+		cfg.Storage.ImageDir = ""
 	}
 
 	TENANT_AES_KEY := cfg.Tenant.AesKey

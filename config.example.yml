@@ -24,6 +24,11 @@ proxy:
   brave_api: http://localhost:5000
   container: http://localhost:8089
 
+storage:
+  # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。
+  # 留空时默认使用“可执行文件所在目录/images”。
+  image_dir: ""
+
 tenant:
   # default_tenant_id: "default"
   # default_tenant_name: "Default Tenant"

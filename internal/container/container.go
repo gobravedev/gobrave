@@ -109,6 +109,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// must(container.Provide(handler.NewArticleEntityHandler))
 	must(container.Provide(handler.NewAuthHandler))
 	must(container.Provide(handler.NewProjectHandler))
+	must(container.Provide(handler.NewUploadHandler))
 	must(container.Provide(handler.NewProxyHandler))
 	// must(container.Provide(handler.NewTraceHandler))
 

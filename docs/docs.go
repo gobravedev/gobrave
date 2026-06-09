@@ -716,7 +716,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "根据 project_id 查询报告详情（包含 content）",
+                "description": "根据 id 查询报告详情（包含 content）",
                 "produces": [
                     "application/json"
                 ],
@@ -726,9 +726,9 @@ const docTemplate = `{
                 "summary": "查询项目报告详情",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "项目ID",
-                        "name": "project_id",
+                        "type": "integer",
+                        "description": "报告ID",
+                        "name": "id",
                         "in": "query",
                         "required": true
                     }
@@ -737,10 +737,7 @@ const docTemplate = `{
                     "200": {
                         "description": "报告详情",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport"
-                            }
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport"
                         }
                     },
                     "400": {
@@ -823,6 +820,56 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "项目或报告不存在",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/upload-image": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "上传图片并返回可直接用于 Markdown 的图片 URL",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "项目"
+                ],
+                "summary": "上传项目报告图片",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "图片文件",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "上传成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
                         "schema": {
                             "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
                         }
@@ -943,7 +990,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string",
+                    "example": "0"
                 },
                 "project_id": {
                     "type": "string"
@@ -1098,15 +1146,12 @@ const docTemplate = `{
         "internal_handler.deleteProjectReportRequest": {
             "type": "object",
             "required": [
-                "id",
-                "project_id"
+                "id"
             ],
             "properties": {
                 "id": {
-                    "type": "integer"
-                },
-                "project_id": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "0"
                 }
             }
         },
@@ -1141,7 +1186,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "project_id": {
                     "type": "string"
@@ -1169,7 +1214,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
+                    "type": "string",
+                    "example": "0"
                 },
                 "project_id": {
                     "type": "string"

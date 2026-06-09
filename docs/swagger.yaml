@@ -83,7 +83,8 @@ definitions:
       created_at:
         type: string
       id:
-        type: integer
+        example: "0"
+        type: string
       project_id:
         type: string
       sort_order:
@@ -191,12 +192,10 @@ definitions:
   internal_handler.deleteProjectReportRequest:
     properties:
       id:
-        type: integer
-      project_id:
+        example: "0"
         type: string
     required:
     - id
-    - project_id
     type: object
   internal_handler.projectListItem:
     properties:
@@ -219,7 +218,7 @@ definitions:
       created_at:
         type: string
       id:
-        type: integer
+        type: string
       project_id:
         type: string
       sort_order:
@@ -234,7 +233,8 @@ definitions:
       content:
         type: string
       id:
-        type: integer
+        example: "0"
+        type: string
       project_id:
         type: string
       sort_order:
@@ -696,22 +696,20 @@ paths:
       - 项目
   /project/project-report-detail:
     get:
-      description: 根据 project_id 查询报告详情（包含 content）
+      description: 根据 id 查询报告详情（包含 content）
       parameters:
-      - description: 项目ID
+      - description: 报告ID
         in: query
-        name: project_id
+        name: id
         required: true
-        type: string
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: 报告详情
           schema:
-            items:
-              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport'
-            type: array
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ProjectReport'
         "400":
           description: 参数错误
           schema:
@@ -773,6 +771,38 @@ paths:
       security:
       - Bearer: []
       summary: 更新项目报告
+      tags:
+      - 项目
+  /project/upload-image:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传图片并返回可直接用于 Markdown 的图片 URL
+      parameters:
+      - description: 图片文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 上传成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 上传项目报告图片
       tags:
       - 项目
 securityDefinitions:

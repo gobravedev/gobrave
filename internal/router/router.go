@@ -29,6 +29,7 @@ type RouterParams struct {
 	UserService    interfaces.UserService
 	AuthHandler    *handler.AuthHandler
 	ProjectHandler *handler.ProjectHandler
+	UploadHandler  *handler.UploadHandler
 	ProxyHandler   *handler.ProxyHandler
 }
 
@@ -66,13 +67,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
 		))
 	}
+	serveImageStatic(r, params.Config)
 	serveFrontendStatic(r)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
-		RegisterProjectRoutes(v1, params.ProjectHandler)
+		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
 	}
 
 	r.Any("/brave-api", params.ProxyHandler.BraveAPIProxy)
@@ -97,7 +99,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	// r.POST("/auth/change-password", handler.ChangePassword)
 }
 
-func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler) {
+func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler, uploadHandler *handler.UploadHandler) {
 	r.GET("/project/list-project", handler.ListProject)
 	r.GET("/project/active-project", handler.GetActiveProject)
 	r.POST("/project/add-user-project", handler.AddUserProject)
@@ -107,6 +109,26 @@ func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler) 
 	r.POST("/project/delete-project-report", handler.DeleteProjectReport)
 	r.GET("/project/list-project-report", handler.ListProjectReport)
 	r.GET("/project/project-report-detail", handler.GetProjectReportDetail)
+	r.POST("/project/upload-image", uploadHandler.UploadImage)
+}
+
+// serveImageStatic maps local image resources under /images.
+func serveImageStatic(r *gin.Engine, cfg *config.Config) {
+	configuredDir := ""
+	if cfg != nil && cfg.Storage != nil {
+		configuredDir = cfg.Storage.ImageDir
+	}
+
+	imageDir, err := utils.ResolveConfiguredPath(configuredDir, "images")
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		return
+	}
+
+	logger.Infof(context.Background(), "[Router] Serving image files from %s at /images", imageDir)
+	r.StaticFS("/images", http.Dir(imageDir))
 }
 
 func serveFrontendStatic(r *gin.Engine) {
@@ -129,7 +151,7 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") {
+		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") {
 			c.Next()
 			return
 		}
