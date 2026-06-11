@@ -1,4 +1,4 @@
-package router
+package handler
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/utils"
 )
@@ -30,7 +29,7 @@ type onlyOfficeCallbackPayload struct {
 	Userdata string `json:"userdata"`
 }
 
-func RegisterOnlyOfficeRoutes(r *gin.Engine, proxyHandler *handler.ProxyHandler) {
+func RegisterOnlyOfficeRoutes(r *gin.Engine, proxyHandler *ProxyHandler) {
 	r.POST("/go-onlyoffice/callback", handleOnlyOfficeCallback)
 	r.Any("/onlyoffice", proxyHandler.OnlyOfficeProxy)
 	r.Any("/onlyoffice/*proxyPath", proxyHandler.OnlyOfficeProxy)

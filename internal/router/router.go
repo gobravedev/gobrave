@@ -69,7 +69,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	}
 	serveImageStatic(r, params.Config)
 	serveFrontendStatic(r)
-	RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
+	handler.RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
 	v1 := r.Group("/api/v1")
