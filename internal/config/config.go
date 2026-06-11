@@ -25,11 +25,13 @@ type Config struct {
 
 type StorageConfig struct {
 	ImageDir string `yaml:"image_dir" json:"image_dir"`
+	BaseDir  string `yaml:"base_dir" json:"base_dir"`
 }
 
 type ProxyConfig struct {
-	BraveAPI  string `yaml:"brave_api" json:"brave_api"`
-	Container string `yaml:"container" json:"container"`
+	BraveAPI   string `yaml:"brave_api" json:"brave_api"`
+	Container  string `yaml:"container" json:"container"`
+	OnlyOffice string `yaml:"onlyoffice" json:"onlyoffice"`
 }
 
 // ServerConfig 服务器配置
@@ -112,11 +114,13 @@ func LoadConfig() (*Config, error) {
 			RetryMaxDelayMs:  5000,
 		},
 		Proxy: &ProxyConfig{
-			BraveAPI:  "http://localhost:5000",
-			Container: "http://localhost:8089",
+			BraveAPI:   "http://localhost:5000",
+			Container:  "http://localhost:8089",
+			OnlyOffice: "http://localhost:8080",
 		},
 		Storage: &StorageConfig{
 			ImageDir: "",
+			BaseDir:  "",
 		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,

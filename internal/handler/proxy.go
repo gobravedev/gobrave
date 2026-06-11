@@ -12,24 +12,30 @@ import (
 )
 
 const (
-	defaultBraveAPITarget  = "http://localhost:5000"
-	defaultContainerTarget = "http://localhost:8089"
+	defaultBraveAPITarget   = "http://localhost:5000"
+	defaultContainerTarget  = "http://localhost:8089"
+	defaultOnlyOfficeTarget = "http://localhost:8080"
 )
 
 type ProxyHandler struct {
-	braveAPIProxy  *httputil.ReverseProxy
-	containerProxy *httputil.ReverseProxy
+	braveAPIProxy   *httputil.ReverseProxy
+	containerProxy  *httputil.ReverseProxy
+	onlyOfficeProxy *httputil.ReverseProxy
 }
 
 func NewProxyHandler(cfg *config.Config) (*ProxyHandler, error) {
 	braveAPITarget := defaultBraveAPITarget
 	containerTarget := defaultContainerTarget
+	onlyOfficeTarget := defaultOnlyOfficeTarget
 	if cfg != nil && cfg.Proxy != nil {
 		if v := strings.TrimSpace(cfg.Proxy.BraveAPI); v != "" {
 			braveAPITarget = v
 		}
 		if v := strings.TrimSpace(cfg.Proxy.Container); v != "" {
 			containerTarget = v
+		}
+		if v := strings.TrimSpace(cfg.Proxy.OnlyOffice); v != "" {
+			onlyOfficeTarget = v
 		}
 	}
 
@@ -41,10 +47,15 @@ func NewProxyHandler(cfg *config.Config) (*ProxyHandler, error) {
 	if err != nil {
 		return nil, err
 	}
+	onlyOfficeProxy, err := buildReverseProxy(onlyOfficeTarget)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ProxyHandler{
-		braveAPIProxy:  braveAPIProxy,
-		containerProxy: containerProxy,
+		braveAPIProxy:   braveAPIProxy,
+		containerProxy:  containerProxy,
+		onlyOfficeProxy: onlyOfficeProxy,
 	}, nil
 }
 
@@ -274,6 +285,12 @@ func (h *ProxyHandler) ContainerProxy(c *gin.Context) {
 	c.Abort()
 }
 
+func (h *ProxyHandler) OnlyOfficeProxy(c *gin.Context) {
+	trimProxyPrefix(c.Request, "/onlyoffice")
+	h.onlyOfficeProxy.ServeHTTP(c.Writer, c.Request)
+	c.Abort()
+}
+
 func (h *ProxyHandler) FallbackProxy(c *gin.Context) {
 	// if !strings.HasPrefix(c.Request.URL.Path, "/api/v1/") {
 	// 	c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -282,4 +299,38 @@ func (h *ProxyHandler) FallbackProxy(c *gin.Context) {
 
 	h.braveAPIProxy.ServeHTTP(c.Writer, c.Request)
 	c.Abort()
+}
+
+func trimProxyPrefix(req *http.Request, prefix string) {
+	if req == nil {
+		return
+	}
+	prefix = normalizeForwardedPrefix(prefix)
+	if prefix == "" {
+		return
+	}
+
+	originalPath := req.URL.Path
+	trimmedPath := strings.TrimPrefix(originalPath, prefix)
+	if trimmedPath == "" {
+		trimmedPath = "/"
+	}
+	if !strings.HasPrefix(trimmedPath, "/") {
+		trimmedPath = "/" + trimmedPath
+	}
+	req.URL.Path = trimmedPath
+
+	if req.URL.RawPath != "" {
+		trimmedRawPath := strings.TrimPrefix(req.URL.RawPath, prefix)
+		if trimmedRawPath == "" {
+			trimmedRawPath = "/"
+		}
+		if !strings.HasPrefix(trimmedRawPath, "/") {
+			trimmedRawPath = "/" + trimmedRawPath
+		}
+		req.URL.RawPath = trimmedRawPath
+	}
+
+	existingPrefix := firstForwardedValue(req.Header.Get("X-Forwarded-Prefix"))
+	req.Header.Set("X-Forwarded-Prefix", firstNonEmpty(existingPrefix, prefix))
 }

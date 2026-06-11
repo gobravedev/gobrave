@@ -23,6 +23,7 @@ database:
 proxy:
   brave_api: http://localhost:5000
   container: http://localhost:8089
+  onlyoffice: http://localhost:8080
 
 storage:
   # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。

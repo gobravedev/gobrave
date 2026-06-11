@@ -69,6 +69,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	}
 	serveImageStatic(r, params.Config)
 	serveFrontendStatic(r)
+	RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
 	v1 := r.Group("/api/v1")
@@ -151,7 +152,7 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") {
+		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") || path == "/onlyoffice" || strings.HasPrefix(path, "/onlyoffice/") || path == "/go-onlyoffice" || strings.HasPrefix(path, "/go-onlyoffice/") {
 			c.Next()
 			return
 		}
