@@ -32,7 +32,7 @@ type File struct {
 }
 
 func (File) TableName() string {
-	return "t_file"
+	return "go_file"
 }
 func (t *File) BeforeCreate(_ *gorm.DB) error {
 	if t.ID == 0 {
@@ -62,4 +62,40 @@ func (t *DatasetFile) BeforeCreate(_ *gorm.DB) error {
 		t.ID = utils.GenerateID()
 	}
 	return nil
+}
+
+type FileWithDatasetInfo struct {
+	ID int64 `json:"id,string"`
+
+	FileID string `json:"file_id"`
+
+	FileName string `json:"file_name"`
+
+	Path string `json:"path"`
+
+	Format string `json:"format"`
+
+	Size int64 `json:"size"`
+
+	MD5 string `json:"md5"`
+
+	Storage string `json:"storage"`
+
+	Description string `json:"description"`
+
+	CreatedAt time.Time `json:"created_at"`
+
+	UpdatedAt time.Time `json:"updated_at"`
+
+	DatasetID string `json:"dataset_id"`
+
+	DatasetName string `json:"dataset_name"`
+
+	Role string `json:"role"`
+}
+
+type FileByProjectRoleGroup struct {
+	Role string `json:"role"`
+
+	Items []*FileWithDatasetInfo `json:"items"`
 }

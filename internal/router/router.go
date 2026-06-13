@@ -29,6 +29,7 @@ type RouterParams struct {
 	UserService    interfaces.UserService
 	AuthHandler    *handler.AuthHandler
 	ProjectHandler *handler.ProjectHandler
+	DataHandler    *handler.DataHandler
 	SheetHandler   *handler.SheetHandler
 	UploadHandler  *handler.UploadHandler
 	ProxyHandler   *handler.ProxyHandler
@@ -77,6 +78,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
+		RegisterDataRoutes(v1, params.DataHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
 	}
 
@@ -118,6 +120,46 @@ func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler, 
 func RegisterSheetRoutes(r *gin.RouterGroup, handler *handler.SheetHandler) {
 	r.GET("/sheet/workbook", handler.ReadWorkbook)
 	r.POST("/sheet/workbook/save", handler.WriteWorkbook)
+}
+
+func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
+	r.POST("/data/dataset/create", handler.CreateDataset)
+	r.GET("/data/dataset/get", handler.GetDataset)
+	r.POST("/data/dataset/update", handler.UpdateDataset)
+	r.POST("/data/dataset/delete", handler.DeleteDataset)
+	r.GET("/data/dataset/list", handler.ListDataset)
+
+	r.POST("/data/project-dataset/create", handler.CreateProjectDataset)
+	r.GET("/data/project-dataset/get", handler.GetProjectDataset)
+	r.POST("/data/project-dataset/update", handler.UpdateProjectDataset)
+	r.POST("/data/project-dataset/delete", handler.DeleteProjectDataset)
+	r.GET("/data/project-dataset/list", handler.ListProjectDataset)
+
+	r.POST("/data/file/create", handler.CreateFile)
+	r.GET("/data/file/get", handler.GetFile)
+	r.POST("/data/file/update", handler.UpdateFile)
+	r.POST("/data/file/delete", handler.DeleteFile)
+	r.GET("/data/file/list", handler.ListFile)
+	r.GET("/data/file/list-by-project", handler.ListFileByProjectID)
+	r.GET("/data/file/list-by-project-group", handler.ListFileByProjectIDGroupByRole)
+
+	r.POST("/data/dataset-file/create", handler.CreateDatasetFile)
+	r.GET("/data/dataset-file/get", handler.GetDatasetFile)
+	r.POST("/data/dataset-file/update", handler.UpdateDatasetFile)
+	r.POST("/data/dataset-file/delete", handler.DeleteDatasetFile)
+	r.GET("/data/dataset-file/list", handler.ListDatasetFile)
+
+	r.POST("/data/sample/create", handler.CreateSample)
+	r.GET("/data/sample/get", handler.GetSample)
+	r.POST("/data/sample/update", handler.UpdateSample)
+	r.POST("/data/sample/delete", handler.DeleteSample)
+	r.GET("/data/sample/list", handler.ListSample)
+
+	r.POST("/data/dataset-sample/create", handler.CreateDatasetSample)
+	r.GET("/data/dataset-sample/get", handler.GetDatasetSample)
+	r.POST("/data/dataset-sample/update", handler.UpdateDatasetSample)
+	r.POST("/data/dataset-sample/delete", handler.DeleteDatasetSample)
+	r.GET("/data/dataset-sample/list", handler.ListDatasetSample)
 }
 
 // serveImageStatic maps local image resources under /images.
