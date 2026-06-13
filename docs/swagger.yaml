@@ -262,6 +262,54 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_gobravedev_gobrave_internal_types.SampleFile:
+    properties:
+      created_at:
+        type: string
+      file_id:
+        example: "0"
+        type: string
+      id:
+        example: "0"
+        type: string
+      lane:
+        type: string
+      replicate:
+        type: string
+      role:
+        type: string
+      sample_id:
+        example: "0"
+        type: string
+    type: object
+  github_com_gobravedev_gobrave_internal_types.SampleWithDatasetInfo:
+    properties:
+      created_at:
+        type: string
+      dataset_id:
+        type: string
+      dataset_name:
+        type: string
+      description:
+        type: string
+      group_name:
+        type: string
+      id:
+        example: "0"
+        type: string
+      metadata:
+        type: string
+      phenotype:
+        type: string
+      sample_id:
+        type: string
+      sample_name:
+        type: string
+      subject_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
   github_com_gobravedev_gobrave_internal_types.User:
     properties:
       avatar:
@@ -1624,6 +1672,192 @@ paths:
       summary: 更新项目-数据集映射
       tags:
       - 数据管理
+  /data/sample-file/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建 SampleFile 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleFile'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleFile'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 创建样本-文件映射
+      tags:
+      - 数据管理
+  /data/sample-file/delete:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 删除 SampleFile 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.idBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 删除样本-文件映射
+      tags:
+      - 数据管理
+  /data/sample-file/get:
+    get:
+      description: 按 ID 查询 SampleFile 详情
+      parameters:
+      - description: 主键 ID
+        in: query
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleFile'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取样本-文件映射
+      tags:
+      - 数据管理
+  /data/sample-file/list:
+    get:
+      description: 查询 SampleFile 列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleFile'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 样本-文件映射列表
+      tags:
+      - 数据管理
+  /data/sample-file/update:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 更新 SampleFile 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleFile'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 更新样本-文件映射
+      tags:
+      - 数据管理
   /data/sample/create:
     post:
       consumes:
@@ -1766,6 +2000,41 @@ paths:
       security:
       - Bearer: []
       summary: 样本列表
+      tags:
+      - 数据管理
+  /data/sample/list-by-project:
+    get:
+      description: 根据 project_id 查询关联的所有样本
+      parameters:
+      - description: 项目业务ID
+        in: query
+        name: project_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.SampleWithDatasetInfo'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 按项目查询样本列表
       tags:
       - 数据管理
   /data/sample/update:

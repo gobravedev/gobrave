@@ -250,6 +250,71 @@ func (s *dataService) ListSample(ctx context.Context) ([]*types.Sample, error) {
 	return s.dataRepo.ListSample(ctx)
 }
 
+func (s *dataService) ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error) {
+	return s.dataRepo.ListSampleByProjectID(ctx, projectID)
+}
+
+func (s *dataService) CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error {
+	sampleExists, err := s.dataRepo.ExistsSampleByID(ctx, sampleFile.SampleID)
+	if err != nil {
+		return err
+	}
+	if !sampleExists {
+		return gorm.ErrRecordNotFound
+	}
+
+	fileExists, err := s.dataRepo.ExistsFileByID(ctx, sampleFile.FileID)
+	if err != nil {
+		return err
+	}
+	if !fileExists {
+		return gorm.ErrRecordNotFound
+	}
+
+	return s.dataRepo.CreateSampleFile(ctx, sampleFile)
+}
+
+func (s *dataService) GetSampleFileByID(ctx context.Context, id int64) (*types.SampleFile, error) {
+	return s.dataRepo.GetSampleFileByID(ctx, id)
+}
+
+func (s *dataService) UpdateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error {
+	_, err := s.dataRepo.GetSampleFileByID(ctx, sampleFile.ID)
+	if err != nil {
+		return err
+	}
+
+	sampleExists, err := s.dataRepo.ExistsSampleByID(ctx, sampleFile.SampleID)
+	if err != nil {
+		return err
+	}
+	if !sampleExists {
+		return gorm.ErrRecordNotFound
+	}
+
+	fileExists, err := s.dataRepo.ExistsFileByID(ctx, sampleFile.FileID)
+	if err != nil {
+		return err
+	}
+	if !fileExists {
+		return gorm.ErrRecordNotFound
+	}
+
+	return s.dataRepo.UpdateSampleFile(ctx, sampleFile)
+}
+
+func (s *dataService) DeleteSampleFile(ctx context.Context, id int64) error {
+	_, err := s.dataRepo.GetSampleFileByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	return s.dataRepo.DeleteSampleFile(ctx, id)
+}
+
+func (s *dataService) ListSampleFile(ctx context.Context) ([]*types.SampleFile, error) {
+	return s.dataRepo.ListSampleFile(ctx)
+}
+
 func (s *dataService) CreateDatasetSample(ctx context.Context, datasetSample *types.DatasetSample) error {
 	datasetExists, err := s.dataRepo.ExistsDatasetByID(ctx, datasetSample.DatasetID)
 	if err != nil {

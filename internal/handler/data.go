@@ -990,6 +990,198 @@ func (h *DataHandler) ListSample(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
+// ListSampleByProjectID godoc
+// @Summary      按项目查询样本列表
+// @Description  根据 project_id 查询关联的所有样本
+// @Tags         数据管理
+// @Produce      json
+// @Param        project_id  query     string          true  "项目业务ID"
+// @Success      200         {array}   types.SampleWithDatasetInfo
+// @Failure      400         {object}  errors.AppError
+// @Failure      401         {object}  errors.AppError
+// @Failure      500         {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample/list-by-project [get]
+func (h *DataHandler) ListSampleByProjectID(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req projectIDQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	items, err := h.dataService.ListSampleByProjectID(c.Request.Context(), req.ProjectID)
+	if err != nil {
+		handleDataError(c, err, "failed to list sample by project id")
+		return
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
+// CreateSampleFile godoc
+// @Summary      创建样本-文件映射
+// @Description  创建 SampleFile 记录
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.SampleFile  true  "请求参数"
+// @Success      200      {object}  types.SampleFile
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample-file/create [post]
+func (h *DataHandler) CreateSampleFile(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req types.SampleFile
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.dataService.CreateSampleFile(c.Request.Context(), &req); err != nil {
+		handleDataError(c, err, "failed to create sample file")
+		return
+	}
+
+	c.JSON(http.StatusOK, req)
+}
+
+// GetSampleFile godoc
+// @Summary      获取样本-文件映射
+// @Description  按 ID 查询 SampleFile 详情
+// @Tags         数据管理
+// @Produce      json
+// @Param        id       query     integer             true  "主键 ID"
+// @Success      200      {object}  types.SampleFile
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample-file/get [get]
+func (h *DataHandler) GetSampleFile(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req idQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	item, err := h.dataService.GetSampleFileByID(c.Request.Context(), req.ID)
+	if err != nil {
+		handleDataError(c, err, "failed to get sample file")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+// UpdateSampleFile godoc
+// @Summary      更新样本-文件映射
+// @Description  按 ID 更新 SampleFile 记录
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.SampleFile  true  "请求参数"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample-file/update [post]
+func (h *DataHandler) UpdateSampleFile(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req types.SampleFile
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if req.ID == 0 {
+		c.Error(errors.NewValidationError("id is required"))
+		return
+	}
+
+	if err := h.dataService.UpdateSampleFile(c.Request.Context(), &req); err != nil {
+		handleDataError(c, err, "failed to update sample file")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "sample file updated successfully"})
+}
+
+// DeleteSampleFile godoc
+// @Summary      删除样本-文件映射
+// @Description  按 ID 删除 SampleFile 记录
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      idBody             true  "请求参数"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample-file/delete [post]
+func (h *DataHandler) DeleteSampleFile(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req idBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.dataService.DeleteSampleFile(c.Request.Context(), req.ID); err != nil {
+		handleDataError(c, err, "failed to delete sample file")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "sample file deleted successfully"})
+}
+
+// ListSampleFile godoc
+// @Summary      样本-文件映射列表
+// @Description  查询 SampleFile 列表
+// @Tags         数据管理
+// @Produce      json
+// @Success      200      {array}   types.SampleFile
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample-file/list [get]
+func (h *DataHandler) ListSampleFile(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	items, err := h.dataService.ListSampleFile(c.Request.Context())
+	if err != nil {
+		handleDataError(c, err, "failed to list sample file")
+		return
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
 // CreateDatasetSample godoc
 // @Summary      创建数据集-样本映射
 // @Description  创建 DatasetSample 记录

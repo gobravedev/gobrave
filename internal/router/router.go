@@ -154,6 +154,13 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/sample/update", handler.UpdateSample)
 	r.POST("/data/sample/delete", handler.DeleteSample)
 	r.GET("/data/sample/list", handler.ListSample)
+	r.GET("/data/sample/list-by-project", handler.ListSampleByProjectID)
+
+	r.POST("/data/sample-file/create", handler.CreateSampleFile)
+	r.GET("/data/sample-file/get", handler.GetSampleFile)
+	r.POST("/data/sample-file/update", handler.UpdateSampleFile)
+	r.POST("/data/sample-file/delete", handler.DeleteSampleFile)
+	r.GET("/data/sample-file/list", handler.ListSampleFile)
 
 	r.POST("/data/dataset-sample/create", handler.CreateDatasetSample)
 	r.GET("/data/dataset-sample/get", handler.GetDatasetSample)

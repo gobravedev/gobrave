@@ -29,6 +29,32 @@ type Sample struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type SampleWithDatasetInfo struct {
+	ID int64 `json:"id,string"`
+
+	SampleID string `json:"sample_id"`
+
+	SampleName string `json:"sample_name"`
+
+	SubjectID string `json:"subject_id"`
+
+	GroupName string `json:"group_name"`
+
+	Phenotype string `json:"phenotype"`
+
+	Metadata string `json:"metadata"`
+
+	Description string `json:"description"`
+
+	CreatedAt time.Time `json:"created_at"`
+
+	UpdatedAt time.Time `json:"updated_at"`
+
+	DatasetID string `json:"dataset_id"`
+
+	DatasetName string `json:"dataset_name"`
+}
+
 func (t *Sample) BeforeCreate(_ *gorm.DB) error {
 	if t.ID == 0 {
 		t.ID = utils.GenerateID()
@@ -61,29 +87,29 @@ func (DatasetSample) TableName() string {
 	return "go_dataset_sample"
 }
 
-// type SampleFile struct {
-// 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+type SampleFile struct {
+	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
-// 	SampleID int64 `json:"sample_id,string" gorm:"index;not null"`
+	SampleID int64 `json:"sample_id,string" gorm:"index;not null"`
 
-// 	FileID int64 `json:"file_id,string" gorm:"index;not null"`
+	FileID int64 `json:"file_id,string" gorm:"index;not null"`
 
-// 	Role string `json:"role" gorm:"type:varchar(64)"`
+	Role string `json:"role" gorm:"type:varchar(64)"`
 
-// 	Lane string `json:"lane" gorm:"type:varchar(32)"`
+	Lane string `json:"lane" gorm:"type:varchar(32)"`
 
-// 	Replicate string `json:"replicate" gorm:"type:varchar(32)"`
+	Replicate string `json:"replicate" gorm:"type:varchar(32)"`
 
-// 	CreatedAt time.Time `json:"created_at"`
-// }
+	CreatedAt time.Time `json:"created_at"`
+}
 
-// func (t *SampleFile) BeforeCreate(_ *gorm.DB) error {
-// 	if t.ID == 0 {
-// 		t.ID = utils.GenerateID()
-// 	}
-// 	return nil
-// }
+func (t *SampleFile) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
+}
 
-// func (SampleFile) TableName() string {
-// 	return "t_sample_file"
-// }
+func (SampleFile) TableName() string {
+	return "go_sample_file"
+}

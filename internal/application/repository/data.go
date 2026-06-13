@@ -232,6 +232,74 @@ func (r *dataRepository) ListSample(ctx context.Context) ([]*types.Sample, error
 	return items, nil
 }
 
+func (r *dataRepository) ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error) {
+	items := make([]*types.SampleWithDatasetInfo, 0)
+	err := r.db.WithContext(ctx).
+		Table("go_project_dataset AS pd").
+		Select(`
+			s.id,
+			s.sample_id,
+			s.sample_name,
+			s.subject_id,
+			s.group_name,
+			s.phenotype,
+			s.metadata,
+			s.description,
+			s.created_at,
+			s.updated_at,
+			d.id as dataset_id,
+			d.dataset_name
+		`).
+		Joins("JOIN go_dataset_sample AS ds ON ds.dataset_id = pd.dataset_id").
+		Joins("JOIN go_dataset AS d ON d.id = pd.dataset_id").
+		Joins("JOIN go_sample AS s ON s.id = ds.sample_id").
+		Where("pd.project_id = ?", projectID).
+		Group("s.id, d.dataset_id, d.dataset_name").
+		Order("s.id DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *dataRepository) CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error {
+	return r.db.WithContext(ctx).Create(sampleFile).Error
+}
+
+func (r *dataRepository) GetSampleFileByID(ctx context.Context, id int64) (*types.SampleFile, error) {
+	item := &types.SampleFile{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *dataRepository) UpdateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error {
+	return r.db.WithContext(ctx).Model(&types.SampleFile{}).
+		Where("id = ?", sampleFile.ID).
+		Updates(map[string]interface{}{
+			"sample_id": sampleFile.SampleID,
+			"file_id":   sampleFile.FileID,
+			"role":      sampleFile.Role,
+			"lane":      sampleFile.Lane,
+			"replicate": sampleFile.Replicate,
+		}).Error
+}
+
+func (r *dataRepository) DeleteSampleFile(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.SampleFile{}).Error
+}
+
+func (r *dataRepository) ListSampleFile(ctx context.Context) ([]*types.SampleFile, error) {
+	items := make([]*types.SampleFile, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *dataRepository) CreateDatasetSample(ctx context.Context, datasetSample *types.DatasetSample) error {
 	return r.db.WithContext(ctx).Create(datasetSample).Error
 }
@@ -313,6 +381,9 @@ func (r *dataRepository) DeleteFileWithRelations(ctx context.Context, id int64) 
 		if err := tx.Where("file_id = ?", id).Delete(&types.DatasetFile{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("file_id = ?", id).Delete(&types.SampleFile{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("id = ?", id).Delete(&types.File{}).Error; err != nil {
 			return err
 		}
@@ -323,6 +394,9 @@ func (r *dataRepository) DeleteFileWithRelations(ctx context.Context, id int64) 
 func (r *dataRepository) DeleteSampleWithRelations(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("sample_id = ?", id).Delete(&types.DatasetSample{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("sample_id = ?", id).Delete(&types.SampleFile{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("id = ?", id).Delete(&types.Sample{}).Error; err != nil {

@@ -275,6 +275,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.File{},
 		&types.DatasetFile{},
 		&types.Sample{},
+		&types.SampleFile{},
 		&types.DatasetSample{},
 		&types.AuthToken{},
 	// &types.Trace{},

@@ -38,6 +38,13 @@ type DataService interface {
 	UpdateSample(ctx context.Context, sample *types.Sample) error
 	DeleteSample(ctx context.Context, id int64) error
 	ListSample(ctx context.Context) ([]*types.Sample, error)
+	ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error)
+
+	CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error
+	GetSampleFileByID(ctx context.Context, id int64) (*types.SampleFile, error)
+	UpdateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error
+	DeleteSampleFile(ctx context.Context, id int64) error
+	ListSampleFile(ctx context.Context) ([]*types.SampleFile, error)
 
 	CreateDatasetSample(ctx context.Context, datasetSample *types.DatasetSample) error
 	GetDatasetSampleByID(ctx context.Context, id int64) (*types.DatasetSample, error)
@@ -77,6 +84,13 @@ type DataRepository interface {
 	UpdateSample(ctx context.Context, sample *types.Sample) error
 	DeleteSample(ctx context.Context, id int64) error
 	ListSample(ctx context.Context) ([]*types.Sample, error)
+	ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error)
+
+	CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error
+	GetSampleFileByID(ctx context.Context, id int64) (*types.SampleFile, error)
+	UpdateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error
+	DeleteSampleFile(ctx context.Context, id int64) error
+	ListSampleFile(ctx context.Context) ([]*types.SampleFile, error)
 
 	CreateDatasetSample(ctx context.Context, datasetSample *types.DatasetSample) error
 	GetDatasetSampleByID(ctx context.Context, id int64) (*types.DatasetSample, error)
