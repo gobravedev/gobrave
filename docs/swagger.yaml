@@ -369,6 +369,49 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_handler.EditParamsV2Response:
+    properties:
+      analysis_id:
+        type: string
+      analysis_name:
+        type: string
+      analysis_result:
+        additionalProperties: true
+        type: object
+      formJson:
+        items: {}
+        type: array
+      is_cache:
+        type: boolean
+      is_report:
+        type: boolean
+      request_param:
+        additionalProperties: true
+        type: object
+      server_status:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_handler.WorkflowFormJSONResponse:
+    properties:
+      formJson:
+        items: {}
+        type: array
+      type:
+        type: string
+    type: object
+  internal_handler.WorkflowFormResponse:
+    properties:
+      analysis_result:
+        additionalProperties: true
+        type: object
+      formJson:
+        items: {}
+        type: array
+      type:
+        type: string
+    type: object
   internal_handler.activateProjectRequest:
     properties:
       project_id:
@@ -484,6 +527,43 @@ info:
   title: AiAgentGo API
   version: "1.0"
 paths:
+  /analysis/edit-params-v2/{analysisId}:
+    post:
+      description: 查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result
+      parameters:
+      - description: 分析 ID
+        in: path
+        name: analysisId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.EditParamsV2Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 编辑分析参数（V2）
+      tags:
+      - 分析
   /auth/change-password:
     post:
       consumes:
@@ -1374,13 +1454,20 @@ paths:
       - 数据管理
   /data/file/list-by-project:
     get:
-      description: 根据 project_id 查询关联的所有文件
+      description: 根据 project_id 查询关联的所有文件；支持按 go_dataset_file.role 过滤
       parameters:
       - description: 项目业务ID
         in: query
         name: project_id
         required: true
         type: string
+      - collectionFormat: multi
+        description: 角色过滤，可多选；不传默认查询全部
+        in: query
+        items:
+          type: string
+        name: role
+        type: array
       produces:
       - application/json
       responses:
@@ -2520,6 +2607,86 @@ paths:
       summary: 保存工作簿到本地
       tags:
       - 表格
+  /workflow/tools/get-from-json/{workflowId}:
+    get:
+      description: 根据 workflowId 解析工作流 DAG，聚合输入/参数/formJson 配置
+      parameters:
+      - description: 工作流 ID
+        in: path
+        name: workflowId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.WorkflowFormJSONResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取工作流表单配置
+      tags:
+      - 工作流
+  /workflows/{workflowId}/form:
+    get:
+      description: 基于 workflowId 返回 formJson，并按 input_type 自动补充 analysis_result（sample
+        与按 role 分组的文件）
+      parameters:
+      - description: 工作流 ID
+        in: path
+        name: workflowId
+        required: true
+        type: string
+      - description: 项目业务ID
+        in: query
+        name: projectId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.WorkflowFormResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取工作流表单与分析数据
+      tags:
+      - 工作流
 securityDefinitions:
   ApiKeyAuth:
     description: 租户身份认证：输入 sk- 开头的 API Key

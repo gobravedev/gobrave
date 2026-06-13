@@ -12,6 +12,64 @@
     },
     "basePath": "/api/v1",
     "paths": {
+        "/analysis/edit-params-v2/{analysisId}": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "编辑分析参数（V2）",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "分析 ID",
+                        "name": "analysisId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.EditParamsV2Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-password": {
             "post": {
                 "security": [
@@ -1416,7 +1474,7 @@
                         "Bearer": []
                     }
                 ],
-                "description": "根据 project_id 查询关联的所有文件",
+                "description": "根据 project_id 查询关联的所有文件；支持按 go_dataset_file.role 过滤",
                 "produces": [
                     "application/json"
                 ],
@@ -1431,6 +1489,16 @@
                         "name": "project_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "角色过滤，可多选；不传默认查询全部",
+                        "name": "role",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3215,6 +3283,129 @@
                     }
                 }
             }
+        },
+        "/workflow/tools/get-from-json/{workflowId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "根据 workflowId 解析工作流 DAG，聚合输入/参数/formJson 配置",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "工作流"
+                ],
+                "summary": "获取工作流表单配置",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "工作流 ID",
+                        "name": "workflowId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.WorkflowFormJSONResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/workflows/{workflowId}/form": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "基于 workflowId 返回 formJson，并按 input_type 自动补充 analysis_result（sample 与按 role 分组的文件）",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "工作流"
+                ],
+                "summary": "获取工作流表单与分析数据",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "工作流 ID",
+                        "name": "workflowId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "项目业务ID",
+                        "name": "projectId",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.WorkflowFormResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -3739,6 +3930,69 @@
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_handler.EditParamsV2Response": {
+            "type": "object",
+            "properties": {
+                "analysis_id": {
+                    "type": "string"
+                },
+                "analysis_name": {
+                    "type": "string"
+                },
+                "analysis_result": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "formJson": {
+                    "type": "array",
+                    "items": {}
+                },
+                "is_cache": {
+                    "type": "boolean"
+                },
+                "is_report": {
+                    "type": "boolean"
+                },
+                "request_param": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "server_status": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.WorkflowFormJSONResponse": {
+            "type": "object",
+            "properties": {
+                "formJson": {
+                    "type": "array",
+                    "items": {}
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.WorkflowFormResponse": {
+            "type": "object",
+            "properties": {
+                "analysis_result": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "formJson": {
+                    "type": "array",
+                    "items": {}
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },

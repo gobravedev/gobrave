@@ -126,9 +126,9 @@ func (r *dataRepository) ListFile(ctx context.Context) ([]*types.File, error) {
 	return items, nil
 }
 
-func (r *dataRepository) ListFileByProjectID(ctx context.Context, projectID string) ([]*types.FileWithDatasetInfo, error) {
+func (r *dataRepository) ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error) {
 	items := make([]*types.FileWithDatasetInfo, 0)
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Table("go_project_dataset AS pd").
 		Select(`
 			f.id,
@@ -149,9 +149,13 @@ func (r *dataRepository) ListFileByProjectID(ctx context.Context, projectID stri
 		Joins("JOIN go_dataset AS d ON d.id = pd.dataset_id").
 		Joins("JOIN go_dataset_file AS df ON df.dataset_id = d.id").
 		Joins("JOIN go_file AS f ON f.id = df.file_id").
-		Where("pd.project_id = ?", projectID).
-		Order("f.id DESC").
-		Find(&items).Error
+		Where("pd.project_id = ?", projectID)
+
+	if len(roles) > 0 {
+		query = query.Where("df.role IN ?", roles)
+	}
+
+	err := query.Order("f.id DESC").Find(&items).Error
 	if err != nil {
 		return nil, err
 	}

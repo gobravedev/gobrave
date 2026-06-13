@@ -6,6 +6,7 @@ import (
 	stderrs "errors"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/errors"
@@ -32,6 +33,11 @@ type idBody struct {
 
 type projectIDQuery struct {
 	ProjectID string `form:"project_id" binding:"required"`
+}
+
+type projectFileQuery struct {
+	ProjectID string   `form:"project_id" binding:"required"`
+	Roles     []string `form:"role"`
 }
 
 func handleDataError(c *gin.Context, err error, internalMsg string) {
@@ -584,10 +590,11 @@ func (h *DataHandler) ListFile(c *gin.Context) {
 
 // ListFileByProjectID godoc
 // @Summary      按项目查询文件列表
-// @Description  根据 project_id 查询关联的所有文件
+// @Description  根据 project_id 查询关联的所有文件；支持按 go_dataset_file.role 过滤
 // @Tags         数据管理
 // @Produce      json
 // @Param        project_id  query     string           true  "项目业务ID"
+// @Param        role        query     []string         false "角色过滤，可多选；不传默认查询全部" collectionFormat(multi)
 // @Success      200         {array}   types.FileWithDatasetInfo
 // @Failure      400         {object}  errors.AppError
 // @Failure      401         {object}  errors.AppError
@@ -599,13 +606,23 @@ func (h *DataHandler) ListFileByProjectID(c *gin.Context) {
 		return
 	}
 
-	var req projectIDQuery
+	var req projectFileQuery
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
 		return
 	}
 
-	items, err := h.dataService.ListFileByProjectID(c.Request.Context(), req.ProjectID)
+	roles := make([]string, 0, len(req.Roles))
+	for _, item := range req.Roles {
+		for _, role := range strings.Split(item, ",") {
+			role = strings.TrimSpace(role)
+			if role != "" {
+				roles = append(roles, role)
+			}
+		}
+	}
+
+	items, err := h.dataService.ListFileByProjectID(c.Request.Context(), req.ProjectID, roles)
 	if err != nil {
 		handleDataError(c, err, "failed to list file by project id")
 		return

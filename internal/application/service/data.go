@@ -133,12 +133,12 @@ func (s *dataService) ListFile(ctx context.Context) ([]*types.File, error) {
 	return s.dataRepo.ListFile(ctx)
 }
 
-func (s *dataService) ListFileByProjectID(ctx context.Context, projectID string) ([]*types.FileWithDatasetInfo, error) {
-	return s.dataRepo.ListFileByProjectID(ctx, projectID)
+func (s *dataService) ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error) {
+	return s.dataRepo.ListFileByProjectID(ctx, projectID, roles)
 }
 
 func (s *dataService) ListFileByProjectIDGroupByRole(ctx context.Context, projectID string) ([]*types.FileByProjectRoleGroup, error) {
-	items, err := s.dataRepo.ListFileByProjectID(ctx, projectID)
+	items, err := s.dataRepo.ListFileByProjectID(ctx, projectID, nil)
 	if err != nil {
 		return nil, err
 	}

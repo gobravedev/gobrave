@@ -25,14 +25,16 @@ import (
 
 type RouterParams struct {
 	dig.In
-	Config         *config.Config
-	UserService    interfaces.UserService
-	AuthHandler    *handler.AuthHandler
-	ProjectHandler *handler.ProjectHandler
-	DataHandler    *handler.DataHandler
-	SheetHandler   *handler.SheetHandler
-	UploadHandler  *handler.UploadHandler
-	ProxyHandler   *handler.ProxyHandler
+	Config          *config.Config
+	UserService     interfaces.UserService
+	AuthHandler     *handler.AuthHandler
+	ProjectHandler  *handler.ProjectHandler
+	DataHandler     *handler.DataHandler
+	AnalysisHandler *handler.AnalysisHandler
+	WorkflowHandler *handler.WorkflowHandler
+	SheetHandler    *handler.SheetHandler
+	UploadHandler   *handler.UploadHandler
+	ProxyHandler    *handler.ProxyHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -79,6 +81,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
 		RegisterDataRoutes(v1, params.DataHandler)
+		RegisterAnalysisRoutes(v1, params.AnalysisHandler)
+		RegisterWorkflowRoutes(v1, params.WorkflowHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
 	}
 
@@ -167,6 +171,15 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/dataset-sample/update", handler.UpdateDatasetSample)
 	r.POST("/data/dataset-sample/delete", handler.DeleteDatasetSample)
 	r.GET("/data/dataset-sample/list", handler.ListDatasetSample)
+}
+
+func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
+	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
+	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
+}
+
+func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
+	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 }
 
 // serveImageStatic maps local image resources under /images.

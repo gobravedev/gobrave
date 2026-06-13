@@ -24,7 +24,7 @@ type DataService interface {
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error
 	ListFile(ctx context.Context) ([]*types.File, error)
-	ListFileByProjectID(ctx context.Context, projectID string) ([]*types.FileWithDatasetInfo, error)
+	ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error)
 	ListFileByProjectIDGroupByRole(ctx context.Context, projectID string) ([]*types.FileByProjectRoleGroup, error)
 
 	CreateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
@@ -71,7 +71,7 @@ type DataRepository interface {
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error
 	ListFile(ctx context.Context) ([]*types.File, error)
-	ListFileByProjectID(ctx context.Context, projectID string) ([]*types.FileWithDatasetInfo, error)
+	ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error)
 
 	CreateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
 	GetDatasetFileByID(ctx context.Context, id int64) (*types.DatasetFile, error)

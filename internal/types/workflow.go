@@ -4,7 +4,7 @@ import "time"
 
 type Module struct {
 	ID               uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ComponentID      string    `json:"component_id" gorm:"type:varchar(255)"`
+	ModuleID         string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	InstallKey       string    `json:"install_key" gorm:"type:varchar(255)"`
 	ComponentType    string    `json:"component_type" gorm:"type:varchar(255)"`
 	ComponentName    string    `json:"component_name" gorm:"type:varchar(255)"`
@@ -42,10 +42,10 @@ type Workflow struct {
 	Description        string    `json:"description" gorm:"type:longtext"`
 	Prompt             string    `json:"prompt" gorm:"type:longtext"`
 	DagDefinition      string    `json:"dag_definition" gorm:"column:dag_definition;type:longtext"`
-	RelationID         string    `json:"relation_id" gorm:"type:varchar(255)"`
+	WorkflowID         string    `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
 	RelationType       string    `json:"relation_type" gorm:"type:varchar(255)"`
 	InstallKey         string    `json:"install_key" gorm:"type:varchar(255)"`
-	ComponentID        string    `json:"component_id" gorm:"type:varchar(255)"`
+	ModuleID           string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	ContainerID        string    `json:"container_id" gorm:"type:varchar(255)"`
 	ParentComponentID  string    `json:"parent_component_id" gorm:"type:varchar(255)"`
 	InputComponentIDs  string    `json:"input_component_ids" gorm:"type:json"`
