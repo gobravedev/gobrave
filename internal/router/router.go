@@ -29,6 +29,7 @@ type RouterParams struct {
 	UserService    interfaces.UserService
 	AuthHandler    *handler.AuthHandler
 	ProjectHandler *handler.ProjectHandler
+	SheetHandler   *handler.SheetHandler
 	UploadHandler  *handler.UploadHandler
 	ProxyHandler   *handler.ProxyHandler
 }
@@ -76,6 +77,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
+		RegisterSheetRoutes(v1, params.SheetHandler)
 	}
 
 	r.Any("/brave-api", params.ProxyHandler.BraveAPIProxy)
@@ -111,6 +113,11 @@ func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler, 
 	r.GET("/project/list-project-report", handler.ListProjectReport)
 	r.GET("/project/project-report-detail", handler.GetProjectReportDetail)
 	r.POST("/project/upload-image", uploadHandler.UploadImage)
+}
+
+func RegisterSheetRoutes(r *gin.RouterGroup, handler *handler.SheetHandler) {
+	r.GET("/sheet/workbook", handler.ReadWorkbook)
+	r.POST("/sheet/workbook/save", handler.WriteWorkbook)
 }
 
 // serveImageStatic maps local image resources under /images.

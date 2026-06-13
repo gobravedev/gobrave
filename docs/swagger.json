@@ -875,6 +875,127 @@
                     }
                 }
             }
+        },
+        "/sheet/workbook": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "从本地文件读取工作簿并转换为 Univer 可用结构。当前优先支持 xlsx，csv/tsv 将在后续版本支持。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "表格"
+                ],
+                "summary": "读取本地工作簿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本地文件路径（相对路径以 sheets 目录为根）",
+                        "name": "file_path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件格式，可选：xlsx",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sheet/workbook/save": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "将 Univer 工作簿结构写入本地文件。当前优先支持 xlsx，csv/tsv 将在后续版本支持。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "表格"
+                ],
+                "summary": "保存工作簿到本地",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.writeWorkbookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1081,6 +1202,32 @@
                 }
             }
         },
+        "github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "workbook_data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                }
+            }
+        },
         "gorm.DeletedAt": {
             "type": "object",
             "properties": {
@@ -1218,6 +1365,25 @@
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handler.writeWorkbookRequest": {
+            "type": "object",
+            "required": [
+                "file_path",
+                "workbook_data"
+            ],
+            "properties": {
+                "file_path": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "workbook_data": {
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         }

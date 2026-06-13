@@ -153,6 +153,23 @@ definitions:
         description: Username of the user
         type: string
     type: object
+  github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult:
+    properties:
+      file_path:
+        type: string
+      format:
+        type: string
+      workbook_data:
+        additionalProperties: {}
+        type: object
+    type: object
+  github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult:
+    properties:
+      file_path:
+        type: string
+      format:
+        type: string
+    type: object
   gorm.DeletedAt:
     properties:
       time:
@@ -245,6 +262,19 @@ definitions:
     - id
     - project_id
     - title
+    type: object
+  internal_handler.writeWorkbookRequest:
+    properties:
+      file_path:
+        type: string
+      format:
+        type: string
+      workbook_data:
+        additionalProperties: {}
+        type: object
+    required:
+    - file_path
+    - workbook_data
     type: object
 info:
   contact:
@@ -805,6 +835,83 @@ paths:
       summary: 上传项目报告图片
       tags:
       - 项目
+  /sheet/workbook:
+    get:
+      description: 从本地文件读取工作簿并转换为 Univer 可用结构。当前优先支持 xlsx，csv/tsv 将在后续版本支持。
+      parameters:
+      - description: 本地文件路径（相对路径以 sheets 目录为根）
+        in: query
+        name: file_path
+        required: true
+        type: string
+      - description: 文件格式，可选：xlsx
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 读取本地工作簿
+      tags:
+      - 表格
+  /sheet/workbook/save:
+    post:
+      consumes:
+      - application/json
+      description: 将 Univer 工作簿结构写入本地文件。当前优先支持 xlsx，csv/tsv 将在后续版本支持。
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.writeWorkbookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 保存工作簿到本地
+      tags:
+      - 表格
 securityDefinitions:
   ApiKeyAuth:
     description: 租户身份认证：输入 sk- 开头的 API Key
