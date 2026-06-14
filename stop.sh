@@ -30,9 +30,3 @@ else
 fi
 
 
-go build -o gobrave ./cmd/server
-
-# export DISABLE_REGISTRATION=true
-nohup ./gobrave > gobrave.log 2>&1 &
-
-# tail -f server.log

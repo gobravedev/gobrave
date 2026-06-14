@@ -109,13 +109,15 @@ func buildCompatFileItem(item *types.FileWithDatasetInfo) (map[string]interface{
 		return nil, err
 	}
 
-	if v, ok := result["path"]; ok {
-		result["content"] = v
-		result["label"] = result["file_name"] // 保持 label 字段兼容
-		result["value"] = result["id"]        // 保持 value 字段兼容
-		delete(result, "path")
-	}
+	// if v, ok := result["path"]; ok {
+	// 	// result["content"] = v
+	// 	result["label"] = result["file_name"] // 保持 label 字段兼容
+	// 	result["value"] = result["id"]        // 保持 value 字段兼容
+	// 	// delete(result, "path")
+	// }
 
+	result["label"] = result["file_name"] // 保持 label 字段兼容
+	result["value"] = result["id"]        // 保持 value 字段兼容
 	// For EXP/TABLE roles, read TSV header and attach columns (mirrors Python build_collected_analysis_result).
 	if (item.Role == "EXP" || item.Role == "TABLE") && item.Path != "" {
 		if cols, err := buildFileColumns(item.Path, item.ID); err == nil {
