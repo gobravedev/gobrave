@@ -155,6 +155,10 @@ func (s *dataService) GetFileByID(ctx context.Context, id int64) (*types.File, e
 	return s.dataRepo.GetFileByID(ctx, id)
 }
 
+func (s *dataService) GetFileByFileID(ctx context.Context, fileID string) (*types.File, error) {
+	return s.dataRepo.GetFileByFileID(ctx, fileID)
+}
+
 func (s *dataService) UpdateFile(ctx context.Context, file *types.File) error {
 	_, err := s.dataRepo.GetFileByID(ctx, file.ID)
 	if err != nil {

@@ -22,6 +22,7 @@ type DataService interface {
 
 	CreateFile(ctx context.Context, file *types.File) error
 	GetFileByID(ctx context.Context, id int64) (*types.File, error)
+	GetFileByFileID(ctx context.Context, fileID string) (*types.File, error)
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error
 	ListFile(ctx context.Context) ([]*types.File, error)
@@ -73,6 +74,7 @@ type DataRepository interface {
 
 	CreateFile(ctx context.Context, file *types.File) error
 	GetFileByID(ctx context.Context, id int64) (*types.File, error)
+	GetFileByFileID(ctx context.Context, fileID string) (*types.File, error)
 	GetFileByPath(ctx context.Context, path string) (*types.File, error)
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error

@@ -167,6 +167,14 @@ func (r *dataRepository) GetFileByID(ctx context.Context, id int64) (*types.File
 	return item, nil
 }
 
+func (r *dataRepository) GetFileByFileID(ctx context.Context, fileID string) (*types.File, error) {
+	item := &types.File{}
+	if err := r.db.WithContext(ctx).Where("file_id = ?", fileID).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *dataRepository) GetFileByPath(ctx context.Context, path string) (*types.File, error) {
 	item := &types.File{}
 	if err := r.db.WithContext(ctx).Where("path = ?", path).Take(item).Error; err != nil {

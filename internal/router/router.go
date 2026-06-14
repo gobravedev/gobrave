@@ -124,6 +124,8 @@ func RegisterProjectRoutes(r *gin.RouterGroup, handler *handler.ProjectHandler, 
 func RegisterSheetRoutes(r *gin.RouterGroup, handler *handler.SheetHandler) {
 	r.GET("/sheet/workbook", handler.ReadWorkbook)
 	r.POST("/sheet/workbook/save", handler.WriteWorkbook)
+	r.GET("/sheet/workbook/by-file-id", handler.ReadWorkbookByFileID)
+	r.POST("/sheet/workbook/save/by-file-id", handler.WriteWorkbookByFileID)
 }
 
 func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {

@@ -609,6 +609,19 @@ definitions:
     - project_id
     - title
     type: object
+  internal_handler.writeWorkbookByFileIDRequest:
+    properties:
+      file_id:
+        type: string
+      format:
+        type: string
+      workbook_data:
+        additionalProperties: {}
+        type: object
+    required:
+    - file_id
+    - workbook_data
+    type: object
   internal_handler.writeWorkbookRequest:
     properties:
       file_path:
@@ -2864,6 +2877,47 @@ paths:
       summary: 读取本地工作簿
       tags:
       - 表格
+  /sheet/workbook/by-file-id:
+    get:
+      description: 根据 file_id 查找文件 path，再读取工作簿并转换为 Univer 可用结构。
+      parameters:
+      - description: 文件业务ID
+        in: query
+        name: file_id
+        required: true
+        type: string
+      - description: 文件格式，可选：xlsx
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 根据文件ID读取工作簿
+      tags:
+      - 表格
   /sheet/workbook/save:
     post:
       consumes:
@@ -2898,6 +2952,46 @@ paths:
       security:
       - Bearer: []
       summary: 保存工作簿到本地
+      tags:
+      - 表格
+  /sheet/workbook/save/by-file-id:
+    post:
+      consumes:
+      - application/json
+      description: 根据 file_id 查找文件 path，再将 Univer 工作簿结构写入本地文件。
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.writeWorkbookByFileIDRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 根据文件ID保存工作簿
       tags:
       - 表格
   /workflow/tools/get-from-json/{workflowId}:

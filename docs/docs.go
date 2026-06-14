@@ -3529,6 +3529,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/sheet/workbook/by-file-id": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "根据 file_id 查找文件 path，再读取工作簿并转换为 Univer 可用结构。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "表格"
+                ],
+                "summary": "根据文件ID读取工作簿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "文件业务ID",
+                        "name": "file_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件格式，可选：xlsx",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookReadResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/sheet/workbook/save": {
             "post": {
                 "security": [
@@ -3573,6 +3637,69 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sheet/workbook/save/by-file-id": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "根据 file_id 查找文件 path，再将 Univer 工作簿结构写入本地文件。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "表格"
+                ],
+                "summary": "根据文件ID保存工作簿",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.writeWorkbookByFileIDRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types_interfaces.WorkbookWriteResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
                         }
@@ -4584,6 +4711,25 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handler.writeWorkbookByFileIDRequest": {
+            "type": "object",
+            "required": [
+                "file_id",
+                "workbook_data"
+            ],
+            "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "workbook_data": {
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         },
