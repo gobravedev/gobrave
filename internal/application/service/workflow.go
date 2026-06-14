@@ -47,7 +47,8 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 
 	nodesMap := make(map[string]map[string]any)
 	inputScriptIDs := make(map[string]struct{})
-	targetNodeIDs := make(map[string]struct{})
+	nodeIncomingHandles := make(map[string]map[string]struct{})
+	nodeIDsByModuleID := make(map[string][]string)
 
 	edgesRaw, _ := dagDefinition["edges"].([]any)
 	for _, edgeAny := range edgesRaw {
@@ -55,10 +56,15 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 		if !ok {
 			continue
 		}
-		target, _ := edge["target"].(string)
-		if target != "" {
-			targetNodeIDs[target] = struct{}{}
+		targetNodeID, _ := edge["target"].(string)
+		targetHandle, _ := edge["targetHandle"].(string)
+		if targetNodeID == "" || targetHandle == "" {
+			continue
 		}
+		if _, exists := nodeIncomingHandles[targetNodeID]; !exists {
+			nodeIncomingHandles[targetNodeID] = make(map[string]struct{})
+		}
+		nodeIncomingHandles[targetNodeID][targetHandle] = struct{}{}
 	}
 
 	moduleIDs := make([]string, 0)
@@ -71,10 +77,12 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 		if moduleID == "" {
 			continue
 		}
+		nodeID, _ := node["node_id"].(string)
+
 		nodesMap[moduleID] = node
 		moduleIDs = append(moduleIDs, moduleID)
-		if _, exists := targetNodeIDs[moduleID]; !exists {
-			inputScriptIDs[moduleID] = struct{}{}
+		if nodeID != "" {
+			nodeIDsByModuleID[moduleID] = append(nodeIDsByModuleID[moduleID], nodeID)
 		}
 	}
 
@@ -94,6 +102,21 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 			_ = json.Unmarshal([]byte(script.IOSchema), &ioSchema)
 		}
 
+		inputNames := getInputNames(ioSchema)
+		nodeIDs := nodeIDsByModuleID[moduleID]
+		missingInputNames := make(map[string]struct{})
+		for _, nodeID := range nodeIDs {
+			incomingHandles := nodeIncomingHandles[nodeID]
+			for inputName := range inputNames {
+				if _, ok := incomingHandles[inputName]; !ok {
+					missingInputNames[inputName] = struct{}{}
+				}
+			}
+		}
+		if len(missingInputNames) > 0 {
+			inputScriptIDs[moduleID] = struct{}{}
+		}
+
 		if _, isInputScript := inputScriptIDs[moduleID]; isInputScript && script.IOSchema != "" {
 			merged := make(map[string]any, len(ioSchema)+4)
 			for k, v := range ioSchema {
@@ -104,7 +127,7 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 					merged[k] = v
 				}
 			}
-			buildInputScriptFormJSON(merged, &formJSONWrap)
+			buildInputScriptFormJSON(merged, &formJSONWrap, missingInputNames)
 		}
 
 		if params, ok := ioSchema["params"].([]any); ok {
@@ -124,7 +147,52 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 	return formJSONWrap, nil
 }
 
-func buildInputScriptFormJSON(ioSchema map[string]any, formJSONWrap *[]any) {
+func getInputNames(ioSchema map[string]any) map[string]struct{} {
+	result := make(map[string]struct{})
+	inputs, ok := ioSchema["inputs"].([]any)
+	if !ok {
+		return result
+	}
+
+	for _, itemAny := range inputs {
+		item, ok := itemAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if name == "" {
+			continue
+		}
+		result[name] = struct{}{}
+	}
+
+	return result
+}
+
+func filterInputs(items []any, inputNames map[string]struct{}) []any {
+	if inputNames == nil {
+		return items
+	}
+
+	filtered := make([]any, 0, len(items))
+	for _, itemAny := range items {
+		item, ok := itemAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if name == "" {
+			continue
+		}
+		if _, exists := inputNames[name]; exists {
+			filtered = append(filtered, itemAny)
+		}
+	}
+
+	return filtered
+}
+
+func buildInputScriptFormJSON(ioSchema map[string]any, formJSONWrap *[]any, inputNames map[string]struct{}) {
 	if scatterAny, ok := ioSchema["scatter"]; ok {
 		scatter, ok := scatterAny.(map[string]any)
 		if !ok {
@@ -137,12 +205,12 @@ func buildInputScriptFormJSON(ioSchema map[string]any, formJSONWrap *[]any) {
 			return
 		}
 		if inputs, ok := ioSchema["inputs"].([]any); ok {
-			*formJSONWrap = append(*formJSONWrap, inputs...)
+			*formJSONWrap = append(*formJSONWrap, filterInputs(inputs, inputNames)...)
 		}
 		return
 	}
 
 	if inputs, ok := ioSchema["inputs"].([]any); ok {
-		*formJSONWrap = append(*formJSONWrap, inputs...)
+		*formJSONWrap = append(*formJSONWrap, filterInputs(inputs, inputNames)...)
 	}
 }
