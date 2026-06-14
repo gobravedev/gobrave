@@ -2,18 +2,34 @@ package service
 
 import (
 	"context"
+	stderrs "errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 	"gorm.io/gorm"
 )
 
 type dataService struct {
 	dataRepo interfaces.DataRepository
+	baseDir  string
 }
 
-func NewDataService(dataRepo interfaces.DataRepository) interfaces.DataService {
-	return &dataService{dataRepo: dataRepo}
+var ErrDatasetFileAlreadyAdded = stderrs.New("dataset file already added")
+
+func NewDataService(cfg *config.Config, dataRepo interfaces.DataRepository) interfaces.DataService {
+	baseDir := ""
+	if cfg != nil && cfg.Storage != nil {
+		baseDir = strings.TrimSpace(cfg.Storage.BaseDir)
+	}
+
+	return &dataService{dataRepo: dataRepo, baseDir: baseDir}
 }
 
 func (s *dataService) CreateDataset(ctx context.Context, dataset *types.Dataset) error {
@@ -42,6 +58,32 @@ func (s *dataService) DeleteDataset(ctx context.Context, id int64) error {
 
 func (s *dataService) ListDataset(ctx context.Context) ([]*types.Dataset, error) {
 	return s.dataRepo.ListDataset(ctx)
+}
+
+func (s *dataService) PageDatasetByProjectID(ctx context.Context, pagination *types.Pagination, query *types.QueryDataset, projectID string) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.dataRepo.PageDatasetByProjectID(ctx, pagination, query, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
+}
+
+func (s *dataService) PageFileByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, roles []string) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.dataRepo.PageFileByProjectID(ctx, pagination, projectID, roles)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
 }
 
 func (s *dataService) CreateProjectDataset(ctx context.Context, projectDataset *types.ProjectDataset) error {
@@ -181,6 +223,108 @@ func (s *dataService) CreateDatasetFile(ctx context.Context, datasetFile *types.
 	return s.dataRepo.CreateDatasetFile(ctx, datasetFile)
 }
 
+func (s *dataService) AddFileToDataset(ctx context.Context, req *types.AddFileToDatasetRequest) (*types.AddFileToDatasetResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+
+	datasetExists, err := s.dataRepo.ExistsDatasetByID(ctx, req.DatasetID)
+	if err != nil {
+		return nil, err
+	}
+	if !datasetExists {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	baseDir := strings.TrimSpace(s.baseDir)
+	if baseDir == "" {
+		return nil, fmt.Errorf("storage base dir is required")
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return nil, fmt.Errorf("project id is required")
+	}
+
+	absBaseDir, err := utils.ResolveExternalPath(baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	relativePath := strings.TrimSpace(req.Path)
+	if relativePath == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
+	candidatePath := filepath.Join(absBaseDir, "data", req.ProjectID, strings.TrimLeft(relativePath, string(filepath.Separator)))
+	resolvedPath, err := utils.SafePathUnderBase(absBaseDir, candidatePath)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("file path is a directory: %s", resolvedPath)
+	}
+
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = "DEFAULT"
+	}
+
+	file, err := s.dataRepo.GetFileByPath(ctx, resolvedPath)
+	if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	response := &types.AddFileToDatasetResponse{}
+	err = s.dataRepo.WithTransaction(ctx, func(tx interfaces.DataRepository) error {
+		if file == nil {
+			file = &types.File{
+				FileID:   strconv.FormatInt(utils.GenerateID(), 10),
+				FileName: filepath.Base(resolvedPath),
+				Path:     resolvedPath,
+				Format:   strings.TrimPrefix(strings.ToLower(filepath.Ext(resolvedPath)), "."),
+				Size:     info.Size(),
+				Storage:  "LOCAL",
+			}
+			if err := tx.CreateFile(ctx, file); err != nil {
+				return err
+			}
+		}
+
+		exists, err := tx.ExistsDatasetFile(ctx, req.DatasetID, file.ID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return ErrDatasetFileAlreadyAdded
+		}
+
+		datasetFile := &types.DatasetFile{
+			DatasetID: req.DatasetID,
+			FileID:    file.ID,
+			Role:      role,
+		}
+		if err := tx.CreateDatasetFile(ctx, datasetFile); err != nil {
+			return err
+		}
+
+		response.File = file
+		response.DatasetFile = datasetFile
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
 func (s *dataService) GetDatasetFileByID(ctx context.Context, id int64) (*types.DatasetFile, error) {
 	return s.dataRepo.GetDatasetFileByID(ctx, id)
 }
@@ -248,6 +392,19 @@ func (s *dataService) DeleteSample(ctx context.Context, id int64) error {
 
 func (s *dataService) ListSample(ctx context.Context) ([]*types.Sample, error) {
 	return s.dataRepo.ListSample(ctx)
+}
+
+func (s *dataService) PageSampleByProjectID(ctx context.Context, pagination *types.Pagination, projectID string) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.dataRepo.PageSampleByProjectID(ctx, pagination, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
 }
 
 func (s *dataService) ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error) {

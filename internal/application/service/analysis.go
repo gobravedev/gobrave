@@ -18,3 +18,7 @@ func NewAnalysisService(analysisRepo interfaces.AnalysisRepository) interfaces.A
 func (s *analysisService) GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error) {
 	return s.analysisRepo.GetAnalysisByAnalysisID(ctx, analysisID)
 }
+
+func (s *analysisService) GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
+	return s.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+}

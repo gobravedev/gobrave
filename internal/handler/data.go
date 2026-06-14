@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	appservice "github.com/gobravedev/gobrave/internal/application/service"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -16,11 +17,12 @@ import (
 )
 
 type DataHandler struct {
-	dataService interfaces.DataService
+	dataService    interfaces.DataService
+	projectService interfaces.ProjectService
 }
 
-func NewDataHandler(dataService interfaces.DataService) *DataHandler {
-	return &DataHandler{dataService: dataService}
+func NewDataHandler(dataService interfaces.DataService, projectService interfaces.ProjectService) *DataHandler {
+	return &DataHandler{dataService: dataService, projectService: projectService}
 }
 
 type idQuery struct {
@@ -35,9 +37,26 @@ type projectIDQuery struct {
 	ProjectID string `form:"project_id" binding:"required"`
 }
 
+type datasetByProjectPageRequest struct {
+	types.Pagination
+	types.QueryDataset
+	ProjectID string `json:"project_id" binding:"required"`
+}
+
 type projectFileQuery struct {
 	ProjectID string   `form:"project_id" binding:"required"`
 	Roles     []string `form:"role"`
+}
+
+type projectFilePageRequest struct {
+	types.Pagination
+	ProjectID string   `json:"project_id" binding:"required"`
+	Roles     []string `json:"role"`
+}
+
+type sampleByProjectPageRequest struct {
+	types.Pagination
+	ProjectID string `json:"project_id" binding:"required"`
 }
 
 func handleDataError(c *gin.Context, err error, internalMsg string) {
@@ -266,6 +285,92 @@ func (h *DataHandler) ListDataset(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// PageDatasetByProjectID godoc
+// @Summary      按项目分页查询数据集
+// @Description  根据 project_id 分页查询关联的 Dataset 列表
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      datasetByProjectPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/dataset/list-by-project-page [post]
+func (h *DataHandler) PageDatasetByProjectID(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req datasetByProjectPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.dataService.PageDatasetByProjectID(c.Request.Context(), &req.Pagination, &req.QueryDataset, req.ProjectID)
+	if err != nil {
+		handleDataError(c, err, "failed to page dataset by project id")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
+}
+
+// PageFileByProjectID godoc
+// @Summary      按项目分页查询文件
+// @Description  根据 project_id 分页查询项目下关联文件，并返回 role、dataset_name、dataset_id 等信息
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      projectFilePageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/file/list-by-project-page [post]
+func (h *DataHandler) PageFileByProjectID(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req projectFilePageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	roles := make([]string, 0, len(req.Roles))
+	for _, item := range req.Roles {
+		for _, role := range strings.Split(item, ",") {
+			role = strings.TrimSpace(role)
+			if role != "" {
+				roles = append(roles, role)
+			}
+		}
+	}
+
+	result, err := h.dataService.PageFileByProjectID(c.Request.Context(), &req.Pagination, req.ProjectID, roles)
+	if err != nil {
+		handleDataError(c, err, "failed to page file by project id")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
 }
 
 // CreateProjectDataset godoc
@@ -687,6 +792,52 @@ func (h *DataHandler) ListFileByProjectIDGroupByRole(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// AddFileToDataset godoc
+// @Summary      按路径添加文件到数据集
+// @Description  根据 BaseDir + path 检查文件是否存在，创建 File 记录并关联到 Dataset
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.AddFileToDatasetRequest  true  "请求参数"
+// @Success      200      {object}  types.AddFileToDatasetResponse
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/dataset-file/add-file [post]
+func (h *DataHandler) AddFileToDataset(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	userID, _ := getCurrentUserID(c)
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		handleDataError(c, err, "failed to get active project")
+		return
+	}
+
+	var req types.AddFileToDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	req.ProjectID = project.ProjectID
+
+	result, err := h.dataService.AddFileToDataset(c.Request.Context(), &req)
+	if err != nil {
+		if stderrs.Is(err, appservice.ErrDatasetFileAlreadyAdded) {
+			c.Error(errors.NewConflictError("文件已经添加"))
+			return
+		}
+		handleDataError(c, err, "failed to add file to dataset")
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // CreateDatasetFile godoc
 // @Summary      创建数据集-文件映射
 // @Description  创建 DatasetFile 记录
@@ -1037,6 +1188,44 @@ func (h *DataHandler) ListSampleByProjectID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// PageSampleByProjectID godoc
+// @Summary      按项目分页查询样本
+// @Description  根据 project_id 分页查询项目下关联样本，并返回 dataset_name、dataset_id 等信息
+// @Tags         数据管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      sampleByProjectPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /data/sample/list-by-project-page [post]
+func (h *DataHandler) PageSampleByProjectID(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req sampleByProjectPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.dataService.PageSampleByProjectID(c.Request.Context(), &req.Pagination, req.ProjectID)
+	if err != nil {
+		handleDataError(c, err, "failed to page sample by project id")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
 }
 
 // CreateSampleFile godoc

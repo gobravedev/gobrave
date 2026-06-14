@@ -52,6 +52,26 @@ definitions:
     - ErrAgentMissingAllowedTools
     - ErrAgentInvalidMaxIterations
     - ErrAgentInvalidTemperature
+  github_com_gobravedev_gobrave_internal_types.AddFileToDatasetRequest:
+    properties:
+      dataset_id:
+        example: "0"
+        type: string
+      path:
+        type: string
+      role:
+        type: string
+    required:
+    - dataset_id
+    - path
+    type: object
+  github_com_gobravedev_gobrave_internal_types.AddFileToDatasetResponse:
+    properties:
+      dataset_file:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.DatasetFile'
+      file:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.File'
+    type: object
   github_com_gobravedev_gobrave_internal_types.Dataset:
     properties:
       created_at:
@@ -369,6 +389,27 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_handler.EditNodeParamsResponse:
+    properties:
+      analysis_id:
+        type: string
+      analysis_name:
+        type: string
+      formJson:
+        items: {}
+        type: array
+      is_cache:
+        type: boolean
+      is_report:
+        type: boolean
+      request_param:
+        additionalProperties: true
+        type: object
+      server_status:
+        type: string
+      status:
+        type: string
+    type: object
   internal_handler.EditParamsV2Response:
     properties:
       analysis_id:
@@ -440,6 +481,33 @@ definitions:
     required:
     - project_id
     type: object
+  internal_handler.datasetByProjectPageRequest:
+    properties:
+      dataset_id:
+        type: string
+      dataset_name:
+        type: string
+      description:
+        type: string
+      id:
+        example: "0"
+        type: string
+      metadata:
+        type: string
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+      project_id:
+        type: string
+    required:
+    - project_id
+    type: object
   internal_handler.deleteProjectReportRequest:
     properties:
       id:
@@ -455,6 +523,26 @@ definitions:
         type: string
     required:
     - id
+    type: object
+  internal_handler.projectFilePageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+      project_id:
+        type: string
+      role:
+        items:
+          type: string
+        type: array
+    required:
+    - project_id
     type: object
   internal_handler.projectListItem:
     properties:
@@ -486,6 +574,22 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_handler.sampleByProjectPageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+      project_id:
+        type: string
+    required:
+    - project_id
     type: object
   internal_handler.updateProjectReportRequest:
     properties:
@@ -527,6 +631,44 @@ info:
   title: AiAgentGo API
   version: "1.0"
 paths:
+  /analysis/edit-node-params/{analysisNodeId}:
+    post:
+      description: 依次查询 AnalysisNode、Analysis、Workflow(dag_definition)、Module(io_schema)
+        后组装 formJson
+      parameters:
+      - description: 分析节点 ID
+        in: path
+        name: analysisNodeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.EditNodeParamsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 编辑分析节点参数
+      tags:
+      - 分析
   /analysis/edit-params-v2/{analysisId}:
     post:
       description: 查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result
@@ -750,6 +892,46 @@ paths:
       summary: 验证令牌
       tags:
       - 认证
+  /data/dataset-file/add-file:
+    post:
+      consumes:
+      - application/json
+      description: 根据 BaseDir + path 检查文件是否存在，创建 File 记录并关联到 Dataset
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AddFileToDatasetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AddFileToDatasetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 按路径添加文件到数据集
+      tags:
+      - 数据管理
   /data/dataset-file/create:
     post:
       consumes:
@@ -1266,6 +1448,43 @@ paths:
       summary: 数据集列表
       tags:
       - 数据管理
+  /data/dataset/list-by-project-page:
+    post:
+      consumes:
+      - application/json
+      description: 根据 project_id 分页查询关联的 Dataset 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.datasetByProjectPageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 按项目分页查询数据集
+      tags:
+      - 数据管理
   /data/dataset/update:
     post:
       consumes:
@@ -1529,6 +1748,43 @@ paths:
       security:
       - Bearer: []
       summary: 按项目查询文件列表并按角色分组
+      tags:
+      - 数据管理
+  /data/file/list-by-project-page:
+    post:
+      consumes:
+      - application/json
+      description: 根据 project_id 分页查询项目下关联文件，并返回 role、dataset_name、dataset_id 等信息
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.projectFilePageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 按项目分页查询文件
       tags:
       - 数据管理
   /data/file/update:
@@ -2122,6 +2378,43 @@ paths:
       security:
       - Bearer: []
       summary: 按项目查询样本列表
+      tags:
+      - 数据管理
+  /data/sample/list-by-project-page:
+    post:
+      consumes:
+      - application/json
+      description: 根据 project_id 分页查询项目下关联样本，并返回 dataset_name、dataset_id 等信息
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.sampleByProjectPageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 按项目分页查询样本
       tags:
       - 数据管理
   /data/sample/update:

@@ -132,6 +132,7 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/dataset/update", handler.UpdateDataset)
 	r.POST("/data/dataset/delete", handler.DeleteDataset)
 	r.GET("/data/dataset/list", handler.ListDataset)
+	r.POST("/data/dataset/list-by-project-page", handler.PageDatasetByProjectID)
 
 	r.POST("/data/project-dataset/create", handler.CreateProjectDataset)
 	r.GET("/data/project-dataset/get", handler.GetProjectDataset)
@@ -145,9 +146,11 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/file/delete", handler.DeleteFile)
 	r.GET("/data/file/list", handler.ListFile)
 	r.GET("/data/file/list-by-project", handler.ListFileByProjectID)
+	r.POST("/data/file/list-by-project-page", handler.PageFileByProjectID)
 	r.GET("/data/file/list-by-project-group", handler.ListFileByProjectIDGroupByRole)
 
 	r.POST("/data/dataset-file/create", handler.CreateDatasetFile)
+	r.POST("/data/dataset-file/add-file", handler.AddFileToDataset)
 	r.GET("/data/dataset-file/get", handler.GetDatasetFile)
 	r.POST("/data/dataset-file/update", handler.UpdateDatasetFile)
 	r.POST("/data/dataset-file/delete", handler.DeleteDatasetFile)
@@ -159,6 +162,7 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/sample/delete", handler.DeleteSample)
 	r.GET("/data/sample/list", handler.ListSample)
 	r.GET("/data/sample/list-by-project", handler.ListSampleByProjectID)
+	r.POST("/data/sample/list-by-project-page", handler.PageSampleByProjectID)
 
 	r.POST("/data/sample-file/create", handler.CreateSampleFile)
 	r.GET("/data/sample-file/get", handler.GetSampleFile)
@@ -180,6 +184,7 @@ func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler
 
 func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
+	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
 }
 
 // serveImageStatic maps local image resources under /images.

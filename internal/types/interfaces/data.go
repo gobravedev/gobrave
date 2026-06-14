@@ -12,6 +12,7 @@ type DataService interface {
 	UpdateDataset(ctx context.Context, dataset *types.Dataset) error
 	DeleteDataset(ctx context.Context, id int64) error
 	ListDataset(ctx context.Context) ([]*types.Dataset, error)
+	PageDatasetByProjectID(ctx context.Context, pagination *types.Pagination, query *types.QueryDataset, projectID string) (*types.PageResult, error)
 
 	CreateProjectDataset(ctx context.Context, projectDataset *types.ProjectDataset) error
 	GetProjectDatasetByID(ctx context.Context, id int64) (*types.ProjectDataset, error)
@@ -24,10 +25,12 @@ type DataService interface {
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error
 	ListFile(ctx context.Context) ([]*types.File, error)
+	PageFileByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, roles []string) (*types.PageResult, error)
 	ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error)
 	ListFileByProjectIDGroupByRole(ctx context.Context, projectID string) ([]*types.FileByProjectRoleGroup, error)
 
 	CreateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
+	AddFileToDataset(ctx context.Context, req *types.AddFileToDatasetRequest) (*types.AddFileToDatasetResponse, error)
 	GetDatasetFileByID(ctx context.Context, id int64) (*types.DatasetFile, error)
 	UpdateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
 	DeleteDatasetFile(ctx context.Context, id int64) error
@@ -38,6 +41,7 @@ type DataService interface {
 	UpdateSample(ctx context.Context, sample *types.Sample) error
 	DeleteSample(ctx context.Context, id int64) error
 	ListSample(ctx context.Context) ([]*types.Sample, error)
+	PageSampleByProjectID(ctx context.Context, pagination *types.Pagination, projectID string) (*types.PageResult, error)
 	ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error)
 
 	CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error
@@ -59,6 +63,7 @@ type DataRepository interface {
 	UpdateDataset(ctx context.Context, dataset *types.Dataset) error
 	DeleteDataset(ctx context.Context, id int64) error
 	ListDataset(ctx context.Context) ([]*types.Dataset, error)
+	PageDatasetByProjectID(ctx context.Context, pagination *types.Pagination, query *types.QueryDataset, projectID string) ([]*types.Dataset, int64, error)
 
 	CreateProjectDataset(ctx context.Context, projectDataset *types.ProjectDataset) error
 	GetProjectDatasetByID(ctx context.Context, id int64) (*types.ProjectDataset, error)
@@ -68,12 +73,16 @@ type DataRepository interface {
 
 	CreateFile(ctx context.Context, file *types.File) error
 	GetFileByID(ctx context.Context, id int64) (*types.File, error)
+	GetFileByPath(ctx context.Context, path string) (*types.File, error)
 	UpdateFile(ctx context.Context, file *types.File) error
 	DeleteFile(ctx context.Context, id int64) error
 	ListFile(ctx context.Context) ([]*types.File, error)
+	PageFileByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, roles []string) ([]*types.FileWithDatasetInfo, int64, error)
 	ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error)
 
 	CreateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
+	ExistsDatasetFile(ctx context.Context, datasetID, fileID int64) (bool, error)
+	WithTransaction(ctx context.Context, fn func(DataRepository) error) error
 	GetDatasetFileByID(ctx context.Context, id int64) (*types.DatasetFile, error)
 	UpdateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error
 	DeleteDatasetFile(ctx context.Context, id int64) error
@@ -84,6 +93,7 @@ type DataRepository interface {
 	UpdateSample(ctx context.Context, sample *types.Sample) error
 	DeleteSample(ctx context.Context, id int64) error
 	ListSample(ctx context.Context) ([]*types.Sample, error)
+	PageSampleByProjectID(ctx context.Context, pagination *types.Pagination, projectID string) ([]*types.SampleWithDatasetInfo, int64, error)
 	ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error)
 
 	CreateSampleFile(ctx context.Context, sampleFile *types.SampleFile) error

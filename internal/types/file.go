@@ -64,6 +64,18 @@ func (t *DatasetFile) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+type AddFileToDatasetRequest struct {
+	DatasetID int64  `json:"dataset_id,string" binding:"required"`
+	ProjectID string `json:"-"`
+	Path      string `json:"path" binding:"required"`
+	Role      string `json:"role"`
+}
+
+type AddFileToDatasetResponse struct {
+	File        *File        `json:"file"`
+	DatasetFile *DatasetFile `json:"dataset_file"`
+}
+
 type FileWithDatasetInfo struct {
 	ID int64 `json:"id,string"`
 

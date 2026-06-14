@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
 
@@ -13,6 +14,14 @@ type workflowService struct {
 
 func NewWorkflowService(workflowRepo interfaces.WorkflowRepository) interfaces.WorkflowService {
 	return &workflowService{workflowRepo: workflowRepo}
+}
+
+func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error) {
+	return s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
+}
+
+func (s *workflowService) GetModuleByModuleID(ctx context.Context, moduleID string) (*types.Module, error) {
+	return s.workflowRepo.GetModuleByModuleID(ctx, moduleID)
 }
 
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {

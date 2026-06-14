@@ -29,6 +29,17 @@ type EditParamsV2Response struct {
 	FormJSON       []interface{}          `json:"formJson"`
 }
 
+type EditNodeParamsResponse struct {
+	AnalysisName string                 `json:"analysis_name"`
+	IsReport     bool                   `json:"is_report"`
+	IsCache      bool                   `json:"is_cache"`
+	AnalysisID   string                 `json:"analysis_id"`
+	Status       string                 `json:"status"`
+	ServerStatus string                 `json:"server_status"`
+	RequestParam map[string]interface{} `json:"request_param"`
+	FormJSON     []interface{}          `json:"formJson"`
+}
+
 func NewAnalysisHandler(analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, dataService interfaces.DataService) *AnalysisHandler {
 	return &AnalysisHandler{
 		analysisService: analysisService,
@@ -105,5 +116,95 @@ func (h *AnalysisHandler) EditParamsV2(c *gin.Context) {
 		RequestParam:   requestParam,
 		AnalysisResult: analysisResult,
 		FormJSON:       formJSONWrap,
+	})
+}
+
+// EditNodeParams godoc
+// @Summary      编辑分析节点参数
+// @Description  依次查询 AnalysisNode、Analysis、Workflow(dag_definition)、Module(io_schema) 后组装 formJson
+// @Tags         分析
+// @Produce      json
+// @Param        analysisNodeId  path      string                             true  "分析节点 ID"
+// @Success      200             {object}  handler.EditNodeParamsResponse
+// @Failure      400             {object}  errors.AppError
+// @Failure      401             {object}  errors.AppError
+// @Failure      404             {object}  errors.AppError
+// @Failure      500             {object}  errors.AppError
+// @Security     Bearer
+// @Router       /analysis/edit-node-params/{analysisNodeId} [post]
+func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	analysisNodeID := c.Param("analysisNodeId")
+	if analysisNodeID == "" {
+		c.Error(errors.NewValidationError("analysisNodeId is required"))
+		return
+	}
+
+	analysisNode, err := h.analysisService.GetAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("analysis node not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get analysis node").WithDetails(err.Error()))
+		return
+	}
+
+	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("analysis not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get analysis").WithDetails(err.Error()))
+		return
+	}
+
+	workflowItem, err := h.workflowService.GetWorkflowByWorkflowID(c.Request.Context(), analysisItem.WorkflowID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("workflow not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get workflow").WithDetails(err.Error()))
+		return
+	}
+
+	moduleItem, err := h.workflowService.GetModuleByModuleID(c.Request.Context(), analysisNode.ScriptID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("module not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get module").WithDetails(err.Error()))
+		return
+	}
+
+	formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, moduleItem, analysisNode.ScriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to build node form json").WithDetails(err.Error()))
+		return
+	}
+
+	requestParam := make(map[string]interface{})
+	if analysisItem.RequestParam != "" {
+		if err := json.Unmarshal([]byte(analysisItem.RequestParam), &requestParam); err != nil {
+			c.Error(errors.NewInternalServerError("failed to parse request_param").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, EditNodeParamsResponse{
+		AnalysisName: analysisItem.AnalysisName,
+		IsReport:     analysisItem.IsReport,
+		IsCache:      analysisItem.IsCache,
+		AnalysisID:   analysisItem.AnalysisID,
+		Status:       analysisNode.Status,
+		ServerStatus: analysisItem.ServerStatus,
+		RequestParam: requestParam,
+		FormJSON:     formJSON,
 	})
 }

@@ -52,6 +52,75 @@ func (r *dataRepository) ListDataset(ctx context.Context) ([]*types.Dataset, err
 	return items, nil
 }
 
+func (r *dataRepository) PageDatasetByProjectID(ctx context.Context, pagination *types.Pagination, query *types.QueryDataset, projectID string) ([]*types.Dataset, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.Dataset, 0)
+	var total int64
+
+	buildQuery := func() *gorm.DB {
+		return r.db.WithContext(ctx).
+			Table("go_dataset AS dataset").
+			Joins("JOIN go_project_dataset AS pd ON pd.dataset_id = dataset.id").
+			Where("pd.project_id = ?", projectID)
+	}
+
+	applyFilters := func(db *gorm.DB) *gorm.DB {
+		if query == nil {
+			return db
+		}
+
+		if query.ID != nil {
+			db = db.Where("dataset.id = ?", *query.ID)
+		}
+
+		if datasetID := query.GetDatasetID(); datasetID != "" {
+			db = db.Where("dataset.dataset_id = ?", datasetID)
+		}
+
+		if datasetName := query.GetDatasetName(); datasetName != "" {
+			db = db.Where("dataset.dataset_name LIKE ?", "%"+datasetName+"%")
+		}
+
+		if description := query.GetDescription(); description != "" {
+			db = db.Where("dataset.description LIKE ?", "%"+description+"%")
+		}
+
+		if metadata := query.GetMetadata(); metadata != "" {
+			db = db.Where("dataset.metadata LIKE ?", "%"+metadata+"%")
+		}
+
+		return db
+	}
+
+	baseQuery := applyFilters(buildQuery())
+
+	if err := applyFilters(buildQuery()).
+		Select("COUNT(DISTINCT dataset.id)").
+		Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := baseQuery.
+		Select("dataset.id, dataset.dataset_id, dataset.dataset_name, dataset.description, dataset.metadata, dataset.created_at, dataset.updated_at").
+		Distinct().
+		Order("dataset.id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.Dataset{}, total, nil
+	}
+
+	return items, total, nil
+}
+
 func (r *dataRepository) CreateProjectDataset(ctx context.Context, projectDataset *types.ProjectDataset) error {
 	return r.db.WithContext(ctx).Create(projectDataset).Error
 }
@@ -98,6 +167,14 @@ func (r *dataRepository) GetFileByID(ctx context.Context, id int64) (*types.File
 	return item, nil
 }
 
+func (r *dataRepository) GetFileByPath(ctx context.Context, path string) (*types.File, error) {
+	item := &types.File{}
+	if err := r.db.WithContext(ctx).Where("path = ?", path).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *dataRepository) UpdateFile(ctx context.Context, file *types.File) error {
 	return r.db.WithContext(ctx).Model(&types.File{}).
 		Where("id = ?", file.ID).
@@ -124,6 +201,70 @@ func (r *dataRepository) ListFile(ctx context.Context) ([]*types.File, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *dataRepository) PageFileByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, roles []string) ([]*types.FileWithDatasetInfo, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.FileWithDatasetInfo, 0)
+	var total int64
+
+	buildQuery := func() *gorm.DB {
+		return r.db.WithContext(ctx).
+			Table("go_project_dataset AS pd").
+			Select(`
+				file.id,
+				file.file_id,
+				file.file_name,
+				file.path,
+				file.format,
+				file.size,
+				file.md5,
+				file.storage,
+				file.description,
+				file.created_at,
+				file.updated_at,
+				dataset.id AS dataset_id,
+				dataset.dataset_name,
+				dataset_file.role
+			`).
+			Joins("JOIN go_dataset AS dataset ON dataset.id = pd.dataset_id").
+			Joins("JOIN go_dataset_file AS dataset_file ON dataset_file.dataset_id = dataset.id").
+			Joins("JOIN go_file AS file ON file.id = dataset_file.file_id").
+			Where("pd.project_id = ?", projectID)
+	}
+
+	applyFilters := func(db *gorm.DB) *gorm.DB {
+		if len(roles) > 0 {
+			db = db.Where("dataset_file.role IN ?", roles)
+		}
+		return db
+	}
+
+	baseQuery := applyFilters(buildQuery())
+
+	if err := applyFilters(buildQuery()).
+		Select("COUNT(DISTINCT dataset_file.id)").
+		Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := baseQuery.
+		Order("dataset_file.id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.FileWithDatasetInfo{}, total, nil
+	}
+
+	return items, total, nil
 }
 
 func (r *dataRepository) ListFileByProjectID(ctx context.Context, projectID string, roles []string) ([]*types.FileWithDatasetInfo, error) {
@@ -164,6 +305,20 @@ func (r *dataRepository) ListFileByProjectID(ctx context.Context, projectID stri
 
 func (r *dataRepository) CreateDatasetFile(ctx context.Context, datasetFile *types.DatasetFile) error {
 	return r.db.WithContext(ctx).Create(datasetFile).Error
+}
+
+func (r *dataRepository) ExistsDatasetFile(ctx context.Context, datasetID, fileID int64) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&types.DatasetFile{}).
+		Where("dataset_id = ? AND file_id = ?", datasetID, fileID).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (r *dataRepository) WithTransaction(ctx context.Context, fn func(interfaces.DataRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(&dataRepository{db: tx})
+	})
 }
 
 func (r *dataRepository) GetDatasetFileByID(ctx context.Context, id int64) (*types.DatasetFile, error) {
@@ -234,6 +389,60 @@ func (r *dataRepository) ListSample(ctx context.Context) ([]*types.Sample, error
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *dataRepository) PageSampleByProjectID(ctx context.Context, pagination *types.Pagination, projectID string) ([]*types.SampleWithDatasetInfo, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.SampleWithDatasetInfo, 0)
+	var total int64
+
+	buildQuery := func() *gorm.DB {
+		return r.db.WithContext(ctx).
+			Table("go_project_dataset AS pd").
+			Select(`
+				s.id,
+				s.sample_id,
+				s.sample_name,
+				s.subject_id,
+				s.group_name,
+				s.phenotype,
+				s.metadata,
+				s.description,
+				s.created_at,
+				s.updated_at,
+				d.id AS dataset_id,
+				d.dataset_name
+			`).
+			Joins("JOIN go_dataset_sample AS ds ON ds.dataset_id = pd.dataset_id").
+			Joins("JOIN go_dataset AS d ON d.id = pd.dataset_id").
+			Joins("JOIN go_sample AS s ON s.id = ds.sample_id").
+			Where("pd.project_id = ?", projectID)
+	}
+
+	if err := buildQuery().
+		Select("COUNT(DISTINCT ds.id)").
+		Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := buildQuery().
+		Group("s.id, d.dataset_id, d.dataset_name").
+		Order("s.id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.SampleWithDatasetInfo{}, total, nil
+	}
+
+	return items, total, nil
 }
 
 func (r *dataRepository) ListSampleByProjectID(ctx context.Context, projectID string) ([]*types.SampleWithDatasetInfo, error) {

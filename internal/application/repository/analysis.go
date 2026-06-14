@@ -23,3 +23,11 @@ func (r *analysisRepository) GetAnalysisByAnalysisID(ctx context.Context, analys
 	}
 	return item, nil
 }
+
+func (r *analysisRepository) GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
+	item := &types.AnalysisNode{}
+	if err := r.db.WithContext(ctx).Where("analysis_node_id = ?", analysisNodeID).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/utils"
@@ -53,4 +54,45 @@ func (t *ProjectDataset) BeforeCreate(_ *gorm.DB) error {
 		t.ID = utils.GenerateID()
 	}
 	return nil
+}
+
+// QueryDataset defines optional dataset filters for list/page APIs.
+type QueryDataset struct {
+	ID *int64 `json:"id,string,omitempty"`
+
+	DatasetID string `json:"dataset_id,omitempty"`
+
+	DatasetName string `json:"dataset_name,omitempty"`
+
+	Description string `json:"description,omitempty"`
+
+	Metadata string `json:"metadata,omitempty"`
+}
+
+func (q *QueryDataset) GetDatasetID() string {
+	if q == nil {
+		return ""
+	}
+	return strings.TrimSpace(q.DatasetID)
+}
+
+func (q *QueryDataset) GetDatasetName() string {
+	if q == nil {
+		return ""
+	}
+	return strings.TrimSpace(q.DatasetName)
+}
+
+func (q *QueryDataset) GetDescription() string {
+	if q == nil {
+		return ""
+	}
+	return strings.TrimSpace(q.Description)
+}
+
+func (q *QueryDataset) GetMetadata() string {
+	if q == nil {
+		return ""
+	}
+	return strings.TrimSpace(q.Metadata)
 }
