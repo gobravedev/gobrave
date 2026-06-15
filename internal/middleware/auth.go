@@ -30,7 +30,6 @@ var noAuthAPI = map[string][]string{
 	"/favicon.svg":            {"GET"},
 	"icons.svg":               {"GET"},
 	"/audio*":                 {"GET"},
-	"/images*":                {"GET"},
 	"/brave-api/ping":         {"GET"},
 	// "/brave-api/ws-group":       {"GET"},
 	"/brave-api/pipeline-dir/*": {"GET"},

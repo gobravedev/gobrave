@@ -71,11 +71,11 @@ func NewRouter(params RouterParams) *gin.Engine {
 			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
 		))
 	}
-	serveImageStatic(r, params.Config)
 	serveFrontendStatic(r)
 	handler.RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
+	serveImageStatic(r, params.Config)
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
@@ -192,8 +192,10 @@ func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler
 // serveImageStatic maps local image resources under /images.
 func serveImageStatic(r *gin.Engine, cfg *config.Config) {
 	configuredDir := ""
+	baseDir := ""
 	if cfg != nil && cfg.Storage != nil {
 		configuredDir = cfg.Storage.ImageDir
+		baseDir = cfg.Storage.BaseDir
 	}
 
 	imageDir, err := utils.ResolveConfiguredPath(configuredDir, "images")
@@ -206,6 +208,24 @@ func serveImageStatic(r *gin.Engine, cfg *config.Config) {
 
 	logger.Infof(context.Background(), "[Router] Serving image files from %s at /images", imageDir)
 	r.StaticFS("/images", http.Dir(imageDir))
+
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		return
+	}
+
+	dataDir, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data"))
+	if err != nil {
+		logger.Warnf(context.Background(), "[Router] Skip serving /images-data: invalid base_dir/data path: base_dir=%s err=%v", baseDir, err)
+		return
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		logger.Warnf(context.Background(), "[Router] Skip serving /images-data: create dir failed: data_dir=%s err=%v", dataDir, err)
+		return
+	}
+
+	logger.Infof(context.Background(), "[Router] Serving data files from %s at /images-data", dataDir)
+	r.StaticFS("/images-data", http.Dir(dataDir))
 }
 
 func serveFrontendStatic(r *gin.Engine) {
@@ -228,7 +248,7 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") || path == "/onlyoffice" || strings.HasPrefix(path, "/onlyoffice/") || path == "/go-onlyoffice" || strings.HasPrefix(path, "/go-onlyoffice/") {
+		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/images-data" || strings.HasPrefix(path, "/images-data/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") || path == "/onlyoffice" || strings.HasPrefix(path, "/onlyoffice/") || path == "/go-onlyoffice" || strings.HasPrefix(path, "/go-onlyoffice/") {
 			c.Next()
 			return
 		}
