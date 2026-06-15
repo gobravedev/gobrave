@@ -5,3 +5,6 @@ config.yml
 gobrave
 gobrave.log
 images/
+run.sh
+stop.sh
+cp_web.sh
