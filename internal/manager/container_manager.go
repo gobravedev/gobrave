@@ -96,34 +96,31 @@ func (m *ContainerManager) CreateByTemplate(
 
 	runtimeID, err := rt.Create(ctx, spec)
 	if err != nil {
-		inst.Status = types.ContainerFailed
-		_ = m.repo.UpdateContainerInstance(ctx, inst)
-		_ = m.createContainerEvent(ctx, inst.ID, "ContainerCreateFailed", err.Error())
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerCreateFailed")
+		_ = m.createContainerEvent(ctx, inst.ID, "ContainerCreateFailedDetail", err.Error())
 		return nil, err
 	}
 
 	inst.RuntimeID = runtimeID
-	inst.Status = types.ContainerCreating
 	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
 		return nil, err
 	}
-	_ = m.createContainerEvent(ctx, inst.ID, "ContainerCreating", "container created in runtime")
+	if err := m.transition(ctx, inst, fsm.Creating, "ContainerCreating"); err != nil {
+		return nil, err
+	}
 
 	if err := rt.Start(ctx, runtimeID); err != nil {
-		inst.Status = types.ContainerFailed
-		_ = m.repo.UpdateContainerInstance(ctx, inst)
-		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailed", err.Error())
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerStartFailed")
+		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
 		return nil, err
 	}
 
 	now := time.Now()
-	inst.Status = types.ContainerRunning
 	inst.StartedAt = &now
 	inst.FinishedAt = nil
-	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
+	if err := m.transition(ctx, inst, fsm.Running, "ContainerStarted"); err != nil {
 		return nil, err
 	}
-	_ = m.createContainerEvent(ctx, inst.ID, "ContainerStarted", "container is running")
 
 	if m.bus != nil {
 		m.bus.Publish(types.ContainerEvent{
@@ -143,20 +140,17 @@ func (m *ContainerManager) Start(ctx context.Context, id int64) error {
 	}
 
 	if err := rt.Start(ctx, inst.RuntimeID); err != nil {
-		inst.Status = types.ContainerFailed
-		_ = m.repo.UpdateContainerInstance(ctx, inst)
-		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailed", err.Error())
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerStartFailed")
+		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
 		return err
 	}
 
 	now := time.Now()
-	inst.Status = types.ContainerRunning
 	inst.StartedAt = &now
 	inst.FinishedAt = nil
-	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
+	if err := m.transition(ctx, inst, fsm.Running, "ContainerStarted"); err != nil {
 		return err
 	}
-	_ = m.createContainerEvent(ctx, inst.ID, "ContainerStarted", "container started")
 	return nil
 }
 
@@ -183,19 +177,16 @@ func (m *ContainerManager) Stop(ctx context.Context, id int64) error {
 	}
 
 	if err := rt.Stop(ctx, inst.RuntimeID); err != nil {
-		inst.Status = types.ContainerFailed
-		_ = m.repo.UpdateContainerInstance(ctx, inst)
-		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStopFailed", err.Error())
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerStopFailed")
+		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStopFailedDetail", err.Error())
 		return err
 	}
 
 	now := time.Now()
-	inst.Status = types.ContainerStopped
 	inst.FinishedAt = &now
-	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
+	if err := m.transition(ctx, inst, fsm.Stopped, "ContainerStopped"); err != nil {
 		return err
 	}
-	_ = m.createContainerEvent(ctx, inst.ID, "ContainerStopped", "container stopped")
 	return nil
 }
 
@@ -231,11 +222,12 @@ func (m *ContainerManager) Pause(ctx context.Context, id int64) error {
 	}
 
 	if err := rt.Pause(ctx, inst.RuntimeID); err != nil {
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerPauseFailed")
+		_ = m.createContainerEvent(ctx, id, "ContainerPauseFailedDetail", err.Error())
 		return err
 	}
 
-	_ = m.createContainerEvent(ctx, id, "ContainerPaused", "container paused")
-	return nil
+	return m.transition(ctx, inst, fsm.Paused, "ContainerPaused")
 }
 
 func (m *ContainerManager) Resume(ctx context.Context, id int64) error {
@@ -245,11 +237,12 @@ func (m *ContainerManager) Resume(ctx context.Context, id int64) error {
 	}
 
 	if err := rt.Resume(ctx, inst.RuntimeID); err != nil {
+		_ = m.transition(ctx, inst, fsm.Failed, "ContainerResumeFailed")
+		_ = m.createContainerEvent(ctx, id, "ContainerResumeFailedDetail", err.Error())
 		return err
 	}
 
-	_ = m.createContainerEvent(ctx, id, "ContainerResumed", "container resumed")
-	return nil
+	return m.transition(ctx, inst, fsm.Running, "ContainerResumed")
 }
 
 func (m *ContainerManager) GetLogs(ctx context.Context, id int64, tail int) (string, error) {
@@ -302,14 +295,21 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 
 	case "ContainerStarted":
 		now := time.Now()
-		inst.Status = types.ContainerRunning
 		inst.StartedAt = &now
 		inst.FinishedAt = nil
-		_ = m.repo.UpdateContainerInstance(context.Background(), inst)
+		_ = m.transition(context.Background(), inst, fsm.Running, "ContainerStarted")
+
+	case "ContainerPaused":
+		_ = m.transition(context.Background(), inst, fsm.Paused, "ContainerPaused")
+
+	case "ContainerResumed":
+		now := time.Now()
+		inst.StartedAt = &now
+		inst.FinishedAt = nil
+		_ = m.transition(context.Background(), inst, fsm.Running, "ContainerResumed")
 
 	case "ContainerFailed":
-		inst.Status = types.ContainerFailed
-		_ = m.repo.UpdateContainerInstance(context.Background(), inst)
+		_ = m.transition(context.Background(), inst, fsm.Failed, "ContainerFailed")
 	}
 }
 
@@ -334,28 +334,6 @@ func (m *ContainerManager) transition(
 	}
 
 	return m.createContainerEvent(ctx, inst.ID, eventType, string(to))
-
-	// return m.repo.WithTx(ctx, func(tx Repo) error {
-
-	// err := m.fsm.Transition(inst.Status, to)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// return m.repo.WithTx(ctx, func(tx Repo) error {
-
-	// 	// 1. 更新状态
-	// 	inst.Status = to
-	// 	tx.Update(inst)
-
-	// 	// 2. 写 Outbox（关键）
-	// 	tx.InsertOutbox(OutboxEvent{
-	// 		Type:    eventType,
-	// 		Payload: inst,
-	// 	})
-
-	return nil
-	// })
 }
 
 func (m *ContainerManager) getRuntimeByName(name string) (containerruntime.Runtime, error) {

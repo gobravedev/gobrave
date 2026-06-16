@@ -166,6 +166,7 @@ const (
 	ContainerPending  ContainerStatus = "pending"
 	ContainerCreating ContainerStatus = "creating"
 	ContainerRunning  ContainerStatus = "running"
+	ContainerPaused   ContainerStatus = "paused"
 	ContainerStopped  ContainerStatus = "stopped"
 	ContainerFailed   ContainerStatus = "failed"
 	ContainerExited   ContainerStatus = "exited"

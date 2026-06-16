@@ -13,6 +13,7 @@ const (
 	Pending  State = "pending"
 	Creating State = "creating"
 	Running  State = "running"
+	Paused   State = "paused"
 	Failed   State = "failed"
 	Stopped  State = "stopped"
 )
@@ -37,7 +38,12 @@ func (f *FSM) Transition(
 		}
 
 	case Running:
-		if to == Stopped || to == Failed {
+		if to == Stopped || to == Paused || to == Failed {
+			return nil
+		}
+
+	case Paused:
+		if to == Running || to == Stopped || to == Failed {
 			return nil
 		}
 
