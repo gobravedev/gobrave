@@ -74,6 +74,14 @@ func (m *mockContainerRepo) ListContainerImage(ctx context.Context) ([]*types.Co
 	return items, nil
 }
 
+func (m *mockContainerRepo) PageContainerImage(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerImage, int64, error) {
+	items, err := m.ListContainerImage(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, int64(len(items)), nil
+}
+
 func (m *mockContainerRepo) CreateContainerTemplate(ctx context.Context, item *types.ContainerTemplate) error {
 	if item.ID == 0 {
 		item.ID = m.next()
@@ -108,6 +116,14 @@ func (m *mockContainerRepo) ListContainerTemplate(ctx context.Context) ([]*types
 	return items, nil
 }
 
+func (m *mockContainerRepo) PageContainerTemplate(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerTemplate, int64, error) {
+	items, err := m.ListContainerTemplate(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, int64(len(items)), nil
+}
+
 func (m *mockContainerRepo) CreateAppSession(ctx context.Context, item *types.AppSession) error {
 	return nil
 }
@@ -126,6 +142,10 @@ func (m *mockContainerRepo) DeleteAppSession(ctx context.Context, id int64) erro
 
 func (m *mockContainerRepo) ListAppSession(ctx context.Context) ([]*types.AppSession, error) {
 	return []*types.AppSession{}, nil
+}
+
+func (m *mockContainerRepo) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error) {
+	return []*types.AppSession{}, 0, nil
 }
 
 func (m *mockContainerRepo) CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
@@ -180,6 +200,14 @@ func (m *mockContainerRepo) ListContainerInstance(ctx context.Context) ([]*types
 	return items, nil
 }
 
+func (m *mockContainerRepo) PageContainerInstance(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerInstance, int64, error) {
+	items, err := m.ListContainerInstance(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, int64(len(items)), nil
+}
+
 func (m *mockContainerRepo) CreateContainerEvent(ctx context.Context, item *types.ContainerEvent) error {
 	if item.ID == 0 {
 		item.ID = m.next()
@@ -207,6 +235,14 @@ func (m *mockContainerRepo) DeleteContainerEvent(ctx context.Context, id int64) 
 
 func (m *mockContainerRepo) ListContainerEvent(ctx context.Context) ([]*types.ContainerEvent, error) {
 	return m.events, nil
+}
+
+func (m *mockContainerRepo) PageContainerEvent(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerEvent, int64, error) {
+	items, err := m.ListContainerEvent(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, int64(len(items)), nil
 }
 
 func (m *mockContainerRepo) CreateOutboxEvent(ctx context.Context, item *types.OutboxEvent) error {
@@ -241,6 +277,10 @@ func (m *mockContainerRepo) MarkOutboxEventSent(ctx context.Context, id int64) e
 		}
 	}
 	return errors.New("outbox event not found")
+}
+
+func (m *mockContainerRepo) PageOutboxEvent(ctx context.Context, pagination *types.Pagination) ([]*types.OutboxEvent, int64, error) {
+	return m.outbox, int64(len(m.outbox)), nil
 }
 
 type dockerMockRuntime struct {

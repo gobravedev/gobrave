@@ -48,6 +48,19 @@ func (s *containerService) ListContainerImage(ctx context.Context) ([]*types.Con
 	return s.containerRepo.ListContainerImage(ctx)
 }
 
+func (s *containerService) PageContainerImage(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageContainerImage(ctx, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
+}
+
 func (s *containerService) CreateContainerTemplate(ctx context.Context, item *types.ContainerTemplate) error {
 	if _, err := s.containerRepo.GetContainerImageByID(ctx, item.ImageID); err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
@@ -84,6 +97,19 @@ func (s *containerService) DeleteContainerTemplate(ctx context.Context, id int64
 
 func (s *containerService) ListContainerTemplate(ctx context.Context) ([]*types.ContainerTemplate, error) {
 	return s.containerRepo.ListContainerTemplate(ctx)
+}
+
+func (s *containerService) PageContainerTemplate(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageContainerTemplate(ctx, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
 }
 
 func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string) (*types.AppSession, error) {
@@ -222,6 +248,58 @@ func (s *containerService) ListAppSessionByUserID(ctx context.Context, userID st
 		}
 	}
 	return filtered, nil
+}
+
+func (s *containerService) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageAppSessionByUserID(ctx, userID, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
+}
+
+func (s *containerService) PageContainerInstance(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageContainerInstance(ctx, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
+}
+
+func (s *containerService) PageContainerEvent(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageContainerEvent(ctx, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
+}
+
+func (s *containerService) PageOutboxEvent(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items, total, err := s.containerRepo.PageOutboxEvent(ctx, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	return types.NewPageResult(total, pagination, items), nil
 }
 
 func (s *containerService) ensureOwnedAppSession(ctx context.Context, userID string, appSessionID int64) (*types.AppSession, error) {

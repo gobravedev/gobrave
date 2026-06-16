@@ -27,6 +27,30 @@ type appSessionIDQuery struct {
 	ID int64 `form:"id" binding:"required"`
 }
 
+type containerImagePageRequest struct {
+	types.Pagination
+}
+
+type containerTemplatePageRequest struct {
+	types.Pagination
+}
+
+type appSessionPageRequest struct {
+	types.Pagination
+}
+
+type containerInstancePageRequest struct {
+	types.Pagination
+}
+
+type containerEventPageRequest struct {
+	types.Pagination
+}
+
+type outboxEventPageRequest struct {
+	types.Pagination
+}
+
 func NewContainerHandler(containerService interfaces.ContainerService) *ContainerHandler {
 	return &ContainerHandler{containerService: containerService}
 }
@@ -191,6 +215,44 @@ func (h *ContainerHandler) ListContainerImage(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
+// PageContainerImage godoc
+// @Summary      分页查询容器镜像
+// @Description  分页查询 ContainerImage 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      containerImagePageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/image/list-by-page [post]
+func (h *ContainerHandler) PageContainerImage(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req containerImagePageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageContainerImage(c.Request.Context(), &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page container image")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
+}
+
 // CreateContainerTemplate godoc
 // @Summary      创建容器模板
 // @Description  创建 ContainerTemplate 记录（手动校验 ImageID，不使用 GORM 关系维护）
@@ -349,6 +411,44 @@ func (h *ContainerHandler) ListContainerTemplate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// PageContainerTemplate godoc
+// @Summary      分页查询容器模板
+// @Description  分页查询 ContainerTemplate 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      containerTemplatePageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/template/list-by-page [post]
+func (h *ContainerHandler) PageContainerTemplate(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req containerTemplatePageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageContainerTemplate(c.Request.Context(), &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page container template")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
 }
 
 // CreateAppSession godoc
@@ -545,4 +645,157 @@ func (h *ContainerHandler) ListAppSession(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// PageAppSession godoc
+// @Summary      分页查询应用会话
+// @Description  按当前用户分页查询 AppSession 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/list-by-page [post]
+func (h *ContainerHandler) PageAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageAppSessionByUserID(c.Request.Context(), userID, &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
+}
+
+// PageContainerInstance godoc
+// @Summary      分页查询容器实例
+// @Description  分页查询 ContainerInstance 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      containerInstancePageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/instance/list-by-page [post]
+func (h *ContainerHandler) PageContainerInstance(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req containerInstancePageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageContainerInstance(c.Request.Context(), &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page container instance")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
+}
+
+// PageContainerEvent godoc
+// @Summary      分页查询容器事件
+// @Description  分页查询 ContainerEvent 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      containerEventPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/event/list-by-page [post]
+func (h *ContainerHandler) PageContainerEvent(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req containerEventPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageContainerEvent(c.Request.Context(), &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page container event")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
+}
+
+// PageOutboxEvent godoc
+// @Summary      分页查询事件出箱
+// @Description  分页查询 OutboxEvent 列表
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      outboxEventPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/outbox/list-by-page [post]
+func (h *ContainerHandler) PageOutboxEvent(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req outboxEventPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	result, err := h.containerService.PageOutboxEvent(c.Request.Context(), &req.Pagination)
+	if err != nil {
+		handleDataError(c, err, "failed to page outbox event")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
+	})
 }

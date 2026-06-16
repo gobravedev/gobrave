@@ -53,6 +53,34 @@ func (r *containerRepository) ListContainerImage(ctx context.Context) ([]*types.
 	return items, nil
 }
 
+func (r *containerRepository) PageContainerImage(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerImage, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.ContainerImage, 0)
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&types.ContainerImage{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.ContainerImage{}, total, nil
+	}
+
+	return items, total, nil
+}
+
 func (r *containerRepository) CreateContainerTemplate(ctx context.Context, item *types.ContainerTemplate) error {
 	return r.db.WithContext(ctx).Create(item).Error
 }
@@ -82,6 +110,34 @@ func (r *containerRepository) ListContainerTemplate(ctx context.Context) ([]*typ
 	return items, nil
 }
 
+func (r *containerRepository) PageContainerTemplate(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerTemplate, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.ContainerTemplate, 0)
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&types.ContainerTemplate{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.ContainerTemplate{}, total, nil
+	}
+
+	return items, total, nil
+}
+
 func (r *containerRepository) CreateAppSession(ctx context.Context, item *types.AppSession) error {
 	return r.db.WithContext(ctx).Create(item).Error
 }
@@ -109,6 +165,35 @@ func (r *containerRepository) ListAppSession(ctx context.Context) ([]*types.AppS
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *containerRepository) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.AppSession, 0)
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&types.AppSession{}).Where("user_id = ?", userID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.AppSession{}, total, nil
+	}
+
+	return items, total, nil
 }
 
 func (r *containerRepository) CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
@@ -156,6 +241,34 @@ func (r *containerRepository) ListContainerInstance(ctx context.Context) ([]*typ
 	return items, nil
 }
 
+func (r *containerRepository) PageContainerInstance(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerInstance, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.ContainerInstance, 0)
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&types.ContainerInstance{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.ContainerInstance{}, total, nil
+	}
+
+	return items, total, nil
+}
+
 func (r *containerRepository) CreateContainerEvent(ctx context.Context, item *types.ContainerEvent) error {
 	return r.db.WithContext(ctx).Create(item).Error
 }
@@ -183,6 +296,34 @@ func (r *containerRepository) ListContainerEvent(ctx context.Context) ([]*types.
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *containerRepository) PageContainerEvent(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerEvent, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.ContainerEvent, 0)
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&types.ContainerEvent{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.ContainerEvent{}, total, nil
+	}
+
+	return items, total, nil
 }
 
 func (r *containerRepository) CreateOutboxEvent(ctx context.Context, item *types.OutboxEvent) error {
@@ -214,4 +355,32 @@ func (r *containerRepository) MarkOutboxEventSent(ctx context.Context, id int64)
 			"status":  "sent",
 			"sent_at": &now,
 		}).Error
+}
+
+func (r *containerRepository) PageOutboxEvent(ctx context.Context, pagination *types.Pagination) ([]*types.OutboxEvent, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.OutboxEvent, 0)
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&types.OutboxEvent{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.OutboxEvent{}, total, nil
+	}
+
+	return items, total, nil
 }

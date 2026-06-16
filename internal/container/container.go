@@ -58,10 +58,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(initDatabase))
 	must(container.Provide(func() event.Bus { return event.NewMemoryBus() }))
 	must(container.Provide(containerruntime.NewRegistry))
-	must(container.Provide(func(reg *containerruntime.Registry) *containerruntime.Registry {
+	must(container.Invoke(func(reg *containerruntime.Registry) {
 		rt := &dockerruntime.DockerRuntime{}
 		reg.Register(rt.Name(), rt)
-		return reg
 	}))
 
 	logger.Debugf(ctx, "[Container] Registering timeline repository...")
@@ -310,6 +309,11 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.Analysis{},
 		&types.AnalysisNode{},
 		&types.AuthToken{},
+		&types.ContainerImage{},
+		&types.ContainerTemplate{},
+		&types.AppSession{},
+		&types.ContainerInstance{},
+		&types.ContainerEvent{},
 		&types.OutboxEvent{},
 	// &types.Trace{},
 	// &types.RSSSource{},

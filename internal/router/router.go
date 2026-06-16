@@ -187,12 +187,14 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 	r.POST("/container/image/update", handler.UpdateContainerImage)
 	r.POST("/container/image/delete", handler.DeleteContainerImage)
 	r.GET("/container/image/list", handler.ListContainerImage)
+	r.POST("/container/image/list-by-page", handler.PageContainerImage)
 
 	r.POST("/container/template/create", handler.CreateContainerTemplate)
 	r.GET("/container/template/get", handler.GetContainerTemplate)
 	r.POST("/container/template/update", handler.UpdateContainerTemplate)
 	r.POST("/container/template/delete", handler.DeleteContainerTemplate)
 	r.GET("/container/template/list", handler.ListContainerTemplate)
+	r.POST("/container/template/list-by-page", handler.PageContainerTemplate)
 
 	r.POST("/container/app-session/create", handler.CreateAppSession)
 	r.POST("/container/app-session/start", handler.StartAppSession)
@@ -200,6 +202,11 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 	r.POST("/container/app-session/delete", handler.DeleteAppSession)
 	r.GET("/container/app-session/get", handler.GetAppSession)
 	r.GET("/container/app-session/list", handler.ListAppSession)
+	r.POST("/container/app-session/list-by-page", handler.PageAppSession)
+
+	r.POST("/container/instance/list-by-page", handler.PageContainerInstance)
+	r.POST("/container/event/list-by-page", handler.PageContainerEvent)
+	r.POST("/container/outbox/list-by-page", handler.PageOutboxEvent)
 }
 
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
