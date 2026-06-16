@@ -112,11 +112,11 @@ func (s *containerService) PageContainerTemplate(ctx context.Context, pagination
 	return types.NewPageResult(total, pagination, items), nil
 }
 
-func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string) (*types.AppSession, error) {
+func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string) (*types.AppSession, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
-	if projectID == 0 {
+	if strings.TrimSpace(projectID) == "" {
 		return nil, fmt.Errorf("project id is required")
 	}
 	if containerTemplateID == 0 {
@@ -129,9 +129,9 @@ func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userI
 	}
 
 	if strings.TrimSpace(name) == "" {
-		name = fmt.Sprintf("app-session-%d-%d", projectID, containerTemplateID)
+		name = fmt.Sprintf("app-session-%s-%d", projectID, containerTemplateID)
 		if strings.TrimSpace(tpl.Name) != "" {
-			name = fmt.Sprintf("%s-%d", strings.TrimSpace(tpl.Name), projectID)
+			name = fmt.Sprintf("%s-%s", strings.TrimSpace(tpl.Name), projectID)
 		}
 	}
 

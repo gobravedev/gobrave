@@ -121,7 +121,7 @@ type AppSession struct {
 
 	UserID string `json:"user_id" gorm:"type:varchar(36);index;not null"`
 
-	ProjectID int64 `json:"project_id,string" gorm:"index;not null"`
+	ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
 
 	ContainerTemplateID int64 `json:"container_template_id,string" gorm:"index;not null"`
 

@@ -21,7 +21,7 @@ type ContainerService interface {
 	ListContainerTemplate(ctx context.Context) ([]*types.ContainerTemplate, error)
 	PageContainerTemplate(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)
 
-	CreateAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string) (*types.AppSession, error)
+	CreateAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string) (*types.AppSession, error)
 	StartAppSession(ctx context.Context, userID string, appSessionID int64) error
 	StopAppSession(ctx context.Context, userID string, appSessionID int64) error
 	DeleteAppSession(ctx context.Context, userID string, appSessionID int64) error

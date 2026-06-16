@@ -15,7 +15,7 @@ type ContainerHandler struct {
 
 type appSessionCreateRequest struct {
 	ContainerTemplateID int64  `json:"container_template_id,string" binding:"required"`
-	ProjectID           int64  `json:"project_id,string" binding:"required"`
+	ProjectID           string `json:"project_id" binding:"required"`
 	Name                string `json:"name"`
 }
 
