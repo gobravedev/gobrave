@@ -15,7 +15,13 @@ type Runtime interface {
 
 	Stop(ctx context.Context, runtimeID string) error
 
+	Pause(ctx context.Context, runtimeID string) error
+
+	Resume(ctx context.Context, runtimeID string) error
+
 	Delete(ctx context.Context, runtimeID string) error
+
+	Logs(ctx context.Context, runtimeID string, tail int) (string, error)
 
 	SetEventHandler(handler RuntimeEventHandler)
 

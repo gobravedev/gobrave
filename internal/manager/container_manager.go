@@ -230,11 +230,11 @@ func (m *ContainerManager) Pause(ctx context.Context, id int64) error {
 		return err
 	}
 
-	if _, err := rt.Exec(ctx, inst.RuntimeID, []string{"sh", "-c", "kill -STOP 1"}); err != nil {
+	if err := rt.Pause(ctx, inst.RuntimeID); err != nil {
 		return err
 	}
 
-	_ = m.createContainerEvent(ctx, id, "ContainerPaused", "container paused by SIGSTOP")
+	_ = m.createContainerEvent(ctx, id, "ContainerPaused", "container paused")
 	return nil
 }
 
@@ -244,11 +244,11 @@ func (m *ContainerManager) Resume(ctx context.Context, id int64) error {
 		return err
 	}
 
-	if _, err := rt.Exec(ctx, inst.RuntimeID, []string{"sh", "-c", "kill -CONT 1"}); err != nil {
+	if err := rt.Resume(ctx, inst.RuntimeID); err != nil {
 		return err
 	}
 
-	_ = m.createContainerEvent(ctx, id, "ContainerResumed", "container resumed by SIGCONT")
+	_ = m.createContainerEvent(ctx, id, "ContainerResumed", "container resumed")
 	return nil
 }
 
@@ -262,8 +262,7 @@ func (m *ContainerManager) GetLogs(ctx context.Context, id int64, tail int) (str
 		return "", err
 	}
 
-	cmd := []string{"sh", "-c", fmt.Sprintf("tail -n %d /proc/1/fd/1 2>/dev/null || true", tail)}
-	return rt.Exec(ctx, inst.RuntimeID, cmd)
+	return rt.Logs(ctx, inst.RuntimeID, tail)
 }
 
 // func (m *ContainerManager) OnRuntimeEvent(e RuntimeEvent) {
