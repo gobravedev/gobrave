@@ -153,6 +153,15 @@ func (m *mockContainerRepo) GetContainerInstanceByRuntimeID(ctx context.Context,
 	return nil, errors.New("container instance not found")
 }
 
+func (m *mockContainerRepo) GetContainerInstanceByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) (*types.ContainerInstance, error) {
+	for _, v := range m.instances {
+		if v.OwnerType == ownerType && v.OwnerID == ownerID {
+			return v, nil
+		}
+	}
+	return nil, errors.New("container instance not found")
+}
+
 func (m *mockContainerRepo) UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
 	m.instances[item.ID] = item
 	return nil

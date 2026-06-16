@@ -193,6 +193,13 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 	r.POST("/container/template/update", handler.UpdateContainerTemplate)
 	r.POST("/container/template/delete", handler.DeleteContainerTemplate)
 	r.GET("/container/template/list", handler.ListContainerTemplate)
+
+	r.POST("/container/app-session/create", handler.CreateAppSession)
+	r.POST("/container/app-session/start", handler.StartAppSession)
+	r.POST("/container/app-session/stop", handler.StopAppSession)
+	r.POST("/container/app-session/delete", handler.DeleteAppSession)
+	r.GET("/container/app-session/get", handler.GetAppSession)
+	r.GET("/container/app-session/list", handler.ListAppSession)
 }
 
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {

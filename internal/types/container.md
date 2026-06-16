@@ -1481,3 +1481,12 @@ if session.Status != AppSessionRunning {
       ▼
  SSE / WebSocket / Notification
 ```
+
+
+
+
+AppSession FSM + Container FSM 联动模型
+或者 
+AppSession → WorkflowSession 统一抽象
+或者 
+K8s 化设计（类似 Argo Workflows）

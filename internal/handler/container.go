@@ -13,6 +13,20 @@ type ContainerHandler struct {
 	containerService interfaces.ContainerService
 }
 
+type appSessionCreateRequest struct {
+	ContainerTemplateID int64  `json:"container_template_id,string" binding:"required"`
+	ProjectID           int64  `json:"project_id,string" binding:"required"`
+	Name                string `json:"name"`
+}
+
+type appSessionIDBody struct {
+	ID int64 `json:"id,string" binding:"required"`
+}
+
+type appSessionIDQuery struct {
+	ID int64 `form:"id" binding:"required"`
+}
+
 func NewContainerHandler(containerService interfaces.ContainerService) *ContainerHandler {
 	return &ContainerHandler{containerService: containerService}
 }
@@ -331,6 +345,202 @@ func (h *ContainerHandler) ListContainerTemplate(c *gin.Context) {
 	items, err := h.containerService.ListContainerTemplate(c.Request.Context())
 	if err != nil {
 		handleDataError(c, err, "failed to list container template")
+		return
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
+// CreateAppSession godoc
+// @Summary      创建应用会话
+// @Description  输入 ContainerTemplateID + 当前用户 + ProjectID 创建 AppSession，并通过 ContainerManager 创建并绑定容器
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionCreateRequest  true  "请求参数"
+// @Success      200      {object}  types.AppSession
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/create [post]
+func (h *ContainerHandler) CreateAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	item, err := h.containerService.CreateAppSessionByTemplate(c.Request.Context(), userID, req.ProjectID, req.ContainerTemplateID, req.Name)
+	if err != nil {
+		handleDataError(c, err, "failed to create app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+// StartAppSession godoc
+// @Summary      启动应用会话
+// @Description  通过 ContainerManager 启动 AppSession 绑定容器
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionIDBody        true  "请求参数"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/start [post]
+func (h *ContainerHandler) StartAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.containerService.StartAppSession(c.Request.Context(), userID, req.ID); err != nil {
+		handleDataError(c, err, "failed to start app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "app session started successfully"})
+}
+
+// StopAppSession godoc
+// @Summary      停止应用会话
+// @Description  通过 ContainerManager 停止 AppSession 绑定容器
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionIDBody        true  "请求参数"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/stop [post]
+func (h *ContainerHandler) StopAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.containerService.StopAppSession(c.Request.Context(), userID, req.ID); err != nil {
+		handleDataError(c, err, "failed to stop app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "app session stopped successfully"})
+}
+
+// DeleteAppSession godoc
+// @Summary      删除应用会话
+// @Description  通过 ContainerManager 删除绑定容器，并删除 AppSession
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionIDBody        true  "请求参数"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/delete [post]
+func (h *ContainerHandler) DeleteAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.containerService.DeleteAppSession(c.Request.Context(), userID, req.ID); err != nil {
+		handleDataError(c, err, "failed to delete app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "app session deleted successfully"})
+}
+
+// GetAppSession godoc
+// @Summary      获取应用会话
+// @Description  按 ID 查询当前用户的 AppSession 详情
+// @Tags         容器管理
+// @Produce      json
+// @Param        id       query     integer               true  "主键 ID"
+// @Success      200      {object}  types.AppSession
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/get [get]
+func (h *ContainerHandler) GetAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionIDQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	item, err := h.containerService.GetAppSessionByID(c.Request.Context(), userID, req.ID)
+	if err != nil {
+		handleDataError(c, err, "failed to get app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+// ListAppSession godoc
+// @Summary      应用会话列表
+// @Description  查询当前用户的 AppSession 列表
+// @Tags         容器管理
+// @Produce      json
+// @Success      200      {array}   types.AppSession
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/list [get]
+func (h *ContainerHandler) ListAppSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	items, err := h.containerService.ListAppSessionByUserID(c.Request.Context(), userID)
+	if err != nil {
+		handleDataError(c, err, "failed to list app session")
 		return
 	}
 

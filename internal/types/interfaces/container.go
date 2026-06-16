@@ -19,7 +19,7 @@ type ContainerService interface {
 	DeleteContainerTemplate(ctx context.Context, id int64) error
 	ListContainerTemplate(ctx context.Context) ([]*types.ContainerTemplate, error)
 
-	CreateAppSessionByImage(ctx context.Context, userID string, projectID int64, containerImageID int64, name string) (*types.AppSession, error)
+	CreateAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string) (*types.AppSession, error)
 	StartAppSession(ctx context.Context, userID string, appSessionID int64) error
 	StopAppSession(ctx context.Context, userID string, appSessionID int64) error
 	DeleteAppSession(ctx context.Context, userID string, appSessionID int64) error

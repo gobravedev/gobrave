@@ -17,6 +17,8 @@ import (
 	"github.com/gobravedev/gobrave/internal/application/repository"
 	"github.com/gobravedev/gobrave/internal/application/service"
 	"github.com/gobravedev/gobrave/internal/config"
+	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
+	dockerruntime "github.com/gobravedev/gobrave/internal/container_runtime/docker"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
@@ -55,6 +57,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(config.LoadConfig))
 	must(container.Provide(initDatabase))
 	must(container.Provide(func() event.Bus { return event.NewMemoryBus() }))
+	must(container.Provide(containerruntime.NewRegistry))
+	must(container.Provide(func(reg *containerruntime.Registry) *containerruntime.Registry {
+		rt := &dockerruntime.DockerRuntime{}
+		reg.Register(rt.Name(), rt)
+		return reg
+	}))
 
 	logger.Debugf(ctx, "[Container] Registering timeline repository...")
 	// must(container.Provide(repository.NewTimelineRepository))
@@ -75,6 +83,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAnalysisRepository))
 	must(container.Provide(repository.NewWorkflowRepository))
 	must(container.Provide(repository.NewContainerRepository))
+	must(container.Provide(manager.NewContainerManager))
 	must(container.Provide(manager.NewOutboxDispatcher))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
@@ -156,6 +165,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	} else {
 		must(container.Invoke(router.RegisterSyncHandlers))
 	}
+	must(container.Invoke(func(mgr *manager.ContainerManager, reg *containerruntime.Registry) {
+		for _, rt := range reg.List() {
+			rt.SetEventHandler(mgr)
+		}
+	}))
 	must(container.Invoke(manager.RunOutboxDispatcher))
 
 	return container
