@@ -2,9 +2,6 @@ package fsm
 
 import (
 	"errors"
-	"time"
-
-	"gorm.io/datatypes"
 )
 
 type State string
@@ -54,16 +51,4 @@ func (f *FSM) Transition(
 	}
 
 	return errors.New("invalid transition")
-}
-
-type OutboxEvent struct {
-	ID uint64
-
-	Type string
-
-	Payload datatypes.JSON
-
-	Status string // pending / sent
-
-	CreatedAt time.Time
 }

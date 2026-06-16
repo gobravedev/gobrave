@@ -7,6 +7,8 @@ import (
 )
 
 type ContainerRepository interface {
+	WithTransaction(ctx context.Context, fn func(ContainerRepository) error) error
+
 	CreateContainerImage(ctx context.Context, item *types.ContainerImage) error
 	GetContainerImageByID(ctx context.Context, id int64) (*types.ContainerImage, error)
 	UpdateContainerImage(ctx context.Context, item *types.ContainerImage) error
@@ -37,4 +39,8 @@ type ContainerRepository interface {
 	UpdateContainerEvent(ctx context.Context, item *types.ContainerEvent) error
 	DeleteContainerEvent(ctx context.Context, id int64) error
 	ListContainerEvent(ctx context.Context) ([]*types.ContainerEvent, error)
+
+	CreateOutboxEvent(ctx context.Context, item *types.OutboxEvent) error
+	ListPendingOutboxEvent(ctx context.Context, limit int) ([]*types.OutboxEvent, error)
+	MarkOutboxEventSent(ctx context.Context, id int64) error
 }

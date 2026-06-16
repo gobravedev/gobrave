@@ -17,8 +17,10 @@ import (
 	"github.com/gobravedev/gobrave/internal/application/repository"
 	"github.com/gobravedev/gobrave/internal/application/service"
 	"github.com/gobravedev/gobrave/internal/config"
+	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
+	"github.com/gobravedev/gobrave/internal/manager"
 	"github.com/gobravedev/gobrave/internal/router"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -52,6 +54,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	logger.Debugf(ctx, "[Container] Registering core infrastructure...")
 	must(container.Provide(config.LoadConfig))
 	must(container.Provide(initDatabase))
+	must(container.Provide(func() event.Bus { return event.NewMemoryBus() }))
 
 	logger.Debugf(ctx, "[Container] Registering timeline repository...")
 	// must(container.Provide(repository.NewTimelineRepository))
@@ -72,6 +75,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAnalysisRepository))
 	must(container.Provide(repository.NewWorkflowRepository))
 	must(container.Provide(repository.NewContainerRepository))
+	must(container.Provide(manager.NewOutboxDispatcher))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
 	// must(container.Provide(repository.NewRSSSourceRepository))
@@ -150,6 +154,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	} else {
 		must(container.Invoke(router.RegisterSyncHandlers))
 	}
+	must(container.Invoke(manager.RunOutboxDispatcher))
 
 	return container
 }
@@ -289,6 +294,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.Analysis{},
 		&types.AnalysisNode{},
 		&types.AuthToken{},
+		&types.OutboxEvent{},
 	// &types.Trace{},
 	// &types.RSSSource{},
 	); err != nil {

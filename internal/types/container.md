@@ -1428,3 +1428,56 @@ if session.Status != AppSessionRunning {
 ```
 
 等到状态种类增多（如 `pending`、`creating`、`pulling`、`running`、`pausing`、`paused`、`resuming`、`stopped`、`failed` 等）时，再抽象成独立的 `fsm` 包。这样开发节奏更平滑，也不会因为过早设计状态机而增加复杂度。对于当前以 `AppSession` 为核心的开发阶段，这是性价比最高的方案。
+
+
+二、Outbox Pattern 如何解决？
+
+把「修改状态」和「记录事件」放到同一个数据库事务。
+
+┌─────────────────────────────┐
+│ BEGIN TRANSACTION           │
+│                             │
+│ UPDATE container_instance   │
+│ INSERT outbox_event         │
+│                             │
+│ COMMIT                      │
+└─────────────────────────────┘
+
+
+
+```
+                     HTTP / API
+                          │
+                          ▼
+                 AppSessionService
+                          │
+                          ▼
+                 ContainerManager
+                          │
+        ┌─────────────────┼──────────────────┐
+        │                 │                  │
+        ▼                 ▼                  ▼
+   ContainerFSM      ContainerRepo      Runtime
+        │                 │                  │
+        │                 │                  ▼
+        │                 │            Docker/K8s
+        │                 │
+        ▼                 ▼
+        Outbox (DB Transaction)
+                │
+                ▼
+        OutboxDispatcher
+                │
+                ▼
+         DomainEventBus
+                │
+      ┌─────────┼─────────┐
+      ▼         ▼         ▼
+ Workflow     Audit      Monitor
+      │
+      ▼
+ IntegrationEventBus
+      │
+      ▼
+ SSE / WebSocket / Notification
+```

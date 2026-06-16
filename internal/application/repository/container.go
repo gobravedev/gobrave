@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -14,6 +15,13 @@ type containerRepository struct {
 
 func NewContainerRepository(db *gorm.DB) interfaces.ContainerRepository {
 	return &containerRepository{db: db}
+}
+
+func (r *containerRepository) WithTransaction(ctx context.Context, fn func(interfaces.ContainerRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := &containerRepository{db: tx}
+		return fn(txRepo)
+	})
 }
 
 func (r *containerRepository) CreateContainerImage(ctx context.Context, item *types.ContainerImage) error {
@@ -167,4 +175,35 @@ func (r *containerRepository) ListContainerEvent(ctx context.Context) ([]*types.
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *containerRepository) CreateOutboxEvent(ctx context.Context, item *types.OutboxEvent) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) ListPendingOutboxEvent(ctx context.Context, limit int) ([]*types.OutboxEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	items := make([]*types.OutboxEvent, 0)
+	err := r.db.WithContext(ctx).
+		Where("status = ?", "pending").
+		Order("id ASC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *containerRepository) MarkOutboxEventSent(ctx context.Context, id int64) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).
+		Model(&types.OutboxEvent{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"status":  "sent",
+			"sent_at": &now,
+		}).Error
 }

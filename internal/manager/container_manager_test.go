@@ -8,6 +8,7 @@ import (
 
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/types"
+	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
 
 type mockContainerRepo struct {
@@ -15,6 +16,7 @@ type mockContainerRepo struct {
 	templates map[int64]*types.ContainerTemplate
 	instances map[int64]*types.ContainerInstance
 	events    []*types.ContainerEvent
+	outbox    []*types.OutboxEvent
 	nextID    int64
 }
 
@@ -24,6 +26,7 @@ func newMockContainerRepo() *mockContainerRepo {
 		templates: map[int64]*types.ContainerTemplate{},
 		instances: map[int64]*types.ContainerInstance{},
 		events:    make([]*types.ContainerEvent, 0),
+		outbox:    make([]*types.OutboxEvent, 0),
 		nextID:    100,
 	}
 }
@@ -31,6 +34,10 @@ func newMockContainerRepo() *mockContainerRepo {
 func (m *mockContainerRepo) next() int64 {
 	m.nextID++
 	return m.nextID
+}
+
+func (m *mockContainerRepo) WithTransaction(ctx context.Context, fn func(interfaces.ContainerRepository) error) error {
+	return fn(m)
 }
 
 func (m *mockContainerRepo) CreateContainerImage(ctx context.Context, item *types.ContainerImage) error {
@@ -191,6 +198,40 @@ func (m *mockContainerRepo) DeleteContainerEvent(ctx context.Context, id int64) 
 
 func (m *mockContainerRepo) ListContainerEvent(ctx context.Context) ([]*types.ContainerEvent, error) {
 	return m.events, nil
+}
+
+func (m *mockContainerRepo) CreateOutboxEvent(ctx context.Context, item *types.OutboxEvent) error {
+	if item.ID == 0 {
+		item.ID = m.next()
+	}
+	if item.Status == "" {
+		item.Status = "pending"
+	}
+	m.outbox = append(m.outbox, item)
+	return nil
+}
+
+func (m *mockContainerRepo) ListPendingOutboxEvent(ctx context.Context, limit int) ([]*types.OutboxEvent, error) {
+	items := make([]*types.OutboxEvent, 0)
+	for _, v := range m.outbox {
+		if v.Status == "pending" {
+			items = append(items, v)
+			if limit > 0 && len(items) >= limit {
+				break
+			}
+		}
+	}
+	return items, nil
+}
+
+func (m *mockContainerRepo) MarkOutboxEventSent(ctx context.Context, id int64) error {
+	for _, v := range m.outbox {
+		if v.ID == id {
+			v.Status = "sent"
+			return nil
+		}
+	}
+	return errors.New("outbox event not found")
 }
 
 type dockerMockRuntime struct {

@@ -122,14 +122,6 @@ func (m *ContainerManager) CreateByTemplate(
 		return nil, err
 	}
 
-	if m.bus != nil {
-		m.bus.Publish(types.ContainerEvent{
-			ContainerInstanceID: inst.ID,
-			Event:               "ContainerStarted",
-			Message:             runtimeID,
-		})
-	}
-
 	return inst, nil
 }
 
@@ -289,8 +281,6 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 		return
 	}
 
-	_ = m.createContainerEvent(context.Background(), inst.ID, e.Type, e.Message)
-
 	switch e.Type {
 
 	case "ContainerStarted":
@@ -310,6 +300,9 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 
 	case "ContainerFailed":
 		_ = m.transition(context.Background(), inst, fsm.Failed, "ContainerFailed")
+
+	default:
+		_ = m.createContainerEvent(context.Background(), inst.ID, e.Type, e.Message)
 	}
 }
 
@@ -328,12 +321,32 @@ func (m *ContainerManager) transition(
 		return err
 	}
 
-	inst.Status = types.ContainerStatus(to)
-	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
-		return err
-	}
+	return m.repo.WithTransaction(ctx, func(tx interfaces.ContainerRepository) error {
+		inst.Status = types.ContainerStatus(to)
+		if err := tx.UpdateContainerInstance(ctx, inst); err != nil {
+			return err
+		}
 
-	return m.createContainerEvent(ctx, inst.ID, eventType, string(to))
+		domainEvent := &types.ContainerEvent{
+			ContainerInstanceID: inst.ID,
+			Event:               eventType,
+			Message:             string(to),
+		}
+		if err := tx.CreateContainerEvent(ctx, domainEvent); err != nil {
+			return err
+		}
+
+		payload, err := json.Marshal(domainEvent)
+		if err != nil {
+			return err
+		}
+
+		return tx.CreateOutboxEvent(ctx, &types.OutboxEvent{
+			Type:    eventType,
+			Payload: payload,
+			Status:  "pending",
+		})
+	})
 }
 
 func (m *ContainerManager) getRuntimeByName(name string) (containerruntime.Runtime, error) {

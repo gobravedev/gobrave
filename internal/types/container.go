@@ -248,6 +248,35 @@ type ContainerSpec struct {
 	WorkDir string
 }
 
+type OutboxEvent struct {
+	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+
+	Type string `json:"type" gorm:"type:varchar(128);index;not null"`
+
+	Payload datatypes.JSON `json:"payload" gorm:"type:json;not null"`
+
+	Status string `json:"status" gorm:"type:varchar(32);index;not null;default:pending"` // pending / sent
+
+	SentAt *time.Time `json:"sent_at"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (OutboxEvent) TableName() string {
+	return "go_outbox_event"
+}
+
+func (t *OutboxEvent) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	if t.Status == "" {
+		t.Status = "pending"
+	}
+	return nil
+}
+
 // type WorkflowRun struct {
 // 	ID uint64 `gorm:"primaryKey"`
 
