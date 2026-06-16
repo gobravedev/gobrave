@@ -25,16 +25,17 @@ import (
 
 type RouterParams struct {
 	dig.In
-	Config          *config.Config
-	UserService     interfaces.UserService
-	AuthHandler     *handler.AuthHandler
-	ProjectHandler  *handler.ProjectHandler
-	DataHandler     *handler.DataHandler
-	AnalysisHandler *handler.AnalysisHandler
-	WorkflowHandler *handler.WorkflowHandler
-	SheetHandler    *handler.SheetHandler
-	UploadHandler   *handler.UploadHandler
-	ProxyHandler    *handler.ProxyHandler
+	Config           *config.Config
+	UserService      interfaces.UserService
+	AuthHandler      *handler.AuthHandler
+	ProjectHandler   *handler.ProjectHandler
+	DataHandler      *handler.DataHandler
+	ContainerHandler *handler.ContainerHandler
+	AnalysisHandler  *handler.AnalysisHandler
+	WorkflowHandler  *handler.WorkflowHandler
+	SheetHandler     *handler.SheetHandler
+	UploadHandler    *handler.UploadHandler
+	ProxyHandler     *handler.ProxyHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -81,6 +82,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
 		RegisterDataRoutes(v1, params.DataHandler)
+		RegisterContainerRoutes(v1, params.ContainerHandler)
 		RegisterAnalysisRoutes(v1, params.AnalysisHandler)
 		RegisterWorkflowRoutes(v1, params.WorkflowHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
@@ -177,6 +179,20 @@ func RegisterDataRoutes(r *gin.RouterGroup, handler *handler.DataHandler) {
 	r.POST("/data/dataset-sample/update", handler.UpdateDatasetSample)
 	r.POST("/data/dataset-sample/delete", handler.DeleteDatasetSample)
 	r.GET("/data/dataset-sample/list", handler.ListDatasetSample)
+}
+
+func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandler) {
+	r.POST("/container/image/create", handler.CreateContainerImage)
+	r.GET("/container/image/get", handler.GetContainerImage)
+	r.POST("/container/image/update", handler.UpdateContainerImage)
+	r.POST("/container/image/delete", handler.DeleteContainerImage)
+	r.GET("/container/image/list", handler.ListContainerImage)
+
+	r.POST("/container/template/create", handler.CreateContainerTemplate)
+	r.GET("/container/template/get", handler.GetContainerTemplate)
+	r.POST("/container/template/update", handler.UpdateContainerTemplate)
+	r.POST("/container/template/delete", handler.DeleteContainerTemplate)
+	r.GET("/container/template/list", handler.ListContainerTemplate)
 }
 
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {

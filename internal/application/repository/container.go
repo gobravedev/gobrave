@@ -131,6 +131,14 @@ func (r *containerRepository) GetContainerInstanceByRuntimeID(ctx context.Contex
 	return item, nil
 }
 
+func (r *containerRepository) GetContainerInstanceByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) (*types.ContainerInstance, error) {
+	item := &types.ContainerInstance{}
+	if err := r.db.WithContext(ctx).Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).Order("id DESC").Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *containerRepository) UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
 	return r.db.WithContext(ctx).Model(&types.ContainerInstance{}).Where("id = ?", item.ID).Updates(item).Error
 }
