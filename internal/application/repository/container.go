@@ -1,0 +1,162 @@
+package repository
+
+import (
+	"context"
+
+	"github.com/gobravedev/gobrave/internal/types"
+	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"gorm.io/gorm"
+)
+
+type containerRepository struct {
+	db *gorm.DB
+}
+
+func NewContainerRepository(db *gorm.DB) interfaces.ContainerRepository {
+	return &containerRepository{db: db}
+}
+
+func (r *containerRepository) CreateContainerImage(ctx context.Context, item *types.ContainerImage) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) GetContainerImageByID(ctx context.Context, id int64) (*types.ContainerImage, error) {
+	item := &types.ContainerImage{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *containerRepository) UpdateContainerImage(ctx context.Context, item *types.ContainerImage) error {
+	return r.db.WithContext(ctx).Model(&types.ContainerImage{}).Where("id = ?", item.ID).Updates(item).Error
+}
+
+func (r *containerRepository) DeleteContainerImage(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.ContainerImage{}).Error
+}
+
+func (r *containerRepository) ListContainerImage(ctx context.Context) ([]*types.ContainerImage, error) {
+	items := make([]*types.ContainerImage, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *containerRepository) CreateContainerTemplate(ctx context.Context, item *types.ContainerTemplate) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) GetContainerTemplateByID(ctx context.Context, id int64) (*types.ContainerTemplate, error) {
+	item := &types.ContainerTemplate{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *containerRepository) UpdateContainerTemplate(ctx context.Context, item *types.ContainerTemplate) error {
+	return r.db.WithContext(ctx).Model(&types.ContainerTemplate{}).Where("id = ?", item.ID).Updates(item).Error
+}
+
+func (r *containerRepository) DeleteContainerTemplate(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.ContainerTemplate{}).Error
+}
+
+func (r *containerRepository) ListContainerTemplate(ctx context.Context) ([]*types.ContainerTemplate, error) {
+	items := make([]*types.ContainerTemplate, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *containerRepository) CreateAppSession(ctx context.Context, item *types.AppSession) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) GetAppSessionByID(ctx context.Context, id int64) (*types.AppSession, error) {
+	item := &types.AppSession{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *containerRepository) UpdateAppSession(ctx context.Context, item *types.AppSession) error {
+	return r.db.WithContext(ctx).Model(&types.AppSession{}).Where("id = ?", item.ID).Updates(item).Error
+}
+
+func (r *containerRepository) DeleteAppSession(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.AppSession{}).Error
+}
+
+func (r *containerRepository) ListAppSession(ctx context.Context) ([]*types.AppSession, error) {
+	items := make([]*types.AppSession, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *containerRepository) CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) GetContainerInstanceByID(ctx context.Context, id int64) (*types.ContainerInstance, error) {
+	item := &types.ContainerInstance{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *containerRepository) UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
+	return r.db.WithContext(ctx).Model(&types.ContainerInstance{}).Where("id = ?", item.ID).Updates(item).Error
+}
+
+func (r *containerRepository) DeleteContainerInstance(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.ContainerInstance{}).Error
+}
+
+func (r *containerRepository) ListContainerInstance(ctx context.Context) ([]*types.ContainerInstance, error) {
+	items := make([]*types.ContainerInstance, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *containerRepository) CreateContainerEvent(ctx context.Context, item *types.ContainerEvent) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *containerRepository) GetContainerEventByID(ctx context.Context, id int64) (*types.ContainerEvent, error) {
+	item := &types.ContainerEvent{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *containerRepository) UpdateContainerEvent(ctx context.Context, item *types.ContainerEvent) error {
+	return r.db.WithContext(ctx).Model(&types.ContainerEvent{}).Where("id = ?", item.ID).Updates(item).Error
+}
+
+func (r *containerRepository) DeleteContainerEvent(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.ContainerEvent{}).Error
+}
+
+func (r *containerRepository) ListContainerEvent(ctx context.Context) ([]*types.ContainerEvent, error) {
+	items := make([]*types.ContainerEvent, 0)
+	err := r.db.WithContext(ctx).Order("id DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}

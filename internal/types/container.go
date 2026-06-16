@@ -236,6 +236,17 @@ func (t *ContainerEvent) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+type ContainerSpec struct {
+	Image   string
+	Command []string
+	Env     map[string]string
+
+	CPU    float64
+	Memory int64
+
+	WorkDir string
+}
+
 // type WorkflowRun struct {
 // 	ID uint64 `gorm:"primaryKey"`
 

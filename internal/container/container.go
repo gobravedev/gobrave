@@ -71,6 +71,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewDataRepository))
 	must(container.Provide(repository.NewAnalysisRepository))
 	must(container.Provide(repository.NewWorkflowRepository))
+	must(container.Provide(repository.NewContainerRepository))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
 	// must(container.Provide(repository.NewRSSSourceRepository))
