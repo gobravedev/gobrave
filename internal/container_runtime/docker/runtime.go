@@ -1,16 +1,34 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"math"
+	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/types"
 )
 
 type DockerRuntime struct {
 	handler containerruntime.RuntimeEventHandler
+
+	once    sync.Once
+	client  *client.Client
+	initErr error
+}
+
+func NewDockerRuntime() *DockerRuntime {
+	return &DockerRuntime{}
 }
 
 func (d *DockerRuntime) Name() string {
@@ -18,42 +36,325 @@ func (d *DockerRuntime) Name() string {
 }
 
 func (d *DockerRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (string, error) {
+	if spec == nil {
+		return "", errors.New("container spec is nil")
+	}
+	if strings.TrimSpace(spec.Image) == "" {
+		return "", errors.New("container image is required")
+	}
 
-	runtimeID := "docker-123" // mock
+	cli, err := d.getClient()
+	if err != nil {
+		return "", err
+	}
 
-	go func() {
-		if d.handler == nil {
-			return
+	resp, err := cli.ContainerCreate(ctx, d.toContainerConfig(spec), d.toHostConfig(spec), nil, nil, "")
+	if err != nil {
+		pullErr := d.pullImageIfNeeded(ctx, cli, spec.Image)
+		if pullErr != nil {
+			return "", fmt.Errorf("create container: %w", err)
 		}
 
-		d.handler.OnEvent(containerruntime.RuntimeEvent{
+		resp, err = cli.ContainerCreate(ctx, d.toContainerConfig(spec), d.toHostConfig(spec), nil, nil, "")
+		if err != nil {
+			return "", fmt.Errorf("create container after pull: %w", err)
+		}
+	}
 
-			Type:      "ContainerStarted",
-			RuntimeID: runtimeID,
-		})
-	}()
-
-	return runtimeID, nil
+	return d.toRuntimeID(resp.ID), nil
 }
 
-func (d *DockerRuntime) Start(ctx context.Context, id string) error  { return nil }
-func (d *DockerRuntime) Stop(ctx context.Context, id string) error   { return nil }
-func (d *DockerRuntime) Pause(ctx context.Context, id string) error  { return nil }
-func (d *DockerRuntime) Resume(ctx context.Context, id string) error { return nil }
-func (d *DockerRuntime) Delete(ctx context.Context, id string) error { return nil }
+func (d *DockerRuntime) Start(ctx context.Context, id string) error {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("start container %s: %w", containerID, err)
+	}
+
+	d.emitEvent("ContainerStarted", id, "")
+	return nil
+}
+
+func (d *DockerRuntime) Stop(ctx context.Context, id string) error {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if err := cli.ContainerStop(ctx, containerID, container.StopOptions{}); err != nil {
+		return fmt.Errorf("stop container %s: %w", containerID, err)
+	}
+
+	return nil
+}
+
+func (d *DockerRuntime) Pause(ctx context.Context, id string) error {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if err := cli.ContainerPause(ctx, containerID); err != nil {
+		return fmt.Errorf("pause container %s: %w", containerID, err)
+	}
+
+	d.emitEvent("ContainerPaused", id, "")
+	return nil
+}
+
+func (d *DockerRuntime) Resume(ctx context.Context, id string) error {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if err := cli.ContainerUnpause(ctx, containerID); err != nil {
+		return fmt.Errorf("resume container %s: %w", containerID, err)
+	}
+
+	d.emitEvent("ContainerResumed", id, "")
+	return nil
+}
+
+func (d *DockerRuntime) Delete(ctx context.Context, id string) error {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if err := cli.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+		return fmt.Errorf("delete container %s: %w", containerID, err)
+	}
+
+	return nil
+}
 
 func (d *DockerRuntime) Logs(ctx context.Context, id string, tail int) (string, error) {
 	if tail <= 0 {
 		tail = 200
 	}
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return "", err
+	}
 
-	return fmt.Sprintf("[docker runtime mock] logs for %s (tail=%d)", id, tail), nil
+	cli, err := d.getClient()
+	if err != nil {
+		return "", err
+	}
+
+	r, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       strconv.Itoa(tail),
+	})
+	if err != nil {
+		return "", fmt.Errorf("get logs for %s: %w", containerID, err)
+	}
+	defer r.Close()
+
+	var out bytes.Buffer
+	if _, err := stdcopy.StdCopy(&out, &out, r); err != nil {
+		return "", fmt.Errorf("decode logs for %s: %w", containerID, err)
+	}
+
+	return out.String(), nil
 }
 
 func (d *DockerRuntime) Exec(ctx context.Context, id string, cmd []string) (string, error) {
-	return fmt.Sprintf("[docker runtime mock] exec on %s: %s", id, strings.Join(cmd, " ")), nil
+	if len(cmd) == 0 {
+		return "", errors.New("exec command is required")
+	}
+
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return "", err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return "", err
+	}
+
+	execResp, err := cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create exec for %s: %w", containerID, err)
+	}
+
+	attach, err := cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return "", fmt.Errorf("attach exec for %s: %w", containerID, err)
+	}
+	defer attach.Close()
+
+	var out bytes.Buffer
+	if _, err := stdcopy.StdCopy(&out, &out, attach.Reader); err != nil {
+		return "", fmt.Errorf("read exec output for %s: %w", containerID, err)
+	}
+
+	inspect, err := cli.ContainerExecInspect(ctx, execResp.ID)
+	if err != nil {
+		return "", fmt.Errorf("inspect exec for %s: %w", containerID, err)
+	}
+	if inspect.ExitCode != 0 {
+		return out.String(), fmt.Errorf("exec on %s exited with code %d", containerID, inspect.ExitCode)
+	}
+
+	return out.String(), nil
+}
+
+func (d *DockerRuntime) Inspect(ctx context.Context, id string) (*containerruntime.RuntimeInspection, error) {
+	containerID, err := d.toContainerID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("inspect container %s: %w", containerID, err)
+	}
+
+	ip := ""
+	if info.NetworkSettings != nil {
+		ip = strings.TrimSpace(info.NetworkSettings.IPAddress)
+		if ip == "" {
+			for _, nw := range info.NetworkSettings.Networks {
+				if nw == nil {
+					continue
+				}
+				ip = strings.TrimSpace(nw.IPAddress)
+				if ip != "" {
+					break
+				}
+			}
+		}
+	}
+
+	return &containerruntime.RuntimeInspection{IPAddress: ip}, nil
 }
 
 func (d *DockerRuntime) SetEventHandler(h containerruntime.RuntimeEventHandler) {
 	d.handler = h
+}
+
+func (d *DockerRuntime) getClient() (*client.Client, error) {
+	d.once.Do(func() {
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err != nil {
+			d.initErr = fmt.Errorf("init docker client: %w", err)
+			return
+		}
+		d.client = cli
+	})
+
+	if d.initErr != nil {
+		return nil, d.initErr
+	}
+	if d.client == nil {
+		return nil, errors.New("docker client is not initialized")
+	}
+
+	return d.client, nil
+}
+
+func (d *DockerRuntime) pullImageIfNeeded(ctx context.Context, cli *client.Client, imageName string) error {
+	r, err := cli.ImagePull(ctx, imageName, image.PullOptions{})
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	_, _ = io.Copy(io.Discard, r)
+	return nil
+}
+
+func (d *DockerRuntime) toContainerConfig(spec *types.ContainerSpec) *container.Config {
+	env := make([]string, 0, len(spec.Env))
+	for key, value := range spec.Env {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return &container.Config{
+		Image:      spec.Image,
+		Cmd:        spec.Command,
+		WorkingDir: spec.WorkDir,
+		Env:        env,
+	}
+}
+
+func (d *DockerRuntime) toHostConfig(spec *types.ContainerSpec) *container.HostConfig {
+	resources := container.Resources{}
+	if spec.Memory > 0 {
+		resources.Memory = spec.Memory
+	}
+	if spec.CPU > 0 {
+		nanoCPUs := int64(math.Round(spec.CPU * 1e9))
+		if nanoCPUs > 0 {
+			resources.NanoCPUs = nanoCPUs
+		}
+	}
+
+	return &container.HostConfig{Resources: resources}
+}
+
+func (d *DockerRuntime) toContainerID(runtimeID string) (string, error) {
+	id := strings.TrimSpace(runtimeID)
+	id = strings.TrimPrefix(id, d.Name()+"-")
+	if id == "" {
+		return "", errors.New("runtime id is required")
+	}
+	return id, nil
+}
+
+func (d *DockerRuntime) toRuntimeID(containerID string) string {
+	return d.Name() + "-" + strings.TrimSpace(containerID)
+}
+
+func (d *DockerRuntime) emitEvent(eventType string, runtimeID string, message string) {
+	if d.handler == nil {
+		return
+	}
+
+	d.handler.OnEvent(containerruntime.RuntimeEvent{
+		Type:      eventType,
+		RuntimeID: runtimeID,
+		Message:   message,
+	})
 }

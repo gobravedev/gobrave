@@ -28,6 +28,17 @@ type Runtime interface {
 	Exec(ctx context.Context, runtimeID string, cmd []string) (string, error)
 }
 
+// RuntimeInspection carries runtime-specific inspect data used by manager/service.
+type RuntimeInspection struct {
+	IPAddress string
+}
+
+// RuntimeInspector is an optional extension interface. Implementations can expose
+// inspect metadata (such as container internal IP) without forcing all runtimes.
+type RuntimeInspector interface {
+	Inspect(ctx context.Context, runtimeID string) (*RuntimeInspection, error)
+}
+
 type RuntimeEvent struct {
 	Type      string
 	RuntimeID string

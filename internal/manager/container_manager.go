@@ -11,6 +11,7 @@ import (
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/fsm"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
@@ -114,6 +115,7 @@ func (m *ContainerManager) CreateByTemplate(
 		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
 		return nil, err
 	}
+	m.syncInstanceIPAddress(ctx, rt, inst)
 
 	now := time.Now()
 	inst.StartedAt = &now
@@ -136,6 +138,7 @@ func (m *ContainerManager) Start(ctx context.Context, id int64) error {
 		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
 		return err
 	}
+	m.syncInstanceIPAddress(ctx, rt, inst)
 
 	now := time.Now()
 	inst.StartedAt = &now
@@ -287,6 +290,9 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 		now := time.Now()
 		inst.StartedAt = &now
 		inst.FinishedAt = nil
+		if rt, rtErr := m.getRuntimeByInstance(inst); rtErr == nil {
+			m.syncInstanceIPAddress(context.Background(), rt, inst)
+		}
 		_ = m.transition(context.Background(), inst, fsm.Running, "ContainerStarted")
 
 	case "ContainerPaused":
@@ -296,6 +302,9 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 		now := time.Now()
 		inst.StartedAt = &now
 		inst.FinishedAt = nil
+		if rt, rtErr := m.getRuntimeByInstance(inst); rtErr == nil {
+			m.syncInstanceIPAddress(context.Background(), rt, inst)
+		}
 		_ = m.transition(context.Background(), inst, fsm.Running, "ContainerResumed")
 
 	case "ContainerFailed":
@@ -405,6 +414,36 @@ func parseCommand(raw string) []string {
 		return nil
 	}
 	return strings.Fields(cmd)
+}
+
+func (m *ContainerManager) syncInstanceIPAddress(ctx context.Context, rt containerruntime.Runtime, inst *types.ContainerInstance) {
+	if inst == nil || rt == nil {
+		return
+	}
+
+	inspector, ok := rt.(containerruntime.RuntimeInspector)
+	if !ok {
+		return
+	}
+
+	inspection, err := inspector.Inspect(ctx, inst.RuntimeID)
+	if err != nil {
+		logger.Warnf(ctx, "[ContainerManager] inspect runtime ip failed, instance_id=%d err=%v", inst.ID, err)
+		return
+	}
+	if inspection == nil {
+		return
+	}
+
+	ip := strings.TrimSpace(inspection.IPAddress)
+	if ip == "" || ip == inst.IPAddress {
+		return
+	}
+
+	inst.IPAddress = ip
+	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
+		logger.Warnf(ctx, "[ContainerManager] persist runtime ip failed, instance_id=%d ip=%s err=%v", inst.ID, ip, err)
+	}
 }
 
 func parseEnv(raw []byte) map[string]string {

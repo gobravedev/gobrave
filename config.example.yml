@@ -25,6 +25,17 @@ proxy:
   container: http://localhost:8089
   onlyoffice: http://localhost:8080
 
+route:
+  # gateway | traefik
+  registry: gateway
+  traefik:
+    # when route.registry=traefik, set your provider API base url
+    base_url: http://localhost:8080
+    upsert_path: /api/providers/http/routes/{route_key}
+    delete_path: /api/providers/http/routes/{route_key}
+    auth_token: ""
+    timeout_second: 5
+
 storage:
   # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。
   # 留空时默认使用“可执行文件所在目录/images”。

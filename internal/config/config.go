@@ -17,6 +17,7 @@ type Config struct {
 	Database *DatabaseConfig `yaml:"database" json:"database"`
 	Feed     *FeedConfig     `yaml:"feed"     json:"feed"`
 	Proxy    *ProxyConfig    `yaml:"proxy"    json:"proxy"`
+	Route    *RouteConfig    `yaml:"route"    json:"route"`
 	Storage  *StorageConfig  `yaml:"storage"  json:"storage"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
@@ -32,6 +33,19 @@ type ProxyConfig struct {
 	BraveAPI   string `yaml:"brave_api" json:"brave_api"`
 	Container  string `yaml:"container" json:"container"`
 	OnlyOffice string `yaml:"onlyoffice" json:"onlyoffice"`
+}
+
+type RouteConfig struct {
+	Registry string              `yaml:"registry" json:"registry"`
+	Traefik  *TraefikRouteConfig `yaml:"traefik"  json:"traefik"`
+}
+
+type TraefikRouteConfig struct {
+	BaseURL       string `yaml:"base_url"        json:"base_url"`
+	UpsertPath    string `yaml:"upsert_path"     json:"upsert_path"`
+	DeletePath    string `yaml:"delete_path"     json:"delete_path"`
+	AuthToken     string `yaml:"auth_token"      json:"auth_token"`
+	TimeoutSecond int    `yaml:"timeout_second"  json:"timeout_second"`
 }
 
 // ServerConfig 服务器配置
@@ -118,6 +132,16 @@ func LoadConfig() (*Config, error) {
 			Container:  "http://localhost:8089",
 			OnlyOffice: "http://localhost:8080",
 		},
+		Route: &RouteConfig{
+			Registry: "gateway",
+			Traefik: &TraefikRouteConfig{
+				BaseURL:       "",
+				UpsertPath:    "/api/providers/http/routes/{route_key}",
+				DeletePath:    "/api/providers/http/routes/{route_key}",
+				AuthToken:     "",
+				TimeoutSecond: 5,
+			},
+		},
 		Storage: &StorageConfig{
 			ImageDir: "",
 			BaseDir:  "",
@@ -159,6 +183,25 @@ func LoadConfig() (*Config, error) {
 		cfg.Storage = &StorageConfig{ImageDir: ""}
 	} else if strings.TrimSpace(cfg.Storage.ImageDir) == "" {
 		cfg.Storage.ImageDir = ""
+	}
+
+	if cfg.Route == nil {
+		cfg.Route = &RouteConfig{Registry: "gateway"}
+	}
+	if strings.TrimSpace(cfg.Route.Registry) == "" {
+		cfg.Route.Registry = "gateway"
+	}
+	if cfg.Route.Traefik == nil {
+		cfg.Route.Traefik = &TraefikRouteConfig{}
+	}
+	if cfg.Route.Traefik.TimeoutSecond <= 0 {
+		cfg.Route.Traefik.TimeoutSecond = 5
+	}
+	if strings.TrimSpace(cfg.Route.Traefik.UpsertPath) == "" {
+		cfg.Route.Traefik.UpsertPath = "/api/providers/http/routes/{route_key}"
+	}
+	if strings.TrimSpace(cfg.Route.Traefik.DeletePath) == "" {
+		cfg.Route.Traefik.DeletePath = "/api/providers/http/routes/{route_key}"
 	}
 
 	TENANT_AES_KEY := cfg.Tenant.AesKey

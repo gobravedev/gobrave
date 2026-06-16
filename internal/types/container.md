@@ -1490,3 +1490,105 @@ AppSession FSM + Container FSM 联动模型
 AppSession → WorkflowSession 统一抽象
 或者 
 K8s 化设计（类似 Argo Workflows）
+
+
+
+                    AppSessionService
+                           │
+                           ▼
+                    ContainerManager
+                           │
+                           ▼
+                     Runtime(Docker/K8s)
+                           │
+                           ▼
+                  只负责启动应用并返回
+                backend(host、port、containerID)
+                           │
+                           ▼
+                  AppSession（持久化）
+                           │
+                           ▼
+                    Outbox + EventBus
+                           │
+                           ▼
+                     RouteRegistry
+                           │
+                           ▼
+             Traefik API / File Provider
+                           │
+                           ▼
+                /apps/{session_id} → backend
+
+
+
+
+
+                          AppSessionService
+                  │
+                  ▼
+          ContainerManager
+                  │
+                  ▼
+      ┌─────────────────────┐
+      │  DB Transaction      │
+      │─────────────────────│
+      │ Save AppSession      │
+      │ Save Container       │
+      │ Save Outbox          │
+      └─────────────────────┘
+                  │
+                  ▼
+          OutboxDispatcher
+                  │
+                  ▼
+      DomainEventBus.Publish()
+                  │
+      ┌───────────┼───────────────┐
+      ▼           ▼               ▼
+RouteRegistry   Audit         Monitor
+      │
+      ▼
+ Register / Update / Remove
+      │
+      ▼
+ Traefik API
+                  │
+                  ▼
+      IntegrationBridge（可选）
+                  │
+                  ▼
+      IntegrationEventBus
+                  │
+      ┌───────────┼───────────────┐
+      ▼           ▼               ▼
+     SSE      WebSocket      Notification
+
+
+
+
+                  ▼
+          OutboxDispatcher
+                  │
+                  ▼
+                         DomainEventBus 
+                           │
+                           ▼
+                RouteRegistryHandler
+                           │
+                           ▼
+                   RouteRegistry(接口)
+                           │
+          ┌────────────────┼─────────────────┐
+          │                │                 │
+          ▼                ▼                 ▼
+  GatewayRegistry   TraefikRegistry   CompositeRegistry
+          │                │
+          ▼                ▼
+    Go Gateway        Traefik API/File
+
+
+
+    在 Docker runtime/manager 启动后补充容器 inspect，把容器内 IPAddress 回写到 ContainerInstance。
+实现 TraefikRegistry（先 API Provider，再扩展 File Provider）。
+实现 CompositeRegistry，把 GatewayRegistry 和 TraefikRegistry 组合起来，支持双写或按配置切换。

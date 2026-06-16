@@ -23,6 +23,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/manager"
+	"github.com/gobravedev/gobrave/internal/route"
 	"github.com/gobravedev/gobrave/internal/router"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -49,6 +50,11 @@ func must(err error) {
 	}
 }
 
+type eventHandlerGroupIn struct {
+	dig.In
+	Handlers []event.Handler `group:"event_handlers"`
+}
+
 func BuildContainer(container *dig.Container) *dig.Container {
 	ctx := context.Background()
 	logger.Debugf(ctx, "[Container] Starting container initialization...")
@@ -59,7 +65,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(func() event.Bus { return event.NewMemoryBus() }))
 	must(container.Provide(containerruntime.NewRegistry))
 	must(container.Invoke(func(reg *containerruntime.Registry) {
-		rt := &dockerruntime.DockerRuntime{}
+		rt := dockerruntime.NewDockerRuntime()
 		reg.Register(rt.Name(), rt)
 	}))
 
@@ -84,6 +90,41 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewContainerRepository))
 	must(container.Provide(manager.NewContainerManager))
 	must(container.Provide(manager.NewOutboxDispatcher))
+	must(container.Provide(func(cfg *config.Config) (route.RouteRegistry, error) {
+		if cfg == nil || cfg.Route == nil {
+			return route.NewGatewayRegistry(), nil
+		}
+
+		registryName := strings.ToLower(strings.TrimSpace(cfg.Route.Registry))
+		switch registryName {
+		case "", "gateway":
+			return route.NewGatewayRegistry(), nil
+		case "traefik":
+			traefikCfg := cfg.Route.Traefik
+			if traefikCfg == nil {
+				return nil, fmt.Errorf("route.traefik config is required when route.registry=traefik")
+			}
+
+			reg, err := route.NewTraefikRegistry(route.TraefikRegistryConfig{
+				BaseURL:    traefikCfg.BaseURL,
+				UpsertPath: traefikCfg.UpsertPath,
+				DeletePath: traefikCfg.DeletePath,
+				AuthToken:  traefikCfg.AuthToken,
+				Timeout:    time.Duration(traefikCfg.TimeoutSecond) * time.Second,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return reg, nil
+		default:
+			return nil, fmt.Errorf("unsupported route registry: %s", cfg.Route.Registry)
+		}
+	}))
+	must(container.Provide(
+		route.NewRouteRegistryHandler,
+		dig.As(new(event.Handler)),
+		dig.Group("event_handlers"),
+	))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
 	// must(container.Provide(repository.NewRSSSourceRepository))
@@ -167,6 +208,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(mgr *manager.ContainerManager, reg *containerruntime.Registry) {
 		for _, rt := range reg.List() {
 			rt.SetEventHandler(mgr)
+		}
+	}))
+	must(container.Invoke(func(bus event.Bus, in eventHandlerGroupIn) {
+		for _, h := range in.Handlers {
+			bus.Subscribe(h)
 		}
 	}))
 	must(container.Invoke(manager.RunOutboxDispatcher))
