@@ -21,3 +21,9 @@ type RouteRegistry interface {
 	UpsertRoute(ctx context.Context, route Registration) error
 	DeleteRoute(ctx context.Context, routeKey string) error
 }
+
+// PathRouteResolver resolves an incoming request path to a registered route.
+// matchedPrefix is the path prefix bound to the resolved backend.
+type PathRouteResolver interface {
+	ResolveByPath(path string) (route Registration, matchedPrefix string, ok bool)
+}

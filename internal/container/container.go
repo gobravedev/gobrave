@@ -90,15 +90,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewContainerRepository))
 	must(container.Provide(manager.NewContainerManager))
 	must(container.Provide(manager.NewOutboxDispatcher))
-	must(container.Provide(func(cfg *config.Config) (route.RouteRegistry, error) {
+	must(container.Provide(func(cfg *config.Config, db *gorm.DB) (route.RouteRegistry, error) {
 		if cfg == nil || cfg.Route == nil {
-			return route.NewGatewayRegistry(), nil
+			return route.NewGatewayRegistry(db)
 		}
 
 		registryName := strings.ToLower(strings.TrimSpace(cfg.Route.Registry))
 		switch registryName {
 		case "", "gateway":
-			return route.NewGatewayRegistry(), nil
+			return route.NewGatewayRegistry(db)
 		case "traefik":
 			traefikCfg := cfg.Route.Traefik
 			if traefikCfg == nil {
@@ -360,6 +360,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.AppSession{},
 		&types.ContainerInstance{},
 		&types.ContainerEvent{},
+		&types.GatewayRoute{},
 		&types.OutboxEvent{},
 	// &types.Trace{},
 	// &types.RSSSource{},

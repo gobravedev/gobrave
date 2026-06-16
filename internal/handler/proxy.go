@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/config"
+	"github.com/gobravedev/gobrave/internal/route"
 )
 
 const (
@@ -21,9 +24,10 @@ type ProxyHandler struct {
 	braveAPIProxy   *httputil.ReverseProxy
 	containerProxy  *httputil.ReverseProxy
 	onlyOfficeProxy *httputil.ReverseProxy
+	pathResolver    route.PathRouteResolver
 }
 
-func NewProxyHandler(cfg *config.Config) (*ProxyHandler, error) {
+func NewProxyHandler(cfg *config.Config, registry route.RouteRegistry) (*ProxyHandler, error) {
 	braveAPITarget := defaultBraveAPITarget
 	containerTarget := defaultContainerTarget
 	onlyOfficeTarget := defaultOnlyOfficeTarget
@@ -52,10 +56,16 @@ func NewProxyHandler(cfg *config.Config) (*ProxyHandler, error) {
 		return nil, err
 	}
 
+	var resolver route.PathRouteResolver
+	if v, ok := registry.(route.PathRouteResolver); ok {
+		resolver = v
+	}
+
 	return &ProxyHandler{
 		braveAPIProxy:   braveAPIProxy,
 		containerProxy:  containerProxy,
 		onlyOfficeProxy: onlyOfficeProxy,
+		pathResolver:    resolver,
 	}, nil
 }
 
@@ -282,6 +292,36 @@ func (h *ProxyHandler) BraveAPIProxy(c *gin.Context) {
 
 func (h *ProxyHandler) ContainerProxy(c *gin.Context) {
 	h.containerProxy.ServeHTTP(c.Writer, c.Request)
+	c.Abort()
+}
+
+func (h *ProxyHandler) AppSessionProxy(c *gin.Context) {
+	if h.pathResolver == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "app route resolver is not enabled"})
+		c.Abort()
+		return
+	}
+
+	reg, matchedPrefix, ok := h.pathResolver.ResolveByPath(c.Request.URL.Path)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "app route not found"})
+		c.Abort()
+		return
+	}
+
+	target := fmt.Sprintf("http://%s:%d", strings.TrimSpace(reg.Backend.Host), reg.Backend.Port)
+	proxy, err := buildReverseProxy(target)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "invalid app backend target"})
+		c.Abort()
+		return
+	}
+
+	trimProxyPrefix(c.Request, matchedPrefix)
+	c.Request.Header.Set("X-Gateway-Route-Key", reg.RouteKey)
+	c.Request.Header.Set("X-Gateway-Backend", net.JoinHostPort(reg.Backend.Host, strconv.Itoa(reg.Backend.Port)))
+
+	proxy.ServeHTTP(c.Writer, c.Request)
 	c.Abort()
 }
 

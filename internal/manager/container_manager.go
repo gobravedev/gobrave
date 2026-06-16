@@ -325,12 +325,22 @@ func (m *ContainerManager) transition(
 		return errors.New("container instance is nil")
 	}
 
-	f := &fsm.FSM{}
-	if err := f.Transition(fsm.State(inst.Status), to); err != nil {
-		return err
-	}
-
 	return m.repo.WithTransaction(ctx, func(tx interfaces.ContainerRepository) error {
+		latest, err := tx.GetContainerInstanceByID(ctx, inst.ID)
+		if err != nil {
+			return err
+		}
+
+		if latest.Status == types.ContainerStatus(to) {
+			inst.Status = latest.Status
+			return nil
+		}
+
+		f := &fsm.FSM{}
+		if err := f.Transition(fsm.State(latest.Status), to); err != nil {
+			return err
+		}
+
 		inst.Status = types.ContainerStatus(to)
 		if err := tx.UpdateContainerInstance(ctx, inst); err != nil {
 			return err

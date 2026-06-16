@@ -2,43 +2,248 @@ package route
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gobravedev/gobrave/internal/logger"
+	"github.com/gobravedev/gobrave/internal/types"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
-// GatewayRegistry is a lightweight placeholder implementation.
-// It keeps integration points stable before concrete gateway/traefik adapters land.
-type GatewayRegistry struct{}
+// GatewayRegistry keeps route-to-backend mapping for the in-process gateway.
+// It is database-backed so mappings survive process restarts.
+type GatewayRegistry struct {
+	mu          sync.RWMutex
+	db          *gorm.DB
+	routesByKey map[string]Registration
+	keyByPrefix map[string]string
+	prefixes    []string
+}
 
-func NewGatewayRegistry() *GatewayRegistry {
-	return &GatewayRegistry{}
+func NewGatewayRegistry(db *gorm.DB) (*GatewayRegistry, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db is required")
+	}
+
+	r := &GatewayRegistry{
+		db:          db,
+		routesByKey: make(map[string]Registration),
+		keyByPrefix: make(map[string]string),
+		prefixes:    make([]string, 0),
+	}
+
+	if err := r.db.AutoMigrate(&types.GatewayRoute{}); err != nil {
+		return nil, err
+	}
+
+	if err := r.loadFromDB(); err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+func (r *GatewayRegistry) ResolveByPath(path string) (Registration, string, bool) {
+	normalizedPath := normalizePath(path)
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, prefix := range r.prefixes {
+		if pathHasPrefix(normalizedPath, prefix) {
+			key := r.keyByPrefix[prefix]
+			reg, ok := r.routesByKey[key]
+			if ok {
+				return reg, prefix, true
+			}
+		}
+	}
+
+	return Registration{}, "", false
 }
 
 func (r *GatewayRegistry) UpsertRoute(ctx context.Context, route Registration) error {
-	if strings.TrimSpace(route.RouteKey) == "" {
-		return fmt.Errorf("route key is required")
-	}
-	if strings.TrimSpace(route.PathPrefix) == "" {
-		return fmt.Errorf("path prefix is required")
-	}
-	if strings.TrimSpace(route.Backend.Host) == "" {
-		return fmt.Errorf("backend host is required")
-	}
-	if route.Backend.Port <= 0 || route.Backend.Port > 65535 {
-		return fmt.Errorf("invalid backend port: %d", route.Backend.Port)
+	cleaned, err := sanitizeRegistration(route)
+	if err != nil {
+		return err
 	}
 
-	logger.Infof(ctx, "[GatewayRegistry] upsert route key=%s prefix=%s backend=%s:%d", route.RouteKey, route.PathPrefix, route.Backend.Host, route.Backend.Port)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if existingKey, exists := r.keyByPrefix[cleaned.PathPrefix]; exists && existingKey != cleaned.RouteKey {
+		return fmt.Errorf("path prefix already registered: %s (owned by %s)", cleaned.PathPrefix, existingKey)
+	}
+
+	if old, exists := r.routesByKey[cleaned.RouteKey]; exists && old.PathPrefix != cleaned.PathPrefix {
+		delete(r.keyByPrefix, old.PathPrefix)
+	}
+
+	r.routesByKey[cleaned.RouteKey] = cleaned
+	r.keyByPrefix[cleaned.PathPrefix] = cleaned.RouteKey
+	r.rebuildPrefixIndex()
+
+	if err := r.upsertRouteLocked(ctx, cleaned); err != nil {
+		// rollback in-memory mutation to keep cache consistent with DB.
+		r.rebuildFromDBLocked(ctx)
+		return err
+	}
+
+	logger.Infof(ctx, "[GatewayRegistry] upsert route key=%s prefix=%s backend=%s:%d", cleaned.RouteKey, cleaned.PathPrefix, cleaned.Backend.Host, cleaned.Backend.Port)
 	return nil
 }
 
 func (r *GatewayRegistry) DeleteRoute(ctx context.Context, routeKey string) error {
-	if strings.TrimSpace(routeKey) == "" {
+	routeKey = strings.TrimSpace(routeKey)
+	if routeKey == "" {
 		return fmt.Errorf("route key is required")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if old, exists := r.routesByKey[routeKey]; exists {
+		delete(r.routesByKey, routeKey)
+		delete(r.keyByPrefix, old.PathPrefix)
+		r.rebuildPrefixIndex()
+	}
+
+	if err := r.deleteRouteLocked(ctx, routeKey); err != nil {
+		r.rebuildFromDBLocked(ctx)
+		return err
 	}
 
 	logger.Infof(ctx, "[GatewayRegistry] delete route key=%s", routeKey)
 	return nil
+}
+
+func (r *GatewayRegistry) loadFromDB() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.rebuildFromDBLocked(context.Background())
+}
+
+func (r *GatewayRegistry) rebuildFromDBLocked(ctx context.Context) error {
+	var rows []types.GatewayRoute
+	if err := r.db.WithContext(ctx).Find(&rows).Error; err != nil {
+		return err
+	}
+
+	r.routesByKey = make(map[string]Registration, len(rows))
+	r.keyByPrefix = make(map[string]string, len(rows))
+	r.prefixes = r.prefixes[:0]
+
+	for _, row := range rows {
+		reg := Registration{
+			RouteKey:   row.RouteKey,
+			PathPrefix: row.PathPrefix,
+			Backend: Backend{
+				Host: row.BackendHost,
+				Port: row.BackendPort,
+			},
+		}
+		if len(row.Metadata) > 0 {
+			_ = json.Unmarshal(row.Metadata, &reg.Metadata)
+		}
+
+		cleaned, err := sanitizeRegistration(reg)
+		if err != nil {
+			logger.Warnf(ctx, "[GatewayRegistry] skip invalid db route route_key=%s err=%v", row.RouteKey, err)
+			continue
+		}
+
+		r.routesByKey[cleaned.RouteKey] = cleaned
+		r.keyByPrefix[cleaned.PathPrefix] = cleaned.RouteKey
+	}
+	r.rebuildPrefixIndex()
+
+	return nil
+}
+
+func (r *GatewayRegistry) upsertRouteLocked(ctx context.Context, route Registration) error {
+	if owner, exists := r.keyByPrefix[route.PathPrefix]; exists && owner != route.RouteKey {
+		return fmt.Errorf("path prefix already registered: %s (owned by %s)", route.PathPrefix, owner)
+	}
+
+	metadata := datatypes.JSON([]byte("{}"))
+	if len(route.Metadata) > 0 {
+		data, err := json.Marshal(route.Metadata)
+		if err != nil {
+			return err
+		}
+		metadata = datatypes.JSON(data)
+	}
+
+	entity := &types.GatewayRoute{
+		RouteKey:    route.RouteKey,
+		PathPrefix:  route.PathPrefix,
+		BackendHost: route.Backend.Host,
+		BackendPort: route.Backend.Port,
+		Metadata:    metadata,
+	}
+
+	if err := r.db.WithContext(ctx).Save(entity).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *GatewayRegistry) deleteRouteLocked(ctx context.Context, routeKey string) error {
+	return r.db.WithContext(ctx).Where("route_key = ?", routeKey).Delete(&types.GatewayRoute{}).Error
+}
+
+func (r *GatewayRegistry) rebuildPrefixIndex() {
+	r.prefixes = r.prefixes[:0]
+	for prefix := range r.keyByPrefix {
+		r.prefixes = append(r.prefixes, prefix)
+	}
+
+	sort.Slice(r.prefixes, func(i, j int) bool {
+		if len(r.prefixes[i]) == len(r.prefixes[j]) {
+			return r.prefixes[i] < r.prefixes[j]
+		}
+		return len(r.prefixes[i]) > len(r.prefixes[j])
+	})
+}
+
+func sanitizeRegistration(route Registration) (Registration, error) {
+	route.RouteKey = strings.TrimSpace(route.RouteKey)
+	route.PathPrefix = normalizePath(strings.TrimSpace(route.PathPrefix))
+	route.Backend.Host = strings.TrimSpace(route.Backend.Host)
+
+	if err := validateRegistration(route); err != nil {
+		return Registration{}, err
+	}
+
+	return route, nil
+}
+
+func normalizePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if path != "/" {
+		path = strings.TrimRight(path, "/")
+		if path == "" {
+			path = "/"
+		}
+	}
+	return path
+}
+
+func pathHasPrefix(path string, prefix string) bool {
+	if prefix == "/" {
+		return strings.HasPrefix(path, "/")
+	}
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }

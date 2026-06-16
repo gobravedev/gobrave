@@ -119,7 +119,11 @@ func (r *TraefikRegistry) UpsertRoute(ctx context.Context, route Registration) e
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("traefik upsert route failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		hint := ""
+		if resp.StatusCode == http.StatusNotFound {
+			hint = " (endpoint not found; check route.traefik.base_url and route.traefik.upsert_path, or switch route.registry=gateway if no writable Traefik provider API is deployed)"
+		}
+		return fmt.Errorf("traefik upsert route failed: method=%s url=%s status=%d body=%s%s", req.Method, req.URL.String(), resp.StatusCode, strings.TrimSpace(string(respBody)), hint)
 	}
 
 	logger.Infof(ctx, "[TraefikRegistry] upsert route key=%s prefix=%s backend=%s:%d", route.RouteKey, route.PathPrefix, route.Backend.Host, route.Backend.Port)
@@ -145,7 +149,11 @@ func (r *TraefikRegistry) DeleteRoute(ctx context.Context, routeKey string) erro
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("traefik delete route failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		hint := ""
+		if resp.StatusCode == http.StatusNotFound {
+			hint = " (endpoint not found; check route.traefik.base_url and route.traefik.delete_path, or switch route.registry=gateway if no writable Traefik provider API is deployed)"
+		}
+		return fmt.Errorf("traefik delete route failed: method=%s url=%s status=%d body=%s%s", req.Method, req.URL.String(), resp.StatusCode, strings.TrimSpace(string(respBody)), hint)
 	}
 
 	logger.Infof(ctx, "[TraefikRegistry] delete route key=%s", routeKey)

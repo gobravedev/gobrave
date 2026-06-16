@@ -28,6 +28,7 @@ proxy:
 route:
   # gateway | traefik
   registry: gateway
+  # gateway registry mapping persistence uses database table `go_gateway_route`
   traefik:
     # when route.registry=traefik, set your provider API base url
     base_url: http://localhost:8080

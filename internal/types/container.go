@@ -72,6 +72,7 @@ type ContainerTemplate struct {
 	Memory int64   `json:"memory"`
 
 	WorkDir string `json:"work_dir" gorm:"type:varchar(512)"`
+	Port    int    `json:"port" gorm:"not null;default:8787"`
 
 	Env       datatypes.JSON `json:"env" gorm:"type:json"`
 	Mounts    datatypes.JSON `json:"mounts" gorm:"type:json"`
@@ -235,6 +236,24 @@ func (t *ContainerEvent) BeforeCreate(_ *gorm.DB) error {
 		t.ID = utils.GenerateID()
 	}
 	return nil
+}
+
+type GatewayRoute struct {
+	RouteKey string `json:"route_key" gorm:"primaryKey;type:varchar(255)"`
+
+	PathPrefix string `json:"path_prefix" gorm:"type:varchar(512);not null;uniqueIndex"`
+
+	BackendHost string `json:"backend_host" gorm:"type:varchar(255);not null"`
+	BackendPort int    `json:"backend_port" gorm:"not null"`
+
+	Metadata datatypes.JSON `json:"metadata" gorm:"type:json"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (GatewayRoute) TableName() string {
+	return "go_gateway_route"
 }
 
 type ContainerSpec struct {

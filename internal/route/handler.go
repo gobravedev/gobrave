@@ -2,7 +2,6 @@ package route
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
-	"gorm.io/datatypes"
 )
 
 var _ event.Handler = (*RouteRegistryHandler)(nil)
@@ -40,7 +38,7 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 
 	switch ce.Event {
 	case "ContainerStarted", "ContainerResumed":
-		port := resolveBackendPort(tpl)
+		port := tpl.Port
 		if port == 0 {
 			logger.Warnf(ctx, "[RouteRegistryHandler] skip register route key=%s: unresolved backend port", routeKey)
 			return
@@ -100,62 +98,4 @@ func (h *RouteRegistryHandler) loadContext(ctx context.Context, containerInstanc
 
 	routeKey := fmt.Sprintf("app-session-%d", appSession.ID)
 	return routeKey, inst, appSession, tpl, nil
-}
-
-func resolveBackendPort(tpl *types.ContainerTemplate) int {
-	if tpl == nil {
-		return 0
-	}
-
-	keys := []string{"route_port", "app_port", "target_port", "container_port", "service_port", "port", "PORT", "APP_PORT"}
-	if p := pickPortFromJSON(tpl.Labels, keys...); p > 0 {
-		return p
-	}
-	if p := pickPortFromJSON(tpl.Env, keys...); p > 0 {
-		return p
-	}
-	return 8787
-}
-
-func pickPortFromJSON(raw datatypes.JSON, keys ...string) int {
-	if len(raw) == 0 {
-		return 0
-	}
-
-	obj := map[string]string{}
-	if err := json.Unmarshal(raw, &obj); err == nil {
-		for _, key := range keys {
-			if p := parsePort(obj[key]); p > 0 {
-				return p
-			}
-		}
-	}
-
-	list := []map[string]string{}
-	if err := json.Unmarshal(raw, &list); err == nil {
-		for _, item := range list {
-			for _, key := range keys {
-				if p := parsePort(item[key]); p > 0 {
-					return p
-				}
-			}
-		}
-	}
-
-	return 0
-}
-
-func parsePort(v string) int {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return 0
-	}
-	p, err := strconv.Atoi(v)
-	if err != nil {
-		return 0
-	}
-	if p <= 0 || p > 65535 {
-		return 0
-	}
-	return p
 }
