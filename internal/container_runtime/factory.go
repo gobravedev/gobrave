@@ -17,3 +17,11 @@ func (r *Registry) Register(name string, rt Runtime) {
 func (r *Registry) Get(name string) Runtime {
 	return r.runtimes[name]
 }
+
+func (r *Registry) List() []Runtime {
+	items := make([]Runtime, 0, len(r.runtimes))
+	for _, rt := range r.runtimes {
+		items = append(items, rt)
+	}
+	return items
+}

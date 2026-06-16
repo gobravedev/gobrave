@@ -27,6 +27,7 @@ type ContainerRepository interface {
 
 	CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error
 	GetContainerInstanceByID(ctx context.Context, id int64) (*types.ContainerInstance, error)
+	GetContainerInstanceByRuntimeID(ctx context.Context, runtimeID string) (*types.ContainerInstance, error)
 	UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error
 	DeleteContainerInstance(ctx context.Context, id int64) error
 	ListContainerInstance(ctx context.Context) ([]*types.ContainerInstance, error)

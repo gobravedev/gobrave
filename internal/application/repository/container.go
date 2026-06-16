@@ -115,6 +115,14 @@ func (r *containerRepository) GetContainerInstanceByID(ctx context.Context, id i
 	return item, nil
 }
 
+func (r *containerRepository) GetContainerInstanceByRuntimeID(ctx context.Context, runtimeID string) (*types.ContainerInstance, error) {
+	item := &types.ContainerInstance{}
+	if err := r.db.WithContext(ctx).Where("runtime_id = ?", runtimeID).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *containerRepository) UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
 	return r.db.WithContext(ctx).Model(&types.ContainerInstance{}).Where("id = ?", item.ID).Updates(item).Error
 }
