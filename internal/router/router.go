@@ -92,8 +92,12 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Any("/brave-api/*proxyPath", params.ProxyHandler.BraveAPIProxy)
 	r.Any("/container", params.ProxyHandler.ContainerProxy)
 	r.Any("/container/*proxyPath", params.ProxyHandler.ContainerProxy)
-	r.Any("/apps", params.ProxyHandler.AppSessionProxy)
-	r.Any("/apps/*proxyPath", params.ProxyHandler.AppSessionProxy)
+
+	r.Any("/apps", params.ProxyHandler.ContainerProxy)
+	r.Any("/apps/*proxyPath", params.ProxyHandler.ContainerProxy)
+
+	// r.Any("/apps", params.ProxyHandler.AppSessionProxy)
+	// r.Any("/apps/*proxyPath", params.ProxyHandler.AppSessionProxy)
 	r.NoRoute(params.ProxyHandler.FallbackProxy)
 	return r
 }
