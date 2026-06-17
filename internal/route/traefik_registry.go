@@ -7,26 +7,35 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/logger"
+	"github.com/goccy/go-yaml"
 )
 
 type TraefikRegistryConfig struct {
+	Provider   string
 	BaseURL    string
 	UpsertPath string
 	DeletePath string
 	AuthToken  string
 	Timeout    time.Duration
+	FilePath   string
 }
 
 type TraefikRegistry struct {
+	provider   string
 	baseURL    string
 	upsertPath string
 	deletePath string
 	authToken  string
+	filePath   string
+	fileMu     sync.Mutex
 	client     *http.Client
 }
 
@@ -40,8 +49,9 @@ type traefikRoutePayload struct {
 }
 
 type traefikHTTPConfig struct {
-	Router  traefikRouterConfig  `json:"router"`
-	Service traefikServiceConfig `json:"service"`
+	Router      traefikRouterConfig              `json:"router"`
+	Service     traefikServiceConfig             `json:"service"`
+	Middlewares map[string]traefikMiddlewareSpec `json:"middlewares,omitempty"`
 }
 
 type traefikRouterConfig struct {
@@ -49,6 +59,7 @@ type traefikRouterConfig struct {
 	Rule        string   `json:"rule"`
 	Service     string   `json:"service"`
 	EntryPoints []string `json:"entry_points"`
+	Middlewares []string `json:"middlewares,omitempty"`
 }
 
 type traefikServiceConfig struct {
@@ -64,10 +75,83 @@ type traefikServer struct {
 	URL string `json:"url"`
 }
 
+type traefikMiddlewareSpec struct {
+	StripPrefix *traefikStripPrefixConfig `json:"stripPrefix,omitempty"`
+	Headers     *traefikHeadersConfig     `json:"headers,omitempty"`
+}
+
+type traefikStripPrefixConfig struct {
+	Prefixes   []string `json:"prefixes"`
+	ForceSlash bool     `json:"forceSlash"`
+}
+
+type traefikHeadersConfig struct {
+	CustomRequestHeaders map[string]string `json:"customRequestHeaders,omitempty"`
+}
+
+type traefikFileConfig struct {
+	HTTP traefikFileHTTPConfig `yaml:"http"`
+}
+
+type traefikFileHTTPConfig struct {
+	Routers     map[string]traefikFileRouter     `yaml:"routers"`
+	Services    map[string]traefikFileService    `yaml:"services"`
+	Middlewares map[string]traefikFileMiddleware `yaml:"middlewares,omitempty"`
+}
+
+type traefikFileRouter struct {
+	Rule        string   `yaml:"rule"`
+	Service     string   `yaml:"service"`
+	EntryPoints []string `yaml:"entryPoints"`
+	Middlewares []string `yaml:"middlewares,omitempty"`
+}
+
+type traefikFileService struct {
+	LoadBalancer traefikFileLoadBalancer `yaml:"loadBalancer"`
+}
+
+type traefikFileLoadBalancer struct {
+	Servers []traefikFileServer `yaml:"servers"`
+}
+
+type traefikFileServer struct {
+	URL string `yaml:"url"`
+}
+
+type traefikFileMiddleware struct {
+	StripPrefix *traefikFileStripPrefix `yaml:"stripPrefix,omitempty"`
+	Headers     *traefikFileHeaders     `yaml:"headers,omitempty"`
+}
+
+type traefikFileStripPrefix struct {
+	Prefixes   []string `yaml:"prefixes"`
+	ForceSlash bool     `yaml:"forceSlash"`
+}
+
+type traefikFileHeaders struct {
+	CustomRequestHeaders map[string]string `yaml:"customRequestHeaders,omitempty"`
+}
+
 func NewTraefikRegistry(cfg TraefikRegistryConfig) (*TraefikRegistry, error) {
+	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
+	if provider == "" {
+		provider = "api"
+	}
+	if provider != "api" && provider != "file" {
+		return nil, fmt.Errorf("unsupported traefik provider: %s", cfg.Provider)
+	}
+
 	baseURL := strings.TrimSpace(cfg.BaseURL)
-	if baseURL == "" {
-		return nil, fmt.Errorf("traefik base url is required")
+	if provider == "api" && baseURL == "" {
+		return nil, fmt.Errorf("traefik base url is required for api provider")
+	}
+
+	filePath := strings.TrimSpace(cfg.FilePath)
+	if provider == "file" {
+		if filePath == "" {
+			return nil, fmt.Errorf("traefik file path is required for file provider")
+		}
+		filePath = filepath.Clean(filePath)
 	}
 
 	upsertPath := strings.TrimSpace(cfg.UpsertPath)
@@ -85,10 +169,12 @@ func NewTraefikRegistry(cfg TraefikRegistryConfig) (*TraefikRegistry, error) {
 	}
 
 	return &TraefikRegistry{
+		provider:   provider,
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		upsertPath: upsertPath,
 		deletePath: deletePath,
 		authToken:  strings.TrimSpace(cfg.AuthToken),
+		filePath:   filePath,
 		client:     &http.Client{Timeout: timeout},
 	}, nil
 }
@@ -96,6 +182,13 @@ func NewTraefikRegistry(cfg TraefikRegistryConfig) (*TraefikRegistry, error) {
 func (r *TraefikRegistry) UpsertRoute(ctx context.Context, route Registration) error {
 	if err := validateRegistration(route); err != nil {
 		return err
+	}
+	if r.provider == "file" {
+		if err := r.upsertRouteToFile(route); err != nil {
+			return err
+		}
+		logger.Infof(ctx, "[TraefikRegistry] upsert route(file) key=%s prefix=%s backend=%s:%d", route.RouteKey, route.PathPrefix, route.Backend.Host, route.Backend.Port)
+		return nil
 	}
 
 	payload := buildTraefikRoutePayload(route)
@@ -133,6 +226,13 @@ func (r *TraefikRegistry) UpsertRoute(ctx context.Context, route Registration) e
 func (r *TraefikRegistry) DeleteRoute(ctx context.Context, routeKey string) error {
 	if strings.TrimSpace(routeKey) == "" {
 		return fmt.Errorf("route key is required")
+	}
+	if r.provider == "file" {
+		if err := r.deleteRouteFromFile(routeKey); err != nil {
+			return err
+		}
+		logger.Infof(ctx, "[TraefikRegistry] delete route(file) key=%s", routeKey)
+		return nil
 	}
 
 	endpoint := r.resolvePath(r.deletePath, routeKey)
@@ -179,9 +279,108 @@ func (r *TraefikRegistry) attachAuth(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+r.authToken)
 }
 
+func (r *TraefikRegistry) upsertRouteToFile(route Registration) error {
+	r.fileMu.Lock()
+	defer r.fileMu.Unlock()
+
+	cfg, err := r.readFileConfig()
+	if err != nil {
+		return err
+	}
+
+	serviceName := route.RouteKey + "-svc"
+	backendURL := "http://" + route.Backend.Host + ":" + strconv.Itoa(route.Backend.Port)
+	routerMiddlewares, middlewareDefs := buildRStudioFileMiddlewares(route)
+	cfg.HTTP.Routers[route.RouteKey] = traefikFileRouter{
+		Rule:        "PathPrefix(`" + route.PathPrefix + "`)",
+		Service:     serviceName,
+		EntryPoints: []string{"web"},
+		Middlewares: routerMiddlewares,
+	}
+	cfg.HTTP.Services[serviceName] = traefikFileService{
+		LoadBalancer: traefikFileLoadBalancer{
+			Servers: []traefikFileServer{{URL: backendURL}},
+		},
+	}
+	for key, middleware := range middlewareDefs {
+		cfg.HTTP.Middlewares[key] = middleware
+	}
+
+	return r.writeFileConfig(cfg)
+}
+
+func (r *TraefikRegistry) deleteRouteFromFile(routeKey string) error {
+	r.fileMu.Lock()
+	defer r.fileMu.Unlock()
+
+	cfg, err := r.readFileConfig()
+	if err != nil {
+		return err
+	}
+
+	delete(cfg.HTTP.Routers, routeKey)
+	delete(cfg.HTTP.Services, routeKey+"-svc")
+	delete(cfg.HTTP.Middlewares, routeKey+"-strip")
+	delete(cfg.HTTP.Middlewares, routeKey+"-server-root-path-header")
+
+	return r.writeFileConfig(cfg)
+}
+
+func (r *TraefikRegistry) readFileConfig() (*traefikFileConfig, error) {
+	cfg := &traefikFileConfig{
+		HTTP: traefikFileHTTPConfig{
+			Routers:     map[string]traefikFileRouter{},
+			Services:    map[string]traefikFileService{},
+			Middlewares: map[string]traefikFileMiddleware{},
+		},
+	}
+
+	content, err := os.ReadFile(r.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("read traefik file provider config failed: %w", err)
+	}
+	if len(bytes.TrimSpace(content)) == 0 {
+		return cfg, nil
+	}
+	if err := yaml.Unmarshal(content, cfg); err != nil {
+		return nil, fmt.Errorf("parse traefik file provider config failed: %w", err)
+	}
+	if cfg.HTTP.Routers == nil {
+		cfg.HTTP.Routers = map[string]traefikFileRouter{}
+	}
+	if cfg.HTTP.Services == nil {
+		cfg.HTTP.Services = map[string]traefikFileService{}
+	}
+	if cfg.HTTP.Middlewares == nil {
+		cfg.HTTP.Middlewares = map[string]traefikFileMiddleware{}
+	}
+
+	return cfg, nil
+}
+
+func (r *TraefikRegistry) writeFileConfig(cfg *traefikFileConfig) error {
+	if err := os.MkdirAll(filepath.Dir(r.filePath), 0o755); err != nil {
+		return fmt.Errorf("create traefik file provider dir failed: %w", err)
+	}
+
+	content, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal traefik file provider config failed: %w", err)
+	}
+
+	if err := os.WriteFile(r.filePath, content, 0o644); err != nil {
+		return fmt.Errorf("write traefik file provider config failed: %w", err)
+	}
+	return nil
+}
+
 func buildTraefikRoutePayload(route Registration) *traefikRoutePayload {
 	serviceName := route.RouteKey + "-svc"
 	backendURL := "http://" + route.Backend.Host + ":" + strconv.Itoa(route.Backend.Port)
+	routerMiddlewares, middlewareSpecs := buildRStudioHTTPMiddlewares(route)
 	return &traefikRoutePayload{
 		RouteKey:   route.RouteKey,
 		PathPrefix: route.PathPrefix,
@@ -194,6 +393,7 @@ func buildTraefikRoutePayload(route Registration) *traefikRoutePayload {
 				Rule:        "PathPrefix(`" + route.PathPrefix + "`)",
 				Service:     serviceName,
 				EntryPoints: []string{"web"},
+				Middlewares: routerMiddlewares,
 			},
 			Service: traefikServiceConfig{
 				Name: serviceName,
@@ -201,8 +401,66 @@ func buildTraefikRoutePayload(route Registration) *traefikRoutePayload {
 					Servers: []traefikServer{{URL: backendURL}},
 				},
 			},
+			Middlewares: middlewareSpecs,
 		},
 	}
+}
+
+func buildRStudioFileMiddlewares(route Registration) ([]string, map[string]traefikFileMiddleware) {
+	if !isRStudioRoute(route) {
+		return nil, nil
+	}
+
+	stripName := route.RouteKey + "-strip"
+	headerName := route.RouteKey + "-server-root-path-header"
+
+	return []string{stripName, headerName}, map[string]traefikFileMiddleware{
+		stripName: {
+			StripPrefix: &traefikFileStripPrefix{
+				Prefixes:   []string{route.PathPrefix},
+				ForceSlash: false,
+			},
+		},
+		headerName: {
+			Headers: &traefikFileHeaders{
+				CustomRequestHeaders: map[string]string{
+					"X-RStudio-Root-Path": route.PathPrefix,
+				},
+			},
+		},
+	}
+}
+
+func buildRStudioHTTPMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
+	if !isRStudioRoute(route) {
+		return nil, nil
+	}
+
+	stripName := route.RouteKey + "-strip"
+	headerName := route.RouteKey + "-server-root-path-header"
+
+	return []string{stripName, headerName}, map[string]traefikMiddlewareSpec{
+		stripName: {
+			StripPrefix: &traefikStripPrefixConfig{
+				Prefixes:   []string{route.PathPrefix},
+				ForceSlash: false,
+			},
+		},
+		headerName: {
+			Headers: &traefikHeadersConfig{
+				CustomRequestHeaders: map[string]string{
+					"X-RStudio-Root-Path": route.PathPrefix,
+				},
+			},
+		},
+	}
+}
+
+func isRStudioRoute(route Registration) bool {
+	if strings.EqualFold(strings.TrimSpace(route.Metadata["traefik_profile"]), "rstudio") {
+		return true
+	}
+	return route.Backend.Port == 8787
 }
 
 func validateRegistration(route Registration) error {

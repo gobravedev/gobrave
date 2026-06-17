@@ -36,3 +36,37 @@ swag init -g ./cmd/server/main.go  -o ./docs --parseDependency --parseInternal
   "min-api-version": "1.24"
 }
 ```
+
+
+
+
+docker run --rm \
+    -p 8089:80 \
+    -p 8087:8080 \
+    -v /home/admin/workspace/go-project/gobrave/traefik/dynamic:/home/admin/workspace/go-project/gobrave/traefik/dynamic \
+      -v /var/run/docker.sock:/var/run/docker.sock:ro \
+   registry.cn-hangzhou.aliyuncs.com/wybioinfo/traefik:v3.5 \
+    --api.insecure=true  \
+    --providers.rest=true \
+    --providers.docker=true  \
+    --log.level=DEBUG  \
+    --entrypoints.web.address=:80  \
+    --providers.file.directory=/home/admin/workspace/go-project/gobrave/traefik/dynamic \
+    --providers.file.watch=true
+
+
+    docker run --rm \
+  -p 8089:80 \
+  -p 8087:8080 \
+  -v /home/admin/workspace/go-project/gobrave/traefik/dynamic:/etc/traefik/dynamic \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+   registry.cn-hangzhou.aliyuncs.com/wybioinfo/traefik:v3.5 \
+  --api.dashboard=true \
+  --api.insecure=true \
+  --log.level=DEBUG \
+  --entrypoints.web.address=:80 \
+  --entrypoints.dashboard.address=:8080 \
+  --providers.docker=true \
+  --providers.docker.exposedbydefault=false \
+  --providers.file.directory=/etc/traefik/dynamic \
+  --providers.file.watch=true

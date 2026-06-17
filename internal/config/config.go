@@ -41,11 +41,13 @@ type RouteConfig struct {
 }
 
 type TraefikRouteConfig struct {
+	Provider      string `yaml:"provider"        json:"provider"`
 	BaseURL       string `yaml:"base_url"        json:"base_url"`
 	UpsertPath    string `yaml:"upsert_path"     json:"upsert_path"`
 	DeletePath    string `yaml:"delete_path"     json:"delete_path"`
 	AuthToken     string `yaml:"auth_token"      json:"auth_token"`
 	TimeoutSecond int    `yaml:"timeout_second"  json:"timeout_second"`
+	FilePath      string `yaml:"file_path"       json:"file_path"`
 }
 
 // ServerConfig 服务器配置
@@ -135,11 +137,13 @@ func LoadConfig() (*Config, error) {
 		Route: &RouteConfig{
 			Registry: "gateway",
 			Traefik: &TraefikRouteConfig{
+				Provider:      "api",
 				BaseURL:       "",
 				UpsertPath:    "/api/providers/http/routes/{route_key}",
 				DeletePath:    "/api/providers/http/routes/{route_key}",
 				AuthToken:     "",
 				TimeoutSecond: 5,
+				FilePath:      "",
 			},
 		},
 		Storage: &StorageConfig{
@@ -193,6 +197,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.Route.Traefik == nil {
 		cfg.Route.Traefik = &TraefikRouteConfig{}
+	}
+	if strings.TrimSpace(cfg.Route.Traefik.Provider) == "" {
+		cfg.Route.Traefik.Provider = "api"
 	}
 	if cfg.Route.Traefik.TimeoutSecond <= 0 {
 		cfg.Route.Traefik.TimeoutSecond = 5

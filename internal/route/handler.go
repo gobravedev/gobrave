@@ -62,6 +62,9 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 				"container_template_id": strconv.FormatInt(tpl.ID, 10),
 			},
 		}
+		if isRStudioTemplate(tpl) {
+			reg.Metadata["traefik_profile"] = "rstudio"
+		}
 		if err := h.registry.UpsertRoute(ctx, reg); err != nil {
 			logger.Errorf(ctx, "[RouteRegistryHandler] upsert route failed key=%s err=%v", reg.RouteKey, err)
 			return
@@ -75,6 +78,14 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 		}
 		logger.Infof(ctx, "[RouteRegistryHandler] route deleted key=%s event=%s", routeKey, ce.Event)
 	}
+}
+
+func isRStudioTemplate(tpl *types.ContainerTemplate) bool {
+	if tpl == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(tpl.Name))
+	return strings.Contains(name, "rstudio")
 }
 
 func (h *RouteRegistryHandler) loadContext(ctx context.Context, containerInstanceID int64) (string, *types.ContainerInstance, *types.AppSession, *types.ContainerTemplate, error) {

@@ -1,0 +1,25 @@
+http:
+  routers:
+    app-session-2067066962449534976:
+      rule: PathPrefix(`/apps/2067066962449534976`)
+      service: app-session-2067066962449534976-svc
+      entryPoints:
+      - web
+      middlewares:
+      - app-session-2067066962449534976-strip
+      - app-session-2067066962449534976-server-root-path-header
+  services:
+    app-session-2067066962449534976-svc:
+      loadBalancer:
+        servers:
+        - url: http://172.17.0.3:8787
+  middlewares:
+    app-session-2067066962449534976-server-root-path-header:
+      headers:
+        customRequestHeaders:
+          X-RStudio-Root-Path: /apps/2067066962449534976
+    app-session-2067066962449534976-strip:
+      stripPrefix:
+        prefixes:
+        - /apps/2067066962449534976
+        forceSlash: false

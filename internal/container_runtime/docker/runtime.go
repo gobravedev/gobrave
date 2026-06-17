@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 )
 
@@ -57,6 +58,7 @@ func (d *DockerRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (
 
 		resp, err = cli.ContainerCreate(ctx, d.toContainerConfig(spec), d.toHostConfig(spec), nil, nil, "")
 		if err != nil {
+			logger.Errorf(context.Background(), "create container after pull image %s: %v", spec.Image, err)
 			return "", fmt.Errorf("create container after pull: %w", err)
 		}
 	}
@@ -331,7 +333,21 @@ func (d *DockerRuntime) toHostConfig(spec *types.ContainerSpec) *container.HostC
 		}
 	}
 
-	return &container.HostConfig{Resources: resources}
+	binds := make([]string, 0, len(spec.Volumes))
+	for _, volume := range spec.Volumes {
+		source := strings.TrimSpace(volume.Source)
+		target := strings.TrimSpace(volume.Target)
+		if source == "" || target == "" {
+			continue
+		}
+		bind := source + ":" + target
+		if mode := strings.TrimSpace(volume.Mode); mode != "" {
+			bind += ":" + mode
+		}
+		binds = append(binds, bind)
+	}
+
+	return &container.HostConfig{Resources: resources, Binds: binds}
 }
 
 func (d *DockerRuntime) toContainerID(runtimeID string) (string, error) {

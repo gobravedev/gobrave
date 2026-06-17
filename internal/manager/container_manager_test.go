@@ -9,11 +9,13 @@ import (
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"gorm.io/datatypes"
 )
 
 type mockContainerRepo struct {
 	images    map[int64]*types.ContainerImage
 	templates map[int64]*types.ContainerTemplate
+	sessions  map[int64]*types.AppSession
 	instances map[int64]*types.ContainerInstance
 	events    []*types.ContainerEvent
 	outbox    []*types.OutboxEvent
@@ -24,6 +26,7 @@ func newMockContainerRepo() *mockContainerRepo {
 	return &mockContainerRepo{
 		images:    map[int64]*types.ContainerImage{},
 		templates: map[int64]*types.ContainerTemplate{},
+		sessions:  map[int64]*types.AppSession{},
 		instances: map[int64]*types.ContainerInstance{},
 		events:    make([]*types.ContainerEvent, 0),
 		outbox:    make([]*types.OutboxEvent, 0),
@@ -125,27 +128,47 @@ func (m *mockContainerRepo) PageContainerTemplate(ctx context.Context, paginatio
 }
 
 func (m *mockContainerRepo) CreateAppSession(ctx context.Context, item *types.AppSession) error {
+	if item.ID == 0 {
+		item.ID = m.next()
+	}
+	m.sessions[item.ID] = item
 	return nil
 }
 
 func (m *mockContainerRepo) GetAppSessionByID(ctx context.Context, id int64) (*types.AppSession, error) {
-	return nil, errors.New("not implemented")
+	item, ok := m.sessions[id]
+	if !ok {
+		return nil, errors.New("app session not found")
+	}
+	return item, nil
 }
 
 func (m *mockContainerRepo) UpdateAppSession(ctx context.Context, item *types.AppSession) error {
+	m.sessions[item.ID] = item
 	return nil
 }
 
 func (m *mockContainerRepo) DeleteAppSession(ctx context.Context, id int64) error {
+	delete(m.sessions, id)
 	return nil
 }
 
 func (m *mockContainerRepo) ListAppSession(ctx context.Context) ([]*types.AppSession, error) {
-	return []*types.AppSession{}, nil
+	items := make([]*types.AppSession, 0, len(m.sessions))
+	for _, v := range m.sessions {
+		items = append(items, v)
+	}
+	return items, nil
 }
 
 func (m *mockContainerRepo) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error) {
-	return []*types.AppSession{}, 0, nil
+	items := make([]*types.AppSession, 0)
+	for _, v := range m.sessions {
+		if userID == "" || v.UserID == userID {
+			items = append(items, v)
+		}
+	}
+	return items, int64(len(items)), nil
 }
 
 func (m *mockContainerRepo) CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error {
@@ -286,6 +309,7 @@ func (m *mockContainerRepo) PageOutboxEvent(ctx context.Context, pagination *typ
 type dockerMockRuntime struct {
 	handler    containerruntime.RuntimeEventHandler
 	runtimeID  string
+	lastSpec   *types.ContainerSpec
 	startErr   error
 	stopErr    error
 	pauseErr   error
@@ -298,6 +322,7 @@ type dockerMockRuntime struct {
 func (d *dockerMockRuntime) Name() string { return "docker" }
 
 func (d *dockerMockRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (string, error) {
+	d.lastSpec = spec
 	if d.createErr != nil {
 		return "", d.createErr
 	}
@@ -334,7 +359,7 @@ func (d *dockerMockRuntime) Exec(ctx context.Context, runtimeID string, cmd []st
 func newTestManager(repo *mockContainerRepo, rt *dockerMockRuntime) *ContainerManager {
 	reg := containerruntime.NewRegistry()
 	reg.Register("docker", rt)
-	return NewContainerManager(repo, reg, nil)
+	return NewContainerManager(repo, reg, nil, NewDefaultContainerRuntimeResolver(), nil)
 }
 
 func mustSeedTemplate(t *testing.T, repo *mockContainerRepo) {
@@ -437,5 +462,115 @@ func TestContainerManager_OnEvent_PauseAndResume(t *testing.T) {
 	mgr.OnEvent(containerruntime.RuntimeEvent{Type: "ContainerResumed", RuntimeID: "docker-abc-4"})
 	if inst.Status != types.ContainerRunning {
 		t.Fatalf("expected running after resume event, got %s", inst.Status)
+	}
+}
+
+func TestParseEnv_SupportsMixedScalarValues(t *testing.T) {
+	raw := []byte(`{"USERID":"$USERID","GROUPID":"$GROUPID","R_SCRIPT":"$SCRIPT_FILE","R_LIBS_USER":"$R_PACKAGE_DIR","DISABLE_AUTH":true,"R_USER_WORKDIR":"$OUTPUT_DIR","POSIT_ASSISTANT_ENABLED":0,"RSTUDIO_DISABLE_CHECK_FOR_UPDATES":1}`)
+
+	env := parseEnv(raw)
+
+	if got := env["DISABLE_AUTH"]; got != "true" {
+		t.Fatalf("expected DISABLE_AUTH=true, got %q", got)
+	}
+	if got := env["POSIT_ASSISTANT_ENABLED"]; got != "0" {
+		t.Fatalf("expected POSIT_ASSISTANT_ENABLED=0, got %q", got)
+	}
+	if got := env["RSTUDIO_DISABLE_CHECK_FOR_UPDATES"]; got != "1" {
+		t.Fatalf("expected RSTUDIO_DISABLE_CHECK_FOR_UPDATES=1, got %q", got)
+	}
+	if got := env["USERID"]; got != "$USERID" {
+		t.Fatalf("expected USERID to preserve placeholder, got %q", got)
+	}
+}
+
+func TestContainerManager_CreateByTemplate_ResolvesEnvAndVolumes(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("USERID", "u-100")
+	t.Setenv("GROUPID", "g-200")
+	t.Setenv("SCRIPT_FILE", "/workspace/run.R")
+	t.Setenv("R_PACKAGE_DIR", "/workspace/.Rlibs")
+	t.Setenv("OUTPUT_DIR", "/workspace/output")
+	t.Setenv("R_PROFILE", "/home/rstudio/.Rprofile")
+
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest"}
+	repo.templates[10] = &types.ContainerTemplate{
+		ID:      10,
+		ImageID: 1,
+		Command: "bash -lc echo ok",
+		Env:     datatypes.JSON([]byte(`{"USERID":"$USERID","GROUPID":"$GROUPID","R_SCRIPT":"$SCRIPT_FILE","R_LIBS_USER":"$R_PACKAGE_DIR","DISABLE_AUTH":true,"R_USER_WORKDIR":"$OUTPUT_DIR"}`)),
+		Volumes: datatypes.JSON([]byte(`{"$R_PROFILE":{"bind":"/home/rstudio/.Rprofile","mode":"rw"}}`)),
+	}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-9"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	if rt.lastSpec == nil {
+		t.Fatalf("runtime create spec was not captured")
+	}
+	if got := rt.lastSpec.Env["USERID"]; got != "u-100" {
+		t.Fatalf("expected USERID to resolve, got %q", got)
+	}
+	if got := rt.lastSpec.Env["GROUPID"]; got != "g-200" {
+		t.Fatalf("expected GROUPID to resolve, got %q", got)
+	}
+	if got := rt.lastSpec.Env["DISABLE_AUTH"]; got != "true" {
+		t.Fatalf("expected DISABLE_AUTH to become string true, got %q", got)
+	}
+	if got := rt.lastSpec.Env["R_USER_WORKDIR"]; got != "/workspace/output" {
+		t.Fatalf("expected R_USER_WORKDIR to resolve, got %q", got)
+	}
+	if len(rt.lastSpec.Volumes) != 1 {
+		t.Fatalf("expected one resolved volume, got %d", len(rt.lastSpec.Volumes))
+	}
+	if got := rt.lastSpec.Volumes[0].Target; got != "/home/rstudio/.Rprofile" {
+		t.Fatalf("expected target to resolve from $R_PROFILE, got %q", got)
+	}
+	if got := rt.lastSpec.Volumes[0].Source; got != "/home/rstudio/.Rprofile" {
+		t.Fatalf("expected source from bind, got %q", got)
+	}
+	if got := rt.lastSpec.Volumes[0].Mode; got != "rw" {
+		t.Fatalf("expected mode rw, got %q", got)
+	}
+}
+
+func TestContainerManager_CreateByTemplate_UsesAppSessionContextVariables(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "ctx-user")
+	t.Setenv("USERID", "env-user")
+	t.Setenv("PROJECTID", "env-project")
+
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest"}
+	repo.templates[10] = &types.ContainerTemplate{
+		ID:      10,
+		ImageID: 1,
+		Command: "bash -lc echo ok",
+		Env:     datatypes.JSON([]byte(`{"USERID":"$USERID","PROJECTID":"$PROJECTID","APP_SESSION_ID":"$APP_SESSION_ID"}`)),
+	}
+	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: "session-project"}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-10"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	if rt.lastSpec == nil {
+		t.Fatalf("runtime create spec was not captured")
+	}
+	if got := rt.lastSpec.Env["USERID"]; got != "session-user" {
+		t.Fatalf("expected USERID from app session context, got %q", got)
+	}
+	if got := rt.lastSpec.Env["PROJECTID"]; got != "session-project" {
+		t.Fatalf("expected PROJECTID from app session context, got %q", got)
+	}
+	if got := rt.lastSpec.Env["APP_SESSION_ID"]; got != "1001" {
+		t.Fatalf("expected APP_SESSION_ID from owner context, got %q", got)
 	}
 }

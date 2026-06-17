@@ -17,6 +17,9 @@ type ContainerImage struct {
 	Tag string `json:"tag" gorm:"type:varchar(128);not null;index"`
 	// 4.4
 
+	LibraryVersion string `json:"library_version" gorm:"type:varchar(128);index"`
+	// R 4.4 / Python 3.11
+
 	Registry string `json:"registry" gorm:"type:varchar(255);not null"`
 	// docker.io
 
@@ -260,11 +263,18 @@ type ContainerSpec struct {
 	Image   string
 	Command []string
 	Env     map[string]string
+	Volumes []ContainerVolume
 
 	CPU    float64
 	Memory int64
 
 	WorkDir string
+}
+
+type ContainerVolume struct {
+	Source string
+	Target string
+	Mode   string
 }
 
 type OutboxEvent struct {

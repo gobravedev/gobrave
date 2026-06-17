@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/fsm"
@@ -20,14 +24,21 @@ type ContainerManager struct {
 	repo interfaces.ContainerRepository
 	reg  *containerruntime.Registry
 	bus  event.Bus
+	res  ContainerRuntimeResolver
+	cfg  *config.Config
 }
 
 func NewContainerManager(
 	repo interfaces.ContainerRepository,
 	reg *containerruntime.Registry,
 	bus event.Bus,
+	res ContainerRuntimeResolver,
+	cfg *config.Config,
 ) *ContainerManager {
-	return &ContainerManager{repo: repo, reg: reg, bus: bus}
+	// if res == nil {
+	// 	res = NewDefaultContainerRuntimeResolver()
+	// }
+	return &ContainerManager{repo: repo, reg: reg, bus: bus, res: res, cfg: cfg}
 }
 
 // func (m *ContainerManager) Create(ctx context.Context, spec Spec) error {
@@ -85,14 +96,34 @@ func (m *ContainerManager) CreateByTemplate(
 		return nil, err
 	}
 	_ = m.createContainerEvent(ctx, inst.ID, "ContainerPending", "container instance created")
+	volumes := parseVolumes(tpl.Volumes)
 
+	// volumes默认添加 cfg.Storage.BaseDir 目录的绑定，确保容器可以访问到这个目录下的文件（如Rprofile等）
+	if m.cfg != nil && m.cfg.Storage != nil && m.cfg.Storage.BaseDir != "" {
+		volumes = append(volumes, types.ContainerVolume{
+			Source: m.cfg.Storage.BaseDir,
+			Target: m.cfg.Storage.BaseDir,
+			Mode:   "rw",
+		})
+	}
 	spec := &types.ContainerSpec{
 		Image:   img.FullName,
 		Command: parseCommand(tpl.Command),
 		Env:     parseEnv(tpl.Env),
+		Volumes: volumes,
 		CPU:     tpl.CPU,
 		Memory:  tpl.Memory,
 		WorkDir: tpl.WorkDir,
+	}
+
+	if m.res != nil {
+		resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
+		spec, err = m.res.Resolve(ctx, &ContainerRuntimeResolveInput{Spec: spec, Variables: resolveVars})
+		if err != nil {
+			_ = m.transition(ctx, inst, fsm.Failed, "ContainerResolveSpecFailed")
+			_ = m.createContainerEvent(ctx, inst.ID, "ContainerResolveSpecFailedDetail", err.Error())
+			return nil, err
+		}
 	}
 
 	runtimeID, err := rt.Create(ctx, spec)
@@ -418,6 +449,97 @@ func (m *ContainerManager) createContainerEvent(ctx context.Context, instanceID 
 	})
 }
 
+func (m *ContainerManager) buildRuntimeResolveVariables(
+	ctx context.Context,
+	cfg *config.Config,
+	img *types.ContainerImage,
+	templateID int64,
+	ownerType types.ContainerOwnerType,
+	ownerID int64,
+	name string,
+) map[string]string {
+	vars := map[string]string{}
+
+	setRuntimeVar(vars, "CONTAINER_TEMPLATE_ID", strconv.FormatInt(templateID, 10))
+	setRuntimeVar(vars, "TEMPLATE_ID", strconv.FormatInt(templateID, 10))
+	setRuntimeVar(vars, "OWNER_TYPE", string(ownerType))
+	setRuntimeVar(vars, "OWNER_ID", strconv.FormatInt(ownerID, 10))
+	setRuntimeVar(vars, "CONTAINER_NAME", name)
+	packageDir := fmt.Sprintf("%s/package", cfg.Storage.BaseDir)
+	profilePath := fmt.Sprintf("%s/Rprofile", packageDir)
+	ensureEmptyFileIfNotExists(ctx, profilePath)
+
+	setRuntimeVar(vars, "R_PROFILE", profilePath)
+
+	// 获取当前系统的用户和用户组信息，注入到运行时变量中
+	setRuntimeVar(vars, "USERID", strconv.Itoa(os.Getuid()))
+	setRuntimeVar(vars, "GROUPID", strconv.Itoa(os.Getgid()))
+	rPackageDir := fmt.Sprintf("%s/package/R/%s", cfg.Storage.BaseDir, img.LibraryVersion)
+
+	setRuntimeVar(vars, "R_PACKAGE_DIR", rPackageDir)
+
+	if ctx != nil {
+		if userID, ok := ctx.Value(types.UserIDContextKey).(string); ok {
+			setRuntimeVar(vars, "USER_ID", userID)
+			// setRuntimeVar(vars, "USERID", userID)
+		}
+		if userID, ok := ctx.Value(types.UserIDContextKey.String()).(string); ok {
+			setRuntimeVar(vars, "USER_ID", userID)
+			// setRuntimeVar(vars, "USERID", userID)
+		}
+	}
+
+	if ownerType == types.ContainerOwnerAppSession && ownerID > 0 {
+		if session, err := m.repo.GetAppSessionByID(ctx, ownerID); err == nil && session != nil {
+			setRuntimeVar(vars, "APP_SESSION_ID", strconv.FormatInt(session.ID, 10))
+			setRuntimeVar(vars, "APPSESSION_ID", strconv.FormatInt(session.ID, 10))
+			setRuntimeVar(vars, "USER_ID", session.UserID)
+			setRuntimeVar(vars, "USERID", session.UserID)
+			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
+			setRuntimeVar(vars, "USER_PROJECT_DIR", fmt.Sprintf("%s/data/%s", cfg.Storage.BaseDir, session.ProjectID))
+
+			setRuntimeVar(vars, "PROJECTID", session.ProjectID)
+			setRuntimeVar(vars, "WORKSPACE_PATH", session.WorkspacePath)
+		}
+	}
+
+	return vars
+}
+
+func setRuntimeVar(vars map[string]string, key string, value string) {
+	if vars == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return
+	}
+	vars[key] = value
+}
+
+func ensureEmptyFileIfNotExists(ctx context.Context, filePath string) {
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "" {
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		logger.Warnf(ctx, "[ContainerManager] create profile directory failed, path=%s err=%v", filePath, err)
+		return
+	}
+
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return
+		}
+		logger.Warnf(ctx, "[ContainerManager] create empty profile failed, path=%s err=%v", filePath, err)
+		return
+	}
+	_ = file.Close()
+}
+
 func parseCommand(raw string) []string {
 	cmd := strings.TrimSpace(raw)
 	if cmd == "" {
@@ -466,6 +588,21 @@ func parseEnv(raw []byte) map[string]string {
 		return obj
 	}
 
+	mixedObj := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &mixedObj); err == nil {
+		out := map[string]string{}
+		for rawKey, val := range mixedObj {
+			k := strings.TrimSpace(rawKey)
+			if k == "" {
+				continue
+			}
+			if text, ok := normalizeScalarValue(val); ok {
+				out[k] = text
+			}
+		}
+		return out
+	}
+
 	pairs := []map[string]string{}
 	if err := json.Unmarshal(raw, &pairs); err == nil {
 		out := map[string]string{}
@@ -480,6 +617,69 @@ func parseEnv(raw []byte) map[string]string {
 	}
 
 	return map[string]string{}
+}
+
+func parseVolumes(raw []byte) []types.ContainerVolume {
+	if len(raw) == 0 {
+		return nil
+	}
+	volumes := []types.ContainerVolume{}
+	if err := json.Unmarshal(raw, &volumes); err != nil {
+		return nil
+	}
+
+	out := make([]types.ContainerVolume, 0, len(volumes))
+	for _, vol := range volumes {
+		source := strings.TrimSpace(vol.Source)
+		target := strings.TrimSpace(vol.Target)
+		if source == "" || target == "" {
+			continue
+		}
+		out = append(out, types.ContainerVolume{
+			Source: source,
+			Target: target,
+			Mode:   strings.TrimSpace(vol.Mode),
+		})
+	}
+
+	return out
+}
+
+func normalizeScalarValue(raw interface{}) (string, bool) {
+	switch v := raw.(type) {
+	case nil:
+		return "", false
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	case json.Number:
+		return v.String(), true
+	case int:
+		return strconv.Itoa(v), true
+	case int8:
+		return strconv.FormatInt(int64(v), 10), true
+	case int16:
+		return strconv.FormatInt(int64(v), 10), true
+	case int32:
+		return strconv.FormatInt(int64(v), 10), true
+	case int64:
+		return strconv.FormatInt(v, 10), true
+	case uint:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint64:
+		return strconv.FormatUint(v, 10), true
+	default:
+		return "", false
+	}
 }
 
 // func Init() *ContainerManager {
