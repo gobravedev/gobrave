@@ -62,8 +62,8 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 				"container_template_id": strconv.FormatInt(tpl.ID, 10),
 			},
 		}
-		if isRStudioTemplate(tpl) {
-			reg.Metadata["traefik_profile"] = "rstudio"
+		if profile := normalizeTraefikProfile(tpl.TraefikProfile); profile != "" {
+			reg.Metadata["traefik_profile"] = profile
 		}
 		if err := h.registry.UpsertRoute(ctx, reg); err != nil {
 			logger.Errorf(ctx, "[RouteRegistryHandler] upsert route failed key=%s err=%v", reg.RouteKey, err)
@@ -80,12 +80,8 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 	}
 }
 
-func isRStudioTemplate(tpl *types.ContainerTemplate) bool {
-	if tpl == nil {
-		return false
-	}
-	name := strings.ToLower(strings.TrimSpace(tpl.Name))
-	return strings.Contains(name, "rstudio")
+func normalizeTraefikProfile(profile string) string {
+	return strings.ToLower(strings.TrimSpace(profile))
 }
 
 func (h *RouteRegistryHandler) loadContext(ctx context.Context, containerInstanceID int64) (string, *types.ContainerInstance, *types.AppSession, *types.ContainerTemplate, error) {

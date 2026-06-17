@@ -74,8 +74,9 @@ type ContainerTemplate struct {
 	CPU    float64 `json:"cpu"`
 	Memory int64   `json:"memory"`
 
-	WorkDir string `json:"work_dir" gorm:"type:varchar(512)"`
-	Port    int    `json:"port" gorm:"not null;default:8787"`
+	WorkDir        string `json:"work_dir" gorm:"type:varchar(512)"`
+	Port           int    `json:"port" gorm:"not null;default:8787"`
+	TraefikProfile string `json:"traefik_profile" gorm:"type:varchar(32);index"`
 
 	Env       datatypes.JSON `json:"env" gorm:"type:json"`
 	Mounts    datatypes.JSON `json:"mounts" gorm:"type:json"`

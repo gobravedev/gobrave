@@ -76,17 +76,17 @@ type traefikServer struct {
 }
 
 type traefikMiddlewareSpec struct {
-	StripPrefix *traefikStripPrefixConfig `json:"stripPrefix,omitempty"`
-	Headers     *traefikHeadersConfig     `json:"headers,omitempty"`
+	StripPrefix *traefikStripPrefixConfig `json:"stripPrefix,omitempty" yaml:"stripPrefix,omitempty"`
+	Headers     *traefikHeadersConfig     `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
 type traefikStripPrefixConfig struct {
-	Prefixes   []string `json:"prefixes"`
-	ForceSlash bool     `json:"forceSlash"`
+	Prefixes   []string `json:"prefixes" yaml:"prefixes"`
+	ForceSlash bool     `json:"forceSlash" yaml:"forceSlash"`
 }
 
 type traefikHeadersConfig struct {
-	CustomRequestHeaders map[string]string `json:"customRequestHeaders,omitempty"`
+	CustomRequestHeaders map[string]string `json:"customRequestHeaders,omitempty" yaml:"customRequestHeaders,omitempty"`
 }
 
 type traefikFileConfig struct {
@@ -96,7 +96,7 @@ type traefikFileConfig struct {
 type traefikFileHTTPConfig struct {
 	Routers     map[string]traefikFileRouter     `yaml:"routers"`
 	Services    map[string]traefikFileService    `yaml:"services"`
-	Middlewares map[string]traefikFileMiddleware `yaml:"middlewares,omitempty"`
+	Middlewares map[string]traefikMiddlewareSpec `yaml:"middlewares,omitempty"`
 }
 
 type traefikFileRouter struct {
@@ -118,18 +118,23 @@ type traefikFileServer struct {
 	URL string `yaml:"url"`
 }
 
-type traefikFileMiddleware struct {
-	StripPrefix *traefikFileStripPrefix `yaml:"stripPrefix,omitempty"`
-	Headers     *traefikFileHeaders     `yaml:"headers,omitempty"`
+type traefikProfileMiddlewareBuilder struct {
+	build func(route Registration) ([]string, map[string]traefikMiddlewareSpec)
 }
 
-type traefikFileStripPrefix struct {
-	Prefixes   []string `yaml:"prefixes"`
-	ForceSlash bool     `yaml:"forceSlash"`
-}
-
-type traefikFileHeaders struct {
-	CustomRequestHeaders map[string]string `yaml:"customRequestHeaders,omitempty"`
+var traefikProfileMiddlewareBuilders = map[string]traefikProfileMiddlewareBuilder{
+	"default": {
+		build: buildDefaultMiddlewares,
+	},
+	"rstudio": {
+		build: buildRStudioMiddlewares,
+	},
+	"code-server": {
+		build: buildSCodeMiddlewares,
+	},
+	"notebook": {
+		build: buildNotebookMiddlewares,
+	},
 }
 
 func NewTraefikRegistry(cfg TraefikRegistryConfig) (*TraefikRegistry, error) {
@@ -290,7 +295,7 @@ func (r *TraefikRegistry) upsertRouteToFile(route Registration) error {
 
 	serviceName := route.RouteKey + "-svc"
 	backendURL := "http://" + route.Backend.Host + ":" + strconv.Itoa(route.Backend.Port)
-	routerMiddlewares, middlewareDefs := buildRStudioFileMiddlewares(route)
+	routerMiddlewares, middlewareDefs := buildProfileMiddlewares(route)
 	cfg.HTTP.Routers[route.RouteKey] = traefikFileRouter{
 		Rule:        "PathPrefix(`" + route.PathPrefix + "`)",
 		Service:     serviceName,
@@ -320,8 +325,11 @@ func (r *TraefikRegistry) deleteRouteFromFile(routeKey string) error {
 
 	delete(cfg.HTTP.Routers, routeKey)
 	delete(cfg.HTTP.Services, routeKey+"-svc")
-	delete(cfg.HTTP.Middlewares, routeKey+"-strip")
-	delete(cfg.HTTP.Middlewares, routeKey+"-server-root-path-header")
+	for key := range cfg.HTTP.Middlewares {
+		if strings.HasPrefix(key, routeKey+"-") {
+			delete(cfg.HTTP.Middlewares, key)
+		}
+	}
 
 	return r.writeFileConfig(cfg)
 }
@@ -331,7 +339,7 @@ func (r *TraefikRegistry) readFileConfig() (*traefikFileConfig, error) {
 		HTTP: traefikFileHTTPConfig{
 			Routers:     map[string]traefikFileRouter{},
 			Services:    map[string]traefikFileService{},
-			Middlewares: map[string]traefikFileMiddleware{},
+			Middlewares: map[string]traefikMiddlewareSpec{},
 		},
 	}
 
@@ -355,7 +363,7 @@ func (r *TraefikRegistry) readFileConfig() (*traefikFileConfig, error) {
 		cfg.HTTP.Services = map[string]traefikFileService{}
 	}
 	if cfg.HTTP.Middlewares == nil {
-		cfg.HTTP.Middlewares = map[string]traefikFileMiddleware{}
+		cfg.HTTP.Middlewares = map[string]traefikMiddlewareSpec{}
 	}
 
 	return cfg, nil
@@ -380,7 +388,7 @@ func (r *TraefikRegistry) writeFileConfig(cfg *traefikFileConfig) error {
 func buildTraefikRoutePayload(route Registration) *traefikRoutePayload {
 	serviceName := route.RouteKey + "-svc"
 	backendURL := "http://" + route.Backend.Host + ":" + strconv.Itoa(route.Backend.Port)
-	routerMiddlewares, middlewareSpecs := buildRStudioHTTPMiddlewares(route)
+	routerMiddlewares, middlewareSpecs := buildProfileMiddlewares(route)
 	return &traefikRoutePayload{
 		RouteKey:   route.RouteKey,
 		PathPrefix: route.PathPrefix,
@@ -406,36 +414,29 @@ func buildTraefikRoutePayload(route Registration) *traefikRoutePayload {
 	}
 }
 
-func buildRStudioFileMiddlewares(route Registration) ([]string, map[string]traefikFileMiddleware) {
-	if !isRStudioRoute(route) {
+func buildProfileMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
+	profile := resolveTraefikProfile(route)
+	builder, ok := traefikProfileMiddlewareBuilders[profile]
+	if !ok || builder.build == nil {
 		return nil, nil
 	}
-
-	stripName := route.RouteKey + "-strip"
-	headerName := route.RouteKey + "-server-root-path-header"
-
-	return []string{stripName, headerName}, map[string]traefikFileMiddleware{
-		stripName: {
-			StripPrefix: &traefikFileStripPrefix{
-				Prefixes:   []string{route.PathPrefix},
-				ForceSlash: false,
-			},
-		},
-		headerName: {
-			Headers: &traefikFileHeaders{
-				CustomRequestHeaders: map[string]string{
-					"X-RStudio-Root-Path": route.PathPrefix,
-				},
-			},
-		},
-	}
+	return builder.build(route)
 }
 
-func buildRStudioHTTPMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
-	if !isRStudioRoute(route) {
-		return nil, nil
+func resolveTraefikProfile(route Registration) string {
+	if p := strings.ToLower(strings.TrimSpace(route.Metadata["traefik_profile"])); p != "" {
+		if _, ok := traefikProfileMiddlewareBuilders[p]; ok {
+			return p
+		}
 	}
+	return "default"
+}
 
+func buildDefaultMiddlewares(_ Registration) ([]string, map[string]traefikMiddlewareSpec) {
+	return nil, nil
+}
+
+func buildRStudioMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
 	stripName := route.RouteKey + "-strip"
 	headerName := route.RouteKey + "-server-root-path-header"
 
@@ -456,11 +457,38 @@ func buildRStudioHTTPMiddlewares(route Registration) ([]string, map[string]traef
 	}
 }
 
-func isRStudioRoute(route Registration) bool {
-	if strings.EqualFold(strings.TrimSpace(route.Metadata["traefik_profile"]), "rstudio") {
-		return true
+func buildSCodeMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
+	stripName := route.RouteKey + "-strip"
+
+	return []string{stripName}, map[string]traefikMiddlewareSpec{
+		stripName: {
+			StripPrefix: &traefikStripPrefixConfig{
+				Prefixes:   []string{route.PathPrefix},
+				ForceSlash: false,
+			},
+		},
 	}
-	return route.Backend.Port == 8787
+}
+
+func buildNotebookMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
+	stripName := route.RouteKey + "-strip"
+	headerName := route.RouteKey + "-forwarded-prefix-header"
+
+	return []string{stripName, headerName}, map[string]traefikMiddlewareSpec{
+		stripName: {
+			StripPrefix: &traefikStripPrefixConfig{
+				Prefixes:   []string{route.PathPrefix},
+				ForceSlash: false,
+			},
+		},
+		headerName: {
+			Headers: &traefikHeadersConfig{
+				CustomRequestHeaders: map[string]string{
+					"X-Forwarded-Prefix": route.PathPrefix,
+				},
+			},
+		},
+	}
 }
 
 func validateRegistration(route Registration) error {
