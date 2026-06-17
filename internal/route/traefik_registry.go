@@ -471,16 +471,9 @@ func buildSCodeMiddlewares(route Registration) ([]string, map[string]traefikMidd
 }
 
 func buildNotebookMiddlewares(route Registration) ([]string, map[string]traefikMiddlewareSpec) {
-	stripName := route.RouteKey + "-strip"
 	headerName := route.RouteKey + "-forwarded-prefix-header"
 
-	return []string{stripName, headerName}, map[string]traefikMiddlewareSpec{
-		stripName: {
-			StripPrefix: &traefikStripPrefixConfig{
-				Prefixes:   []string{route.PathPrefix},
-				ForceSlash: false,
-			},
-		},
+	return []string{headerName}, map[string]traefikMiddlewareSpec{
 		headerName: {
 			Headers: &traefikHeadersConfig{
 				CustomRequestHeaders: map[string]string{

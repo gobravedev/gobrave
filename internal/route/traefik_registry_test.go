@@ -158,7 +158,7 @@ func TestTraefikRegistryFileProviderSCodeMiddlewares(t *testing.T) {
 			Port: 8443,
 		},
 		Metadata: map[string]string{
-			"traefik_profile": "scode",
+			"traefik_profile": "code-server",
 		},
 	}
 
@@ -192,6 +192,71 @@ func TestTraefikRegistryFileProviderSCodeMiddlewares(t *testing.T) {
 	}
 	if _, ok := cfg.HTTP.Middlewares["app-session-99-server-root-path-header"]; ok {
 		t.Fatalf("rstudio header middleware should not exist")
+	}
+}
+
+func TestTraefikRegistryFileProviderNotebookMiddlewares(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "dynamic", "routes.yaml")
+	reg, err := NewTraefikRegistry(TraefikRegistryConfig{
+		Provider: "file",
+		FilePath: filePath,
+	})
+	if err != nil {
+		t.Fatalf("create registry: %v", err)
+	}
+
+	route := Registration{
+		RouteKey:   "app-session-77",
+		PathPrefix: "/apps/77",
+		Backend: Backend{
+			Host: "172.18.0.77",
+			Port: 8888,
+		},
+		Metadata: map[string]string{
+			"traefik_profile": "notebook",
+		},
+	}
+
+	if err := reg.UpsertRoute(context.Background(), route); err != nil {
+		t.Fatalf("upsert route: %v", err)
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read file config: %v", err)
+	}
+
+	cfg := &traefikFileConfig{}
+	if err := yaml.Unmarshal(content, cfg); err != nil {
+		t.Fatalf("unmarshal file config: %v", err)
+	}
+
+	router, ok := cfg.HTTP.Routers["app-session-77"]
+	if !ok {
+		t.Fatalf("router not found in file config")
+	}
+	if len(router.Middlewares) != 1 {
+		t.Fatalf("unexpected router middlewares length: %d", len(router.Middlewares))
+	}
+	if router.Middlewares[0] != "app-session-77-forwarded-prefix-header" {
+		t.Fatalf("unexpected middleware: %s", router.Middlewares[0])
+	}
+
+	if _, ok := cfg.HTTP.Middlewares["app-session-77-strip"]; ok {
+		t.Fatalf("strip middleware should not exist for notebook profile")
+	}
+
+	headerMiddleware, ok := cfg.HTTP.Middlewares["app-session-77-forwarded-prefix-header"]
+	if !ok {
+		t.Fatalf("header middleware not found in file config")
+	}
+	if headerMiddleware.Headers == nil {
+		t.Fatalf("header middleware config is nil")
+	}
+	if headerMiddleware.Headers.CustomRequestHeaders["X-Forwarded-Prefix"] != "/apps/77" {
+		t.Fatalf("unexpected X-Forwarded-Prefix header: %s", headerMiddleware.Headers.CustomRequestHeaders["X-Forwarded-Prefix"])
 	}
 }
 

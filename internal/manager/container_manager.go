@@ -495,7 +495,7 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 			setRuntimeVar(vars, "APP_SESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "APPSESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "USER_ID", session.UserID)
-			setRuntimeVar(vars, "USERID", session.UserID)
+			// setRuntimeVar(vars, "USERID", session.UserID)
 			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
 			setRuntimeVar(vars, "USER_PROJECT_DIR", fmt.Sprintf("%s/data/%s", cfg.Storage.BaseDir, session.ProjectID))
 
