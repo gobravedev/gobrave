@@ -8,3 +8,4 @@ images/
 run.sh
 stop.sh
 cp_web.sh
+traefik/

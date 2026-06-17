@@ -221,9 +221,10 @@ func (m *ContainerManager) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-
-	if err := rt.Delete(ctx, inst.RuntimeID); err != nil {
-		return err
+	if inst.RuntimeID != "" {
+		if err := rt.Delete(ctx, inst.RuntimeID); err != nil {
+			return err
+		}
 	}
 
 	_ = m.createContainerEvent(ctx, inst.ID, "ContainerDeleted", "container deleted")

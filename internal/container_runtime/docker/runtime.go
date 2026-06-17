@@ -153,7 +153,8 @@ func (d *DockerRuntime) Delete(ctx context.Context, id string) error {
 	}
 
 	if err := cli.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
-		return fmt.Errorf("delete container %s: %w", containerID, err)
+		// return fmt.Errorf("delete container %s: %w", containerID, err)
+		logger.Errorf(context.Background(), "delete container %s: %v", containerID, err)
 	}
 
 	return nil
