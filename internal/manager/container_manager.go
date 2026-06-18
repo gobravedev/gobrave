@@ -501,6 +501,7 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 
 			setRuntimeVar(vars, "PROJECTID", session.ProjectID)
 			setRuntimeVar(vars, "WORKSPACE_PATH", session.WorkspacePath)
+			setRuntimeVar(vars, "APP_TYPE", session.AppType)
 		}
 	}
 

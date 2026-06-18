@@ -74,9 +74,9 @@ type ContainerTemplate struct {
 	CPU    float64 `json:"cpu"`
 	Memory int64   `json:"memory"`
 
-	WorkDir        string `json:"work_dir" gorm:"type:varchar(512)"`
-	Port           int    `json:"port" gorm:"not null;default:8787"`
-	TraefikProfile string `json:"traefik_profile" gorm:"type:varchar(32);index"`
+	WorkDir string `json:"work_dir" gorm:"type:varchar(512)"`
+	Port    int    `json:"port" gorm:"not null;default:8787"`
+	AppType string `json:"app_type" gorm:"type:varchar(32);index"`
 
 	Env       datatypes.JSON `json:"env" gorm:"type:json"`
 	Mounts    datatypes.JSON `json:"mounts" gorm:"type:json"`
@@ -127,6 +127,8 @@ type AppSession struct {
 	UserID string `json:"user_id" gorm:"type:varchar(36);index;not null"`
 
 	ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
+
+	AppType string `json:"app_type" gorm:"type:varchar(32);index"`
 
 	ContainerTemplateID int64 `json:"container_template_id,string" gorm:"index;not null"`
 

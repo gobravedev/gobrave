@@ -140,6 +140,7 @@ func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userI
 		ProjectID:           projectID,
 		ContainerTemplateID: containerTemplateID,
 		Name:                name,
+		AppType:             tpl.AppType,
 		Status:              "CREATING",
 	}
 	if err := s.containerRepo.CreateAppSession(ctx, session); err != nil {

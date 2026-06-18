@@ -50,7 +50,7 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 
 		reg := Registration{
 			RouteKey:   routeKey,
-			PathPrefix: fmt.Sprintf("/apps/%d", appSession.ID),
+			PathPrefix: fmt.Sprintf("/apps/%s/%d", appSession.AppType, appSession.ID),
 			Backend: Backend{
 				Host: strings.TrimSpace(inst.IPAddress),
 				Port: port,
@@ -62,7 +62,7 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 				"container_template_id": strconv.FormatInt(tpl.ID, 10),
 			},
 		}
-		if profile := normalizeTraefikProfile(tpl.TraefikProfile); profile != "" {
+		if profile := normalizeTraefikProfile(tpl.AppType); profile != "" {
 			reg.Metadata["traefik_profile"] = profile
 		}
 		if err := h.registry.UpsertRoute(ctx, reg); err != nil {
