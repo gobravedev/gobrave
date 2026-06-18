@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -17,10 +18,11 @@ var _ event.Handler = (*RouteRegistryHandler)(nil)
 type RouteRegistryHandler struct {
 	repo     interfaces.ContainerRepository
 	registry RouteRegistry
+	cfg      *config.Config
 }
 
-func NewRouteRegistryHandler(repo interfaces.ContainerRepository, registry RouteRegistry) *RouteRegistryHandler {
-	return &RouteRegistryHandler{repo: repo, registry: registry}
+func NewRouteRegistryHandler(repo interfaces.ContainerRepository, registry RouteRegistry, cfg *config.Config) *RouteRegistryHandler {
+	return &RouteRegistryHandler{repo: repo, registry: registry, cfg: cfg}
 }
 
 func (h *RouteRegistryHandler) Handle(evt event.Event) {
@@ -50,7 +52,7 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 
 		reg := Registration{
 			RouteKey:   routeKey,
-			PathPrefix: fmt.Sprintf("/apps/%s/%d", appSession.AppType, appSession.ID),
+			PathPrefix: fmt.Sprintf("/c/analysis/apps/%s/%d", appSession.AppType, appSession.ID),
 			Backend: Backend{
 				Host: strings.TrimSpace(inst.IPAddress),
 				Port: port,
