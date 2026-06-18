@@ -36,9 +36,12 @@ type ProxyConfig struct {
 }
 
 type RouteConfig struct {
-	Registry string              `yaml:"registry" json:"registry"`
-	Traefik  *TraefikRouteConfig `yaml:"traefik"  json:"traefik"`
+	Registry   string              `yaml:"registry"     json:"registry"`
+	AppsPrefix string              `yaml:"apps_prefix"  json:"apps_prefix"`
+	Traefik    *TraefikRouteConfig `yaml:"traefik"      json:"traefik"`
 }
+
+const defaultAppsPrefix = "/apps"
 
 type TraefikRouteConfig struct {
 	Provider      string `yaml:"provider"        json:"provider"`
@@ -135,7 +138,8 @@ func LoadConfig() (*Config, error) {
 			OnlyOffice: "http://localhost:8080",
 		},
 		Route: &RouteConfig{
-			Registry: "gateway",
+			Registry:   "gateway",
+			AppsPrefix: defaultAppsPrefix,
 			Traefik: &TraefikRouteConfig{
 				Provider:      "api",
 				BaseURL:       "",
@@ -195,6 +199,7 @@ func LoadConfig() (*Config, error) {
 	if strings.TrimSpace(cfg.Route.Registry) == "" {
 		cfg.Route.Registry = "gateway"
 	}
+	cfg.Route.AppsPrefix = normalizePathPrefix(cfg.Route.AppsPrefix, defaultAppsPrefix)
 	if cfg.Route.Traefik == nil {
 		cfg.Route.Traefik = &TraefikRouteConfig{}
 	}
@@ -215,4 +220,26 @@ func LoadConfig() (*Config, error) {
 	os.Setenv("TENANT_AES_KEY", TENANT_AES_KEY)
 
 	return cfg, nil
+}
+
+func ResolveAppsPathPrefix(cfg *Config) string {
+	if cfg == nil || cfg.Route == nil {
+		return defaultAppsPrefix
+	}
+	return normalizePathPrefix(cfg.Route.AppsPrefix, defaultAppsPrefix)
+}
+
+func normalizePathPrefix(value, fallback string) string {
+	prefix := strings.TrimSpace(value)
+	if prefix == "" {
+		prefix = fallback
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	prefix = strings.TrimRight(prefix, "/")
+	if prefix == "" {
+		return fallback
+	}
+	return prefix
 }

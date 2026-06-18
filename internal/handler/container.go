@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -11,6 +13,7 @@ import (
 
 type ContainerHandler struct {
 	containerService interfaces.ContainerService
+	cfg              *config.Config
 }
 
 type appSessionCreateRequest struct {
@@ -51,8 +54,13 @@ type outboxEventPageRequest struct {
 	types.Pagination
 }
 
-func NewContainerHandler(containerService interfaces.ContainerService) *ContainerHandler {
-	return &ContainerHandler{containerService: containerService}
+type appSessionPageItem struct {
+	*types.AppSession
+	PathPrefix string `json:"path_prefix"`
+}
+
+func NewContainerHandler(containerService interfaces.ContainerService, cfg *config.Config) *ContainerHandler {
+	return &ContainerHandler{containerService: containerService, cfg: cfg}
 }
 
 // CreateContainerImage godoc
@@ -676,6 +684,20 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 	if err != nil {
 		handleDataError(c, err, "failed to page app session")
 		return
+	}
+
+	if items, ok := result.Data.([]*types.AppSession); ok {
+		pageItems := make([]*appSessionPageItem, 0, len(items))
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			pageItems = append(pageItems, &appSessionPageItem{
+				AppSession: item,
+				PathPrefix: fmt.Sprintf("%s/%s/%d", config.ResolveAppsPathPrefix(h.cfg), item.AppType, item.ID),
+			})
+		}
+		result.Data = pageItems
 	}
 
 	c.JSON(http.StatusOK, gin.H{

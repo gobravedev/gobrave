@@ -28,6 +28,8 @@ proxy:
 route:
   # gateway | traefik
   registry: gateway
+  # analysis app reverse proxy prefix
+  apps_prefix: /c/analysis/apps
   # gateway registry mapping persistence uses database table `go_gateway_route`
   traefik:
     # api | file

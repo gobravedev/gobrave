@@ -52,7 +52,7 @@ func (h *RouteRegistryHandler) Handle(evt event.Event) {
 
 		reg := Registration{
 			RouteKey:   routeKey,
-			PathPrefix: fmt.Sprintf("/c/analysis/apps/%s/%d", appSession.AppType, appSession.ID),
+			PathPrefix: fmt.Sprintf("%s/%s/%d", config.ResolveAppsPathPrefix(h.cfg), appSession.AppType, appSession.ID),
 			Backend: Backend{
 				Host: strings.TrimSpace(inst.IPAddress),
 				Port: port,

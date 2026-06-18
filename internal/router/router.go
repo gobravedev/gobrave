@@ -72,7 +72,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 			ginSwagger.PersistAuthorization(true),   // 持久化认证信息
 		))
 	}
-	serveFrontendStatic(r)
+	analysisAppsPrefix := config.ResolveAppsPathPrefix(params.Config)
+	serveFrontendStatic(r, params.Config)
 	handler.RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
@@ -93,10 +94,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.Any("/container", params.ProxyHandler.ContainerProxy)
 	r.Any("/container/*proxyPath", params.ProxyHandler.ContainerProxy)
 
-	r.Any("/apps", params.ProxyHandler.ContainerProxy)
-	r.Any("/apps/*proxyPath", params.ProxyHandler.ContainerProxy)
-	r.Any("/c/analysis/apps", params.ProxyHandler.ContainerProxy)
-	r.Any("/c/analysis/apps/*proxyPath", params.ProxyHandler.ContainerProxy)
+	// r.Any("/apps", params.ProxyHandler.ContainerProxy)
+	// r.Any("/apps/*proxyPath", params.ProxyHandler.ContainerProxy)
+	r.Any(analysisAppsPrefix, params.ProxyHandler.ContainerProxy)
+	r.Any(analysisAppsPrefix+"/*proxyPath", params.ProxyHandler.ContainerProxy)
 
 	// r.Any("/apps", params.ProxyHandler.AppSessionProxy)
 	// r.Any("/apps/*proxyPath", params.ProxyHandler.AppSessionProxy)
@@ -266,7 +267,7 @@ func serveImageStatic(r *gin.Engine, cfg *config.Config) {
 	r.StaticFS("/images-data", http.Dir(dataDir))
 }
 
-func serveFrontendStatic(r *gin.Engine) {
+func serveFrontendStatic(r *gin.Engine, cfg *config.Config) {
 	absDir, err := utils.ResolveExternalPath("web")
 	if err != nil {
 		return
@@ -279,6 +280,7 @@ func serveFrontendStatic(r *gin.Engine) {
 	logger.Infof(context.Background(), "[Router] Serving frontend static files from %s", absDir)
 	fs := http.Dir(absDir)
 	fileServer := http.FileServer(fs)
+	analysisAppsPrefix := config.ResolveAppsPathPrefix(cfg)
 
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
@@ -286,7 +288,30 @@ func serveFrontendStatic(r *gin.Engine) {
 			return
 		}
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") || path == "/health" || strings.HasPrefix(path, "/health/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") || path == "/audio" || strings.HasPrefix(path, "/audio/") || path == "/images" || strings.HasPrefix(path, "/images/") || path == "/images-data" || strings.HasPrefix(path, "/images-data/") || path == "/brave-api" || strings.HasPrefix(path, "/brave-api/") || path == "/container" || strings.HasPrefix(path, "/container/") || path == "/apps" || strings.HasPrefix(path, "/apps/") || path == "/c/analysis/apps" || strings.HasPrefix(path, "/c/analysis/apps/") || path == "/onlyoffice" || strings.HasPrefix(path, "/onlyoffice/") || path == "/go-onlyoffice" || strings.HasPrefix(path, "/go-onlyoffice/") {
+		if path == "/api" ||
+			strings.HasPrefix(path, "/api/") ||
+			path == "/health" ||
+			strings.HasPrefix(path, "/health/") ||
+			path == "/swagger" ||
+			strings.HasPrefix(path, "/swagger/") ||
+			path == "/audio" ||
+			strings.HasPrefix(path, "/audio/") ||
+			path == "/images" ||
+			strings.HasPrefix(path, "/images/") ||
+			path == "/images-data" ||
+			strings.HasPrefix(path, "/images-data/") ||
+			path == "/brave-api" ||
+			strings.HasPrefix(path, "/brave-api/") ||
+			path == "/container" ||
+			strings.HasPrefix(path, "/container/") ||
+			path == "/apps" ||
+			strings.HasPrefix(path, "/apps/") ||
+			path == analysisAppsPrefix ||
+			strings.HasPrefix(path, analysisAppsPrefix+"/") ||
+			path == "/onlyoffice" ||
+			strings.HasPrefix(path, "/onlyoffice/") ||
+			path == "/go-onlyoffice" ||
+			strings.HasPrefix(path, "/go-onlyoffice/") {
 			c.Next()
 			return
 		}
