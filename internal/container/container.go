@@ -89,6 +89,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewWorkflowRepository))
 	must(container.Provide(repository.NewContainerRepository))
 	must(container.Provide(manager.NewDefaultContainerRuntimeResolver))
+	must(container.Provide(manager.NewImageManager))
 	must(container.Provide(manager.NewContainerManager))
 	must(container.Provide(manager.NewOutboxDispatcher))
 	must(container.Provide(func(cfg *config.Config, db *gorm.DB) (route.RouteRegistry, error) {

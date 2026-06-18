@@ -8,6 +8,23 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	PullPolicyAlways       = "Always"
+	PullPolicyIfNotPresent = "IfNotPresent"
+	PullPolicyNever        = "Never"
+)
+
+type ImageStatus string
+
+const (
+	ImageStatusPending  ImageStatus = "pending"
+	ImageStatusPulling  ImageStatus = "pulling"
+	ImageStatusReady    ImageStatus = "ready"
+	ImageStatusFailed   ImageStatus = "failed"
+	ImageStatusDeleted  ImageStatus = "deleted"
+	ImageStatusDisabled ImageStatus = "disabled"
+)
+
 type ContainerImage struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
@@ -34,6 +51,14 @@ type ContainerImage struct {
 	Description string `json:"description" gorm:"type:text"`
 
 	Size int64 `json:"size"`
+
+	Status ImageStatus `json:"status" gorm:"type:varchar(32);index;not null;default:pending"`
+
+	PullPolicy string `json:"pull_policy" gorm:"type:varchar(32);index;not null;default:IfNotPresent"`
+
+	LastPullTime *time.Time `json:"last_pull_time"`
+
+	LastError string `json:"last_error" gorm:"type:text"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

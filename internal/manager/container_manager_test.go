@@ -310,12 +310,15 @@ type dockerMockRuntime struct {
 	handler    containerruntime.RuntimeEventHandler
 	runtimeID  string
 	lastSpec   *types.ContainerSpec
+	lastImage  string
+	lastPolicy string
 	startErr   error
 	stopErr    error
 	pauseErr   error
 	resumeErr  error
 	deleteErr  error
 	createErr  error
+	imageErr   error
 	logsResult string
 }
 
@@ -330,6 +333,12 @@ func (d *dockerMockRuntime) Create(ctx context.Context, spec *types.ContainerSpe
 		d.runtimeID = "docker-rt-1"
 	}
 	return d.runtimeID, nil
+}
+
+func (d *dockerMockRuntime) EnsureImage(ctx context.Context, image string, pullPolicy string) error {
+	d.lastImage = image
+	d.lastPolicy = pullPolicy
+	return d.imageErr
 }
 
 func (d *dockerMockRuntime) Start(ctx context.Context, runtimeID string) error { return d.startErr }
@@ -359,7 +368,8 @@ func (d *dockerMockRuntime) Exec(ctx context.Context, runtimeID string, cmd []st
 func newTestManager(repo *mockContainerRepo, rt *dockerMockRuntime) *ContainerManager {
 	reg := containerruntime.NewRegistry()
 	reg.Register("docker", rt)
-	return NewContainerManager(repo, reg, nil, NewDefaultContainerRuntimeResolver(), nil)
+	imgMgr := NewImageManager(repo, reg)
+	return NewContainerManager(repo, reg, nil, NewDefaultContainerRuntimeResolver(), imgMgr, nil)
 }
 
 func mustSeedTemplate(t *testing.T, repo *mockContainerRepo) {
@@ -572,5 +582,55 @@ func TestContainerManager_CreateByTemplate_UsesAppSessionContextVariables(t *tes
 	}
 	if got := rt.lastSpec.Env["APP_SESSION_ID"]; got != "1001" {
 		t.Fatalf("expected APP_SESSION_ID from owner context, got %q", got)
+	}
+}
+
+func TestContainerManager_CreateByTemplate_UpdatesImageStatusToReady(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest", Status: types.ImageStatusPending}
+	repo.templates[10] = &types.ContainerTemplate{ID: 10, ImageID: 1, Command: "echo ok"}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-11"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	img, err := repo.GetContainerImageByID(ctx, 1)
+	if err != nil {
+		t.Fatalf("load image failed: %v", err)
+	}
+	if img.Status != types.ImageStatusReady {
+		t.Fatalf("expected image status ready, got %s", img.Status)
+	}
+	if rt.lastImage != "docker.io/library/busybox:latest" {
+		t.Fatalf("expected image ensure call with full name, got %q", rt.lastImage)
+	}
+}
+
+func TestContainerManager_CreateByTemplate_ImagePrepareFailureMarksImageFailed(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest", Status: types.ImageStatusPending}
+	repo.templates[10] = &types.ContainerTemplate{ID: 10, ImageID: 1, Command: "echo ok"}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-12", imageErr: errors.New("pull denied")}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err == nil {
+		t.Fatalf("expected CreateByTemplate to fail when image prepare fails")
+	}
+
+	img, err := repo.GetContainerImageByID(ctx, 1)
+	if err != nil {
+		t.Fatalf("load image failed: %v", err)
+	}
+	if img.Status != types.ImageStatusFailed {
+		t.Fatalf("expected image status failed, got %s", img.Status)
+	}
+	if img.LastError == "" {
+		t.Fatalf("expected image last error to be stored")
 	}
 }

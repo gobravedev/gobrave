@@ -25,6 +25,7 @@ type ContainerManager struct {
 	reg  *containerruntime.Registry
 	bus  event.Bus
 	res  ContainerRuntimeResolver
+	img  *ImageManager
 	cfg  *config.Config
 }
 
@@ -33,12 +34,16 @@ func NewContainerManager(
 	reg *containerruntime.Registry,
 	bus event.Bus,
 	res ContainerRuntimeResolver,
+	img *ImageManager,
 	cfg *config.Config,
 ) *ContainerManager {
 	// if res == nil {
 	// 	res = NewDefaultContainerRuntimeResolver()
 	// }
-	return &ContainerManager{repo: repo, reg: reg, bus: bus, res: res, cfg: cfg}
+	if img == nil {
+		img = NewImageManager(repo, reg)
+	}
+	return &ContainerManager{repo: repo, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
 }
 
 // func (m *ContainerManager) Create(ctx context.Context, spec Spec) error {
@@ -96,6 +101,15 @@ func (m *ContainerManager) CreateByTemplate(
 		return nil, err
 	}
 	_ = m.createContainerEvent(ctx, inst.ID, "ContainerPending", "container instance created")
+
+	if m.img != nil {
+		if err := m.img.EnsureImageReadyByEntity(ctx, runtimeName, img); err != nil {
+			_ = m.transition(ctx, inst, fsm.Failed, "ContainerImagePrepareFailed")
+			_ = m.createContainerEvent(ctx, inst.ID, "ContainerImagePrepareFailedDetail", err.Error())
+			return nil, err
+		}
+	}
+
 	volumes := parseVolumes(tpl.Volumes)
 
 	// volumes默认添加 cfg.Storage.BaseDir 目录的绑定，确保容器可以访问到这个目录下的文件（如Rprofile等）
@@ -118,6 +132,7 @@ func (m *ContainerManager) CreateByTemplate(
 
 	if m.res != nil {
 		resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
+		m.ensureRuntimeFilesAndDirs(ctx, resolveVars)
 		spec, err = m.res.Resolve(ctx, &ContainerRuntimeResolveInput{Spec: spec, Variables: resolveVars})
 		if err != nil {
 			_ = m.transition(ctx, inst, fsm.Failed, "ContainerResolveSpecFailed")
@@ -460,24 +475,37 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 	name string,
 ) map[string]string {
 	vars := map[string]string{}
+	baseDir := ""
+	if cfg != nil && cfg.Storage != nil {
+		baseDir = strings.TrimSpace(cfg.Storage.BaseDir)
+	}
 
 	setRuntimeVar(vars, "CONTAINER_TEMPLATE_ID", strconv.FormatInt(templateID, 10))
 	setRuntimeVar(vars, "TEMPLATE_ID", strconv.FormatInt(templateID, 10))
 	setRuntimeVar(vars, "OWNER_TYPE", string(ownerType))
 	setRuntimeVar(vars, "OWNER_ID", strconv.FormatInt(ownerID, 10))
 	setRuntimeVar(vars, "CONTAINER_NAME", name)
-	packageDir := fmt.Sprintf("%s/package", cfg.Storage.BaseDir)
-	profilePath := fmt.Sprintf("%s/Rprofile", packageDir)
-	ensureEmptyFileIfNotExists(ctx, profilePath)
+	if baseDir != "" {
+		packageDir := fmt.Sprintf("%s/package", baseDir)
+		profilePath := fmt.Sprintf("%s/Rprofile", packageDir)
+		ensureEmptyFileIfNotExists(ctx, profilePath)
+		setRuntimeVar(vars, "R_PROFILE", profilePath)
 
-	setRuntimeVar(vars, "R_PROFILE", profilePath)
+		rPackageDir := fmt.Sprintf("%s/package/R/%s", baseDir, img.LibraryVersion)
+		setRuntimeVar(vars, "R_PACKAGE_DIR", rPackageDir)
+	}
 
-	// 获取当前系统的用户和用户组信息，注入到运行时变量中
-	setRuntimeVar(vars, "USERID", strconv.Itoa(os.Getuid()))
-	setRuntimeVar(vars, "GROUPID", strconv.Itoa(os.Getgid()))
-	rPackageDir := fmt.Sprintf("%s/package/R/%s", cfg.Storage.BaseDir, img.LibraryVersion)
-
-	setRuntimeVar(vars, "R_PACKAGE_DIR", rPackageDir)
+	// 优先读取环境变量，未配置时再回退到当前系统用户和组。
+	if userID, ok := os.LookupEnv("USERID"); ok {
+		setRuntimeVar(vars, "USERID", userID)
+	} else {
+		setRuntimeVar(vars, "USERID", strconv.Itoa(os.Getuid()))
+	}
+	if groupID, ok := os.LookupEnv("GROUPID"); ok {
+		setRuntimeVar(vars, "GROUPID", groupID)
+	} else {
+		setRuntimeVar(vars, "GROUPID", strconv.Itoa(os.Getgid()))
+	}
 
 	if ctx != nil {
 		if userID, ok := ctx.Value(types.UserIDContextKey).(string); ok {
@@ -495,9 +523,11 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 			setRuntimeVar(vars, "APP_SESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "APPSESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "USER_ID", session.UserID)
-			// setRuntimeVar(vars, "USERID", session.UserID)
+			setRuntimeVar(vars, "USERID", session.UserID)
 			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
-			setRuntimeVar(vars, "USER_PROJECT_DIR", fmt.Sprintf("%s/data/%s", cfg.Storage.BaseDir, session.ProjectID))
+			if baseDir != "" {
+				setRuntimeVar(vars, "USER_PROJECT_DIR", fmt.Sprintf("%s/data/%s", baseDir, session.ProjectID))
+			}
 
 			setRuntimeVar(vars, "PROJECTID", session.ProjectID)
 			setRuntimeVar(vars, "WORKSPACE_PATH", session.WorkspacePath)
@@ -506,6 +536,26 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 	}
 
 	return vars
+}
+
+func (m *ContainerManager) ensureRuntimeFilesAndDirs(ctx context.Context, vars map[string]string) {
+	if len(vars) == 0 {
+		return
+	}
+
+	for _, key := range []string{"R_PACKAGE_DIR", "USER_PROJECT_DIR", "WORKSPACE_PATH"} {
+		dir := strings.TrimSpace(vars[key])
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			logger.Warnf(ctx, "[ContainerManager] create runtime directory failed, key=%s path=%s err=%v", key, dir, err)
+		}
+	}
+
+	if profilePath := strings.TrimSpace(vars["R_PROFILE"]); profilePath != "" {
+		ensureEmptyFileIfNotExists(ctx, profilePath)
+	}
 }
 
 func setRuntimeVar(vars map[string]string, key string, value string) {
@@ -625,6 +675,37 @@ func parseVolumes(raw []byte) []types.ContainerVolume {
 	if len(raw) == 0 {
 		return nil
 	}
+
+	obj := map[string]map[string]interface{}{}
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		out := make([]types.ContainerVolume, 0, len(obj))
+		for rawTarget, item := range obj {
+			target := strings.TrimSpace(rawTarget)
+			if target == "" {
+				continue
+			}
+
+			source := target
+			if bind, ok := item["bind"]; ok {
+				if text, ok := normalizeScalarValue(bind); ok {
+					source = strings.TrimSpace(text)
+				}
+			}
+			mode := ""
+			if rawMode, ok := item["mode"]; ok {
+				if text, ok := normalizeScalarValue(rawMode); ok {
+					mode = strings.TrimSpace(text)
+				}
+			}
+
+			if source == "" || target == "" {
+				continue
+			}
+			out = append(out, types.ContainerVolume{Source: source, Target: target, Mode: mode})
+		}
+		return out
+	}
+
 	volumes := []types.ContainerVolume{}
 	if err := json.Unmarshal(raw, &volumes); err != nil {
 		return nil

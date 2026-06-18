@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/logger"
@@ -51,7 +52,7 @@ func (d *DockerRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (
 
 	resp, err := cli.ContainerCreate(ctx, d.toContainerConfig(spec), d.toHostConfig(spec), nil, nil, "")
 	if err != nil {
-		pullErr := d.pullImageIfNeeded(ctx, cli, spec.Image)
+		pullErr := d.pullImage(ctx, cli, spec.Image)
 		if pullErr != nil {
 			return "", fmt.Errorf("create container: %w", err)
 		}
@@ -64,6 +65,40 @@ func (d *DockerRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (
 	}
 
 	return d.toRuntimeID(resp.ID), nil
+}
+
+func (d *DockerRuntime) EnsureImage(ctx context.Context, imageName string, pullPolicy string) error {
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return errors.New("image is required")
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	exists, err := d.imageExists(ctx, cli, imageName)
+	if err != nil {
+		return err
+	}
+
+	switch normalizePullPolicy(pullPolicy) {
+	case types.PullPolicyAlways:
+		return d.pullImage(ctx, cli, imageName)
+	case types.PullPolicyNever:
+		if !exists {
+			return fmt.Errorf("image not found in local runtime: %s", imageName)
+		}
+		return nil
+	case types.PullPolicyIfNotPresent:
+		if exists {
+			return nil
+		}
+		return d.pullImage(ctx, cli, imageName)
+	default:
+		return fmt.Errorf("unsupported pull policy: %s", pullPolicy)
+	}
 }
 
 func (d *DockerRuntime) Start(ctx context.Context, id string) error {
@@ -297,7 +332,7 @@ func (d *DockerRuntime) getClient() (*client.Client, error) {
 	return d.client, nil
 }
 
-func (d *DockerRuntime) pullImageIfNeeded(ctx context.Context, cli *client.Client, imageName string) error {
+func (d *DockerRuntime) pullImage(ctx context.Context, cli *client.Client, imageName string) error {
 	r, err := cli.ImagePull(ctx, imageName, image.PullOptions{})
 	if err != nil {
 		return err
@@ -306,6 +341,30 @@ func (d *DockerRuntime) pullImageIfNeeded(ctx context.Context, cli *client.Clien
 
 	_, _ = io.Copy(io.Discard, r)
 	return nil
+}
+
+func (d *DockerRuntime) imageExists(ctx context.Context, cli *client.Client, imageName string) (bool, error) {
+	_, _, err := cli.ImageInspectWithRaw(ctx, imageName)
+	if err == nil {
+		return true, nil
+	}
+	if errdefs.IsNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect image %s: %w", imageName, err)
+}
+
+func normalizePullPolicy(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case strings.ToLower(types.PullPolicyAlways):
+		return types.PullPolicyAlways
+	case strings.ToLower(types.PullPolicyNever):
+		return types.PullPolicyNever
+	case "", strings.ToLower(types.PullPolicyIfNotPresent):
+		return types.PullPolicyIfNotPresent
+	default:
+		return strings.TrimSpace(policy)
+	}
 }
 
 func (d *DockerRuntime) toContainerConfig(spec *types.ContainerSpec) *container.Config {

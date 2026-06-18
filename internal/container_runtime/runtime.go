@@ -28,6 +28,12 @@ type Runtime interface {
 	Exec(ctx context.Context, runtimeID string, cmd []string) (string, error)
 }
 
+// RuntimeImageManager is an optional extension interface for runtime-side
+// image lifecycle operations used by ImageManager.
+type RuntimeImageManager interface {
+	EnsureImage(ctx context.Context, image string, pullPolicy string) error
+}
+
 // RuntimeInspection carries runtime-specific inspect data used by manager/service.
 type RuntimeInspection struct {
 	IPAddress string
