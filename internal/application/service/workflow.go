@@ -24,6 +24,10 @@ func (s *workflowService) GetModuleByModuleID(ctx context.Context, moduleID stri
 	return s.workflowRepo.GetModuleByModuleID(ctx, moduleID)
 }
 
+func (s *workflowService) GetModuleContainerSnapshotByModuleID(ctx context.Context, moduleID string) (*types.ModuleContainerSnapshot, error) {
+	return s.workflowRepo.GetModuleContainerSnapshotByModuleID(ctx, moduleID)
+}
+
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {
 	findWorkflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
 	if err != nil {

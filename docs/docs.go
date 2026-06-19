@@ -135,6 +135,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/analysis/visualization-node-file/{analysisNodeId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "查询 AnalysisNode 并补充容器模板与镜像信息，同时返回 output_dir 下可视化资源列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "分析节点结果文件可视化",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "分析节点 ID",
+                        "name": "analysisNodeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.VisualizationNodeFileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-password": {
             "post": {
                 "security": [
@@ -419,6 +477,1299 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "令牌无效",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/create": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "输入 ContainerTemplateID + 当前用户 + ProjectID 创建 AppSession，并通过 ContainerManager 创建并绑定容器",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "创建应用会话",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/delete": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "通过 ContainerManager 删除绑定容器，并删除 AppSession",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "删除应用会话",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionIDBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/get": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 查询当前用户的 AppSession 详情",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "获取应用会话",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "主键 ID",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/list": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "查询当前用户的 AppSession 列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "应用会话列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按当前用户分页查询 AppSession 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询应用会话",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionPageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/start": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "通过 ContainerManager 启动 AppSession 绑定容器",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "启动应用会话",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionIDBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/stop": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "通过 ContainerManager 停止 AppSession 绑定容器",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "停止应用会话",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionIDBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/event/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "分页查询 ContainerEvent 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询容器事件",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.containerEventPageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/create": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "创建 ContainerImage 记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "创建容器镜像",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/delete": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 删除 ContainerImage 记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "删除容器镜像",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.idBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/get": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 查询 ContainerImage 详情",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "获取容器镜像",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "主键 ID",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/list": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "查询 ContainerImage 列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "容器镜像列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "分页查询 ContainerImage 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询容器镜像",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.containerImagePageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/image/update": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 更新 ContainerImage 记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "更新容器镜像",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/instance/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "分页查询 ContainerInstance 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询容器实例",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.containerInstancePageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/outbox/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "分页查询 OutboxEvent 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询事件出箱",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.outboxEventPageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/create": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "创建 ContainerTemplate 记录（手动校验 ImageID，不使用 GORM 关系维护）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "创建容器模板",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/delete": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 删除 ContainerTemplate 记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "删除容器模板",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.idBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/get": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 查询 ContainerTemplate 详情",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "获取容器模板",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "主键 ID",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/list": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "查询 ContainerTemplate 列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "容器模板列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/list-by-page": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "分页查询 ContainerTemplate 列表",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "分页查询容器模板",
+                "parameters": [
+                    {
+                        "description": "分页请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.containerTemplatePageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/template/update": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 ID 更新 ContainerTemplate 记录（手动校验 ImageID，不使用 GORM 关系维护）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "更新容器模板",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
                         }
@@ -3927,6 +5278,193 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_gobravedev_gobrave_internal_types.AppSession": {
+            "type": "object",
+            "properties": {
+                "app_type": {
+                    "type": "string"
+                },
+                "container_template_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "last_access_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "stopped_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                },
+                "workspace_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_gobravedev_gobrave_internal_types.ContainerImage": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_pull_time": {
+                    "type": "string"
+                },
+                "library_version": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "pull_policy": {
+                    "type": "string"
+                },
+                "registry": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ImageStatus"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_gobravedev_gobrave_internal_types.ContainerTemplate": {
+            "type": "object",
+            "properties": {
+                "app_type": {
+                    "type": "string"
+                },
+                "change_uid": {
+                    "type": "boolean"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "cpu": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "env": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "image_id": {
+                    "description": "Image string // rocker/rstudio:4.4",
+                    "type": "string",
+                    "example": "0"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "memory": {
+                    "type": "integer"
+                },
+                "mounts": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplateType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "work_dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_gobravedev_gobrave_internal_types.ContainerTemplateType": {
+            "type": "string",
+            "enum": [
+                "workflow",
+                "app",
+                "service"
+            ],
+            "x-enum-varnames": [
+                "ContainerTemplateWorkflow",
+                "ContainerTemplateApp",
+                "ContainerTemplateService"
+            ]
+        },
         "github_com_gobravedev_gobrave_internal_types.Dataset": {
             "type": "object",
             "properties": {
@@ -4083,6 +5621,25 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "github_com_gobravedev_gobrave_internal_types.ImageStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "pulling",
+                "ready",
+                "failed",
+                "deleted",
+                "disabled"
+            ],
+            "x-enum-varnames": [
+                "ImageStatusPending",
+                "ImageStatusPulling",
+                "ImageStatusReady",
+                "ImageStatusFailed",
+                "ImageStatusDeleted",
+                "ImageStatusDisabled"
+            ]
         },
         "github_com_gobravedev_gobrave_internal_types.LoginRequest": {
             "type": "object",
@@ -4458,6 +6015,50 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.VisualizationNodeFileResponse": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "result": {
+                    "$ref": "#/definitions/internal_handler.VisualizationResultResponse"
+                },
+                "server_status": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.VisualizationResultResponse": {
+            "type": "object",
+            "properties": {
+                "htmls": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
+                "tables": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            }
+        },
         "internal_handler.WorkflowFormJSONResponse": {
             "type": "object",
             "properties": {
@@ -4529,6 +6130,117 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.appSessionCreateRequest": {
+            "type": "object",
+            "required": [
+                "container_template_id",
+                "project_id"
+            ],
+            "properties": {
+                "container_template_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.appSessionIDBody": {
+            "type": "object",
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "internal_handler.appSessionPageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_handler.containerEventPageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_handler.containerImagePageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_handler.containerInstancePageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_handler.containerTemplatePageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                }
+            }
+        },
         "internal_handler.datasetByProjectPageRequest": {
             "type": "object",
             "required": [
@@ -4588,6 +6300,22 @@ const docTemplate = `{
                 "id": {
                     "type": "string",
                     "example": "0"
+                }
+            }
+        },
+        "internal_handler.outboxEventPageRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "Page",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "page_size": {
+                    "description": "Page size",
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
                 }
             }
         },

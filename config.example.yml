@@ -48,6 +48,11 @@ storage:
   # 留空时默认使用“可执行文件所在目录/images”。
   image_dir: ""
 
+container:
+  # 服务启动时是否异步刷新 ContainerImage 状态。
+  # true: 启动 goroutine 刷新镜像状态；false: 跳过启动刷新。
+  refresh_image_status_on_start: true
+
 tenant:
   # default_tenant_id: "default"
   # default_tenant_name: "Default Tenant"

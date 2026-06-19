@@ -161,12 +161,16 @@ func (m *mockContainerRepo) ListAppSession(ctx context.Context) ([]*types.AppSes
 	return items, nil
 }
 
-func (m *mockContainerRepo) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error) {
+func (m *mockContainerRepo) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) ([]*types.AppSession, int64, error) {
 	items := make([]*types.AppSession, 0)
 	for _, v := range m.sessions {
-		if userID == "" || v.UserID == userID {
-			items = append(items, v)
+		if userID != "" && v.UserID != userID {
+			continue
 		}
+		if query != nil && query.AnalysisNodeID != nil && v.AnalysisNodeID != *query.AnalysisNodeID {
+			continue
+		}
+		items = append(items, v)
 	}
 	return items, int64(len(items)), nil
 }
@@ -632,5 +636,51 @@ func TestContainerManager_CreateByTemplate_ImagePrepareFailureMarksImageFailed(t
 	}
 	if img.LastError == "" {
 		t.Fatalf("expected image last error to be stored")
+	}
+}
+
+func TestImageManager_RefreshAllStatuses_UpdatesReadyAndSkipsDisabledDeleted(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest", Status: types.ImageStatusPending}
+	repo.images[2] = &types.ContainerImage{ID: 2, FullName: "docker.io/library/alpine:latest", Status: types.ImageStatusDisabled}
+	repo.images[3] = &types.ContainerImage{ID: 3, FullName: "docker.io/library/debian:latest", Status: types.ImageStatusDeleted}
+
+	rt := &dockerMockRuntime{}
+	reg := containerruntime.NewRegistry()
+	reg.Register("docker", rt)
+	mgr := NewImageManager(repo, reg)
+
+	if err := mgr.RefreshAllStatuses(ctx); err != nil {
+		t.Fatalf("RefreshAllStatuses failed: %v", err)
+	}
+
+	if repo.images[1].Status != types.ImageStatusReady {
+		t.Fatalf("expected image 1 status ready, got %s", repo.images[1].Status)
+	}
+	if repo.images[2].Status != types.ImageStatusDisabled {
+		t.Fatalf("expected image 2 status unchanged disabled, got %s", repo.images[2].Status)
+	}
+	if repo.images[3].Status != types.ImageStatusDeleted {
+		t.Fatalf("expected image 3 status unchanged deleted, got %s", repo.images[3].Status)
+	}
+}
+
+func TestImageManager_RefreshAllStatuses_ReturnsErrorWhenImageRefreshFails(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest", Status: types.ImageStatusPending}
+
+	rt := &dockerMockRuntime{imageErr: errors.New("pull denied")}
+	reg := containerruntime.NewRegistry()
+	reg.Register("docker", rt)
+	mgr := NewImageManager(repo, reg)
+
+	err := mgr.RefreshAllStatuses(ctx)
+	if err == nil {
+		t.Fatalf("expected refresh error")
+	}
+	if repo.images[1].Status != types.ImageStatusFailed {
+		t.Fatalf("expected image status failed, got %s", repo.images[1].Status)
 	}
 }

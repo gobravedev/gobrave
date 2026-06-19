@@ -206,6 +206,7 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 	r.POST("/container/template/list-by-page", handler.PageContainerTemplate)
 
 	r.POST("/container/app-session/create", handler.CreateAppSession)
+	r.POST("/container/app-session/create-by-analysis-node", handler.CreateAppSessionByAnalysisNode)
 	r.POST("/container/app-session/start", handler.StartAppSession)
 	r.POST("/container/app-session/stop", handler.StopAppSession)
 	r.POST("/container/app-session/delete", handler.DeleteAppSession)
@@ -226,6 +227,7 @@ func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler
 func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
+	r.GET("/analysis/visualization-node-file/:analysisNodeId", handler.VisualizationNodeFile)
 }
 
 // serveImageStatic maps local image resources under /images.
@@ -265,6 +267,19 @@ func serveImageStatic(r *gin.Engine, cfg *config.Config) {
 
 	logger.Infof(context.Background(), "[Router] Serving data files from %s at /images-data", dataDir)
 	r.StaticFS("/images-data", http.Dir(dataDir))
+
+	analysisDir, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "analysis"))
+	if err != nil {
+		logger.Warnf(context.Background(), "[Router] Skip serving /images-analysis: invalid base_dir/analysis path: base_dir=%s err=%v", baseDir, err)
+		return
+	}
+	if err := os.MkdirAll(analysisDir, 0o755); err != nil {
+		logger.Warnf(context.Background(), "[Router] Skip serving /images-analysis: create dir failed: analysis_dir=%s err=%v", analysisDir, err)
+		return
+	}
+
+	logger.Infof(context.Background(), "[Router] Serving analysis files from %s at /images-analysis", analysisDir)
+	r.StaticFS("/images-analysis", http.Dir(analysisDir))
 }
 
 func serveFrontendStatic(r *gin.Engine, cfg *config.Config) {

@@ -153,6 +153,8 @@ type AppSession struct {
 
 	ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
 
+	AnalysisNodeID int64 `json:"analysis_node_id,string" gorm:"index"`
+
 	AppType string `json:"app_type" gorm:"type:varchar(32);index"`
 
 	ContainerTemplateID int64 `json:"container_template_id,string" gorm:"index;not null"`
@@ -171,6 +173,10 @@ type AppSession struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type AppSessionPageQuery struct {
+	AnalysisNodeID *int64 `json:"analysis_node_id,string,omitempty"`
 }
 
 func (AppSession) TableName() string {

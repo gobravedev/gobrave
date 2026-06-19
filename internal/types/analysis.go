@@ -5,7 +5,7 @@ import "time"
 // Analysis maps to Python brave's nextflow table.
 type Analysis struct {
 	ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Project             string    `json:"project" gorm:"type:varchar(255)"`
+	ProjectID           string    `json:"project" gorm:"column:project;type:varchar(255)"`
 	AnalysisID          string    `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255)"`
 	ComponentID         string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	WorkflowID          string    `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`

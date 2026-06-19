@@ -19,6 +19,10 @@ func (s *analysisService) GetAnalysisByAnalysisID(ctx context.Context, analysisI
 	return s.analysisRepo.GetAnalysisByAnalysisID(ctx, analysisID)
 }
 
+func (s *analysisService) GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error) {
+	return s.analysisRepo.GetAnalysisNodeByID(ctx, id)
+}
+
 func (s *analysisService) GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
 	return s.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
 }

@@ -43,3 +43,34 @@ func (r *workflowRepository) FindModulesByModuleIDs(ctx context.Context, moduleI
 	}
 	return items, nil
 }
+
+func (r *workflowRepository) GetModuleContainerSnapshotByModuleID(ctx context.Context, moduleID string) (*types.ModuleContainerSnapshot, error) {
+	item := &types.ModuleContainerSnapshot{}
+
+	err := r.db.WithContext(ctx).
+		Table("pipeline_components AS pc").
+		Select(`
+			pc.component_id AS script_id,
+			pc.container_id AS container_id,
+			ct.name AS container_name,
+			ct.image_id AS image_id,
+			ci.full_name AS container_image,
+			ci.name AS image_name,
+			ci.tag AS image_tag,
+			ci.status AS image_status
+		`).
+		Joins("LEFT JOIN go_container_template AS ct ON pc.container_id = ct.id").
+		Joins("LEFT JOIN go_container_image AS ci ON ct.image_id = ci.id").
+		Where("pc.component_id = ?", moduleID).
+		Limit(1).
+		Scan(item).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if item.ScriptID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	return item, nil
+}

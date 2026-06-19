@@ -167,7 +167,7 @@ func (r *containerRepository) ListAppSession(ctx context.Context) ([]*types.AppS
 	return items, nil
 }
 
-func (r *containerRepository) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error) {
+func (r *containerRepository) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) ([]*types.AppSession, int64, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}
 	}
@@ -175,12 +175,15 @@ func (r *containerRepository) PageAppSessionByUserID(ctx context.Context, userID
 	items := make([]*types.AppSession, 0)
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&types.AppSession{}).Where("user_id = ?", userID)
-	if err := query.Count(&total).Error; err != nil {
+	dbQuery := r.db.WithContext(ctx).Model(&types.AppSession{}).Where("user_id = ?", userID)
+	if query != nil && query.AnalysisNodeID != nil {
+		dbQuery = dbQuery.Where("analysis_node_id = ?", *query.AnalysisNodeID)
+	}
+	if err := dbQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	err := query.
+	err := dbQuery.
 		Order("id DESC").
 		Offset(pagination.Offset()).
 		Limit(pagination.Limit()).

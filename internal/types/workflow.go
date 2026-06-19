@@ -3,29 +3,29 @@ package types
 import "time"
 
 type Module struct {
-	ID               uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ModuleID         string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
-	InstallKey       string    `json:"install_key" gorm:"type:varchar(255)"`
-	ComponentType    string    `json:"component_type" gorm:"type:varchar(255)"`
-	ComponentName    string    `json:"component_name" gorm:"type:varchar(255)"`
-	Description      string    `json:"description" gorm:"type:longtext"`
-	ComponentIDs     string    `json:"component_ids" gorm:"type:longtext"`
-	Img              string    `json:"img" gorm:"type:varchar(255)"`
-	ContainerID      string    `json:"container_id" gorm:"type:varchar(255)"`
-	ToolsContainerID string    `json:"tools_container_id" gorm:"type:text"`
-	Prompt           string    `json:"prompt" gorm:"type:longtext"`
-	IOSchema         string    `json:"io_schema" gorm:"column:io_schema;type:longtext"`
-	SubContainerID   string    `json:"sub_container_id" gorm:"type:varchar(255)"`
-	Tags             string    `json:"tags" gorm:"type:varchar(255)"`
-	FileType         string    `json:"file_type" gorm:"type:varchar(255)"`
-	ScriptType       string    `json:"script_type" gorm:"type:varchar(255)"`
-	Category         string    `json:"category" gorm:"type:varchar(255);default:default"`
-	Content          string    `json:"content" gorm:"type:text"`
-	OrderIndex       int       `json:"order_index"`
-	Position         string    `json:"position" gorm:"type:text"`
-	Edges            string    `json:"edges" gorm:"type:text"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	ModuleID            string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
+	InstallKey          string    `json:"install_key" gorm:"type:varchar(255)"`
+	ComponentType       string    `json:"component_type" gorm:"type:varchar(255)"`
+	ComponentName       string    `json:"component_name" gorm:"type:varchar(255)"`
+	Description         string    `json:"description" gorm:"type:longtext"`
+	ComponentIDs        string    `json:"component_ids" gorm:"type:longtext"`
+	Img                 string    `json:"img" gorm:"type:varchar(255)"`
+	ContainerTemplateID int64     `json:"container_id,string" gorm:"column:container_id;type:bigint"`
+	ToolsContainerID    string    `json:"tools_container_id" gorm:"type:text"`
+	Prompt              string    `json:"prompt" gorm:"type:longtext"`
+	IOSchema            string    `json:"io_schema" gorm:"column:io_schema;type:longtext"`
+	SubContainerID      string    `json:"sub_container_id" gorm:"type:varchar(255)"`
+	Tags                string    `json:"tags" gorm:"type:varchar(255)"`
+	FileType            string    `json:"file_type" gorm:"type:varchar(255)"`
+	ScriptType          string    `json:"script_type" gorm:"type:varchar(255)"`
+	Category            string    `json:"category" gorm:"type:varchar(255);default:default"`
+	Content             string    `json:"content" gorm:"type:text"`
+	OrderIndex          int       `json:"order_index"`
+	Position            string    `json:"position" gorm:"type:text"`
+	Edges               string    `json:"edges" gorm:"type:text"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 func (Module) TableName() string {
@@ -59,4 +59,17 @@ type Workflow struct {
 
 func (Workflow) TableName() string {
 	return "pipeline_components_relation"
+}
+
+// ModuleContainerSnapshot is a read model for analysis node visualization.
+// It flattens module -> container template -> container image fields via SQL join.
+type ModuleContainerSnapshot struct {
+	ScriptID       string `json:"script_id" gorm:"column:script_id"`
+	ContainerID    int64  `json:"container_id,string" gorm:"column:container_id"`
+	ContainerName  string `json:"container_name" gorm:"column:container_name"`
+	ImageID        int64  `json:"image_id,string" gorm:"column:image_id"`
+	ContainerImage string `json:"container_image" gorm:"column:container_image"`
+	ImageName      string `json:"image_name" gorm:"column:image_name"`
+	ImageTag       string `json:"image_tag" gorm:"column:image_tag"`
+	ImageStatus    string `json:"image_status" gorm:"column:image_status"`
 }

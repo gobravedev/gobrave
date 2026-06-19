@@ -3,6 +3,8 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/config"
@@ -13,6 +15,8 @@ import (
 
 type ContainerHandler struct {
 	containerService interfaces.ContainerService
+	analysisService  interfaces.AnalysisService
+	workflowService  interfaces.WorkflowService
 	cfg              *config.Config
 }
 
@@ -20,6 +24,11 @@ type appSessionCreateRequest struct {
 	ContainerTemplateID int64  `json:"container_template_id,string" binding:"required"`
 	ProjectID           string `json:"project_id" binding:"required"`
 	Name                string `json:"name"`
+}
+
+type appSessionCreateByAnalysisNodeRequest struct {
+	AnalysisNodeID int64  `json:"analysis_node_id,string" binding:"required"`
+	Name           string `json:"name"`
 }
 
 type appSessionIDBody struct {
@@ -40,6 +49,12 @@ type containerTemplatePageRequest struct {
 
 type appSessionPageRequest struct {
 	types.Pagination
+	Query          *appSessionPageQuery `json:"query"`
+	AnalysisNodeID string               `json:"analysis_node_id"`
+}
+
+type appSessionPageQuery struct {
+	AnalysisNodeID string `json:"analysis_node_id"`
 }
 
 type containerInstancePageRequest struct {
@@ -59,8 +74,13 @@ type appSessionPageItem struct {
 	PathPrefix string `json:"path_prefix"`
 }
 
-func NewContainerHandler(containerService interfaces.ContainerService, cfg *config.Config) *ContainerHandler {
-	return &ContainerHandler{containerService: containerService, cfg: cfg}
+func NewContainerHandler(containerService interfaces.ContainerService, analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, cfg *config.Config) *ContainerHandler {
+	return &ContainerHandler{
+		containerService: containerService,
+		analysisService:  analysisService,
+		workflowService:  workflowService,
+		cfg:              cfg,
+	}
 }
 
 // CreateContainerImage godoc
@@ -494,6 +514,71 @@ func (h *ContainerHandler) CreateAppSession(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
+// CreateAppSessionByAnalysisNode godoc
+// @Summary      通过分析节点创建应用会话
+// @Description  依据 analysis_node_id 查询 AnalysisNode/Analysis/Module，自动推导 ProjectID、ContainerTemplateID、WorkspacePath 并创建 AppSession
+// @Tags         容器管理
+// @Accept       json
+// @Produce      json
+// @Param        request  body      appSessionCreateByAnalysisNodeRequest  true  "请求参数"
+// @Success      200      {object}  types.AppSession
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /container/app-session/create-by-analysis-node [post]
+func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req appSessionCreateByAnalysisNodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	analysisNode, err := h.analysisService.GetAnalysisNodeByID(c.Request.Context(), req.AnalysisNodeID)
+	if err != nil {
+		handleDataError(c, err, "failed to get analysis node")
+		return
+	}
+
+	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+	if err != nil {
+		handleDataError(c, err, "failed to get analysis")
+		return
+	}
+
+	moduleItem, err := h.workflowService.GetModuleByModuleID(c.Request.Context(), analysisNode.ScriptID)
+	if err != nil {
+		handleDataError(c, err, "failed to get module")
+		return
+	}
+	if moduleItem.ContainerTemplateID == 0 {
+		c.Error(errors.NewValidationError("module container_template_id is required"))
+		return
+	}
+
+	item, err := h.containerService.CreateAppSessionByTemplateForAnalysisNode(
+		c.Request.Context(),
+		userID,
+		analysisItem.ProjectID,
+		moduleItem.ContainerTemplateID,
+		req.Name,
+		int64(analysisNode.ID),
+		analysisNode.WorkspaceDir,
+	)
+	if err != nil {
+		handleDataError(c, err, "failed to create app session")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
 // StartAppSession godoc
 // @Summary      启动应用会话
 // @Description  通过 ContainerManager 启动 AppSession 绑定容器
@@ -680,7 +765,13 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 		return
 	}
 
-	result, err := h.containerService.PageAppSessionByUserID(c.Request.Context(), userID, &req.Pagination)
+	query, err := buildAppSessionPageQuery(&req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	result, err := h.containerService.PageAppSessionByUserID(c.Request.Context(), userID, &req.Pagination, query)
 	if err != nil {
 		handleDataError(c, err, "failed to page app session")
 		return
@@ -706,6 +797,30 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 		"page":      result.Page,
 		"page_size": result.PageSize,
 	})
+}
+
+func buildAppSessionPageQuery(req *appSessionPageRequest) (*types.AppSessionPageQuery, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	rawAnalysisNodeID := strings.TrimSpace(req.AnalysisNodeID)
+	if req.Query != nil && strings.TrimSpace(req.Query.AnalysisNodeID) != "" {
+		rawAnalysisNodeID = strings.TrimSpace(req.Query.AnalysisNodeID)
+	}
+
+	if rawAnalysisNodeID == "" {
+		return nil, nil
+	}
+
+	parsedAnalysisNodeID, err := strconv.ParseInt(rawAnalysisNodeID, 10, 64)
+	if err != nil || parsedAnalysisNodeID <= 0 {
+		return nil, errors.NewValidationError("invalid query.analysis_node_id")
+	}
+
+	return &types.AppSessionPageQuery{
+		AnalysisNodeID: &parsedAnalysisNodeID,
+	}, nil
 }
 
 // PageContainerInstance godoc

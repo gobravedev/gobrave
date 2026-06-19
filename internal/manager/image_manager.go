@@ -3,10 +3,12 @@ package manager
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
@@ -18,6 +20,52 @@ type ImageManager struct {
 
 func NewImageManager(repo interfaces.ContainerRepository, reg *containerruntime.Registry) *ImageManager {
 	return &ImageManager{repo: repo, reg: reg}
+}
+
+// RunImageStatusRefreshOnStart triggers an async image status refresh once at startup.
+func RunImageStatusRefreshOnStart(mgr *ImageManager) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		if err := mgr.RefreshAllStatuses(ctx); err != nil {
+			logger.Warnf(ctx, "[ImageManager] refresh all image statuses failed: %v", err)
+		}
+	}()
+}
+
+func (m *ImageManager) RefreshAllStatuses(ctx context.Context) error {
+	runtimeName, err := m.defaultRuntimeName()
+	if err != nil {
+		return err
+	}
+
+	images, err := m.repo.ListContainerImage(ctx)
+	if err != nil {
+		return err
+	}
+
+	var firstErr error
+	for _, img := range images {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if img == nil {
+			continue
+		}
+		if img.Status == types.ImageStatusDeleted || img.Status == types.ImageStatusDisabled {
+			continue
+		}
+
+		if err := m.EnsureImageReadyByEntity(ctx, runtimeName, img); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			logger.Warnf(ctx, "[ImageManager] refresh image status failed, image_id=%d image=%s err=%v", img.ID, img.FullName, err)
+		}
+	}
+
+	return firstErr
 }
 
 func (m *ImageManager) EnsureImageReady(ctx context.Context, runtimeName string, imageID int64) (*types.ContainerImage, error) {
@@ -89,4 +137,36 @@ func (m *ImageManager) getRuntimeByName(name string) (containerruntime.Runtime, 
 		return nil, fmt.Errorf("runtime not found: %s", name)
 	}
 	return rt, nil
+}
+
+func (m *ImageManager) defaultRuntimeName() (string, error) {
+	if m.reg == nil {
+		return "", fmt.Errorf("runtime registry is nil")
+	}
+
+	if rt := m.reg.Get("docker"); rt != nil {
+		return rt.Name(), nil
+	}
+
+	items := m.reg.List()
+	if len(items) == 0 {
+		return "", fmt.Errorf("runtime not found")
+	}
+
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		name := strings.TrimSpace(item.Name())
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("runtime not found")
+	}
+
+	sort.Strings(names)
+	return names[0], nil
 }

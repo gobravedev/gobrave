@@ -219,6 +219,18 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			bus.Subscribe(h)
 		}
 	}))
+	must(container.Invoke(func(cfg *config.Config, imageMgr *manager.ImageManager) {
+		enabled := true
+		if cfg != nil && cfg.Container != nil {
+			enabled = cfg.Container.RefreshImageStatusOnStart
+		}
+		if !enabled {
+			logger.Infof(context.Background(), "[Container] startup image status refresh disabled by config")
+			return
+		}
+
+		manager.RunImageStatusRefreshOnStart(imageMgr)
+	}))
 	must(container.Invoke(manager.RunOutboxDispatcher))
 
 	return container
@@ -372,6 +384,10 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to auto migrate tables: %w", err)
 	}
 
+	if err := migratePipelineComponentsContainerIDType(db, driver); err != nil {
+		return nil, fmt.Errorf("failed to migrate pipeline_components.container_id type: %w", err)
+	}
+
 	// Get underlying SQL DB object
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -390,4 +406,52 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
 
 	return db, nil
+}
+
+func migratePipelineComponentsContainerIDType(db *gorm.DB, driver string) error {
+	columnTypes, err := db.Migrator().ColumnTypes(&types.Module{})
+	if err == nil {
+		for _, col := range columnTypes {
+			if !strings.EqualFold(col.Name(), "container_id") {
+				continue
+			}
+			dbType := strings.ToUpper(strings.TrimSpace(col.DatabaseTypeName()))
+			if strings.Contains(dbType, "BIGINT") {
+				return nil
+			}
+			break
+		}
+	}
+
+	if driver == "mysql" {
+		if err := db.Exec(`UPDATE pipeline_components SET container_id = NULL WHERE container_id IS NOT NULL AND TRIM(container_id) <> '' AND container_id NOT REGEXP '^[0-9]+$'`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`UPDATE pipeline_components SET container_id = NULL WHERE TRIM(container_id) = ''`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`ALTER TABLE pipeline_components MODIFY COLUMN container_id BIGINT NULL`).Error; err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if driver == "postgres" {
+		if err := db.Exec(`UPDATE pipeline_components SET container_id = NULL WHERE container_id IS NOT NULL AND btrim(container_id) <> '' AND btrim(container_id) !~ '^[0-9]+$'`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`UPDATE pipeline_components SET container_id = NULL WHERE btrim(container_id) = ''`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`
+			ALTER TABLE pipeline_components
+			ALTER COLUMN container_id TYPE BIGINT USING NULLIF(btrim(container_id), '')::BIGINT
+		`).Error; err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// SQLite has dynamic typing; AlterColumn keeps schema metadata aligned with model declaration.
+	return db.Migrator().AlterColumn(&types.Module{}, "ContainerID")
 }

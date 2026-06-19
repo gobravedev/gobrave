@@ -72,6 +72,133 @@ definitions:
       file:
         $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.File'
     type: object
+  github_com_gobravedev_gobrave_internal_types.AppSession:
+    properties:
+      app_type:
+        type: string
+      container_template_id:
+        example: "0"
+        type: string
+      created_at:
+        type: string
+      id:
+        example: "0"
+        type: string
+      last_access_at:
+        type: string
+      name:
+        type: string
+      project_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      stopped_at:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      workspace_path:
+        type: string
+    type: object
+  github_com_gobravedev_gobrave_internal_types.ContainerImage:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      digest:
+        type: string
+      full_name:
+        type: string
+      id:
+        example: "0"
+        type: string
+      last_error:
+        type: string
+      last_pull_time:
+        type: string
+      library_version:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      pull_policy:
+        type: string
+      registry:
+        type: string
+      size:
+        type: integer
+      status:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ImageStatus'
+      tag:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_gobravedev_gobrave_internal_types.ContainerTemplate:
+    properties:
+      app_type:
+        type: string
+      change_uid:
+        type: boolean
+      command:
+        type: string
+      cpu:
+        type: number
+      created_at:
+        type: string
+      description:
+        type: string
+      env:
+        items:
+          type: integer
+        type: array
+      id:
+        example: "0"
+        type: string
+      image_id:
+        description: Image string // rocker/rstudio:4.4
+        example: "0"
+        type: string
+      labels:
+        items:
+          type: integer
+        type: array
+      memory:
+        type: integer
+      mounts:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+      port:
+        type: integer
+      type:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplateType'
+      updated_at:
+        type: string
+      volumes:
+        items:
+          type: integer
+        type: array
+      work_dir:
+        type: string
+    type: object
+  github_com_gobravedev_gobrave_internal_types.ContainerTemplateType:
+    enum:
+    - workflow
+    - app
+    - service
+    type: string
+    x-enum-varnames:
+    - ContainerTemplateWorkflow
+    - ContainerTemplateApp
+    - ContainerTemplateService
   github_com_gobravedev_gobrave_internal_types.Dataset:
     properties:
       created_at:
@@ -178,6 +305,22 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_gobravedev_gobrave_internal_types.ImageStatus:
+    enum:
+    - pending
+    - pulling
+    - ready
+    - failed
+    - deleted
+    - disabled
+    type: string
+    x-enum-varnames:
+    - ImageStatusPending
+    - ImageStatusPulling
+    - ImageStatusReady
+    - ImageStatusFailed
+    - ImageStatusDeleted
+    - ImageStatusDisabled
   github_com_gobravedev_gobrave_internal_types.LoginRequest:
     properties:
       email:
@@ -434,6 +577,36 @@ definitions:
       status:
         type: string
     type: object
+  internal_handler.VisualizationNodeFileResponse:
+    properties:
+      node:
+        additionalProperties: true
+        type: object
+      result:
+        $ref: '#/definitions/internal_handler.VisualizationResultResponse'
+      server_status:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_handler.VisualizationResultResponse:
+    properties:
+      htmls:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      images:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      tables:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+    type: object
   internal_handler.WorkflowFormJSONResponse:
     properties:
       formJson:
@@ -481,6 +654,87 @@ definitions:
     required:
     - project_id
     type: object
+  internal_handler.appSessionCreateRequest:
+    properties:
+      container_template_id:
+        example: "0"
+        type: string
+      name:
+        type: string
+      project_id:
+        type: string
+    required:
+    - container_template_id
+    - project_id
+    type: object
+  internal_handler.appSessionIDBody:
+    properties:
+      id:
+        example: "0"
+        type: string
+    required:
+    - id
+    type: object
+  internal_handler.appSessionPageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+    type: object
+  internal_handler.containerEventPageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+    type: object
+  internal_handler.containerImagePageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+    type: object
+  internal_handler.containerInstancePageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+    type: object
+  internal_handler.containerTemplatePageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
+    type: object
   internal_handler.datasetByProjectPageRequest:
     properties:
       dataset_id:
@@ -523,6 +777,18 @@ definitions:
         type: string
     required:
     - id
+    type: object
+  internal_handler.outboxEventPageRequest:
+    properties:
+      page:
+        description: Page
+        minimum: 1
+        type: integer
+      page_size:
+        description: Page size
+        maximum: 1000
+        minimum: 1
+        type: integer
     type: object
   internal_handler.projectFilePageRequest:
     properties:
@@ -719,6 +985,43 @@ paths:
       summary: 编辑分析参数（V2）
       tags:
       - 分析
+  /analysis/visualization-node-file/{analysisNodeId}:
+    get:
+      description: 查询 AnalysisNode 并补充容器模板与镜像信息，同时返回 output_dir 下可视化资源列表
+      parameters:
+      - description: 分析节点 ID
+        in: path
+        name: analysisNodeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.VisualizationNodeFileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分析节点结果文件可视化
+      tags:
+      - 分析
   /auth/change-password:
     post:
       consumes:
@@ -905,6 +1208,829 @@ paths:
       summary: 验证令牌
       tags:
       - 认证
+  /container/app-session/create:
+    post:
+      consumes:
+      - application/json
+      description: 输入 ContainerTemplateID + 当前用户 + ProjectID 创建 AppSession，并通过 ContainerManager
+        创建并绑定容器
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 创建应用会话
+      tags:
+      - 容器管理
+  /container/app-session/delete:
+    post:
+      consumes:
+      - application/json
+      description: 通过 ContainerManager 删除绑定容器，并删除 AppSession
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionIDBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 删除应用会话
+      tags:
+      - 容器管理
+  /container/app-session/get:
+    get:
+      description: 按 ID 查询当前用户的 AppSession 详情
+      parameters:
+      - description: 主键 ID
+        in: query
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取应用会话
+      tags:
+      - 容器管理
+  /container/app-session/list:
+    get:
+      description: 查询当前用户的 AppSession 列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 应用会话列表
+      tags:
+      - 容器管理
+  /container/app-session/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 按当前用户分页查询 AppSession 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionPageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询应用会话
+      tags:
+      - 容器管理
+  /container/app-session/start:
+    post:
+      consumes:
+      - application/json
+      description: 通过 ContainerManager 启动 AppSession 绑定容器
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionIDBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 启动应用会话
+      tags:
+      - 容器管理
+  /container/app-session/stop:
+    post:
+      consumes:
+      - application/json
+      description: 通过 ContainerManager 停止 AppSession 绑定容器
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionIDBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 停止应用会话
+      tags:
+      - 容器管理
+  /container/event/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 分页查询 ContainerEvent 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.containerEventPageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询容器事件
+      tags:
+      - 容器管理
+  /container/image/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建 ContainerImage 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 创建容器镜像
+      tags:
+      - 容器管理
+  /container/image/delete:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 删除 ContainerImage 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.idBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 删除容器镜像
+      tags:
+      - 容器管理
+  /container/image/get:
+    get:
+      description: 按 ID 查询 ContainerImage 详情
+      parameters:
+      - description: 主键 ID
+        in: query
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取容器镜像
+      tags:
+      - 容器管理
+  /container/image/list:
+    get:
+      description: 查询 ContainerImage 列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 容器镜像列表
+      tags:
+      - 容器管理
+  /container/image/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 分页查询 ContainerImage 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.containerImagePageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询容器镜像
+      tags:
+      - 容器管理
+  /container/image/update:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 更新 ContainerImage 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerImage'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 更新容器镜像
+      tags:
+      - 容器管理
+  /container/instance/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 分页查询 ContainerInstance 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.containerInstancePageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询容器实例
+      tags:
+      - 容器管理
+  /container/outbox/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 分页查询 OutboxEvent 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.outboxEventPageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询事件出箱
+      tags:
+      - 容器管理
+  /container/template/create:
+    post:
+      consumes:
+      - application/json
+      description: 创建 ContainerTemplate 记录（手动校验 ImageID，不使用 GORM 关系维护）
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 创建容器模板
+      tags:
+      - 容器管理
+  /container/template/delete:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 删除 ContainerTemplate 记录
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.idBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 删除容器模板
+      tags:
+      - 容器管理
+  /container/template/get:
+    get:
+      description: 按 ID 查询 ContainerTemplate 详情
+      parameters:
+      - description: 主键 ID
+        in: query
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 获取容器模板
+      tags:
+      - 容器管理
+  /container/template/list:
+    get:
+      description: 查询 ContainerTemplate 列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 容器模板列表
+      tags:
+      - 容器管理
+  /container/template/list-by-page:
+    post:
+      consumes:
+      - application/json
+      description: 分页查询 ContainerTemplate 列表
+      parameters:
+      - description: 分页请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.containerTemplatePageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分页查询容器模板
+      tags:
+      - 容器管理
+  /container/template/update:
+    post:
+      consumes:
+      - application/json
+      description: 按 ID 更新 ContainerTemplate 记录（手动校验 ImageID，不使用 GORM 关系维护）
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 更新容器模板
+      tags:
+      - 容器管理
   /data/dataset-file/add-file:
     post:
       consumes:

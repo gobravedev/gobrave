@@ -113,6 +113,14 @@ func (s *containerService) PageContainerTemplate(ctx context.Context, pagination
 }
 
 func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string) (*types.AppSession, error) {
+	return s.createAppSessionByTemplate(ctx, userID, projectID, containerTemplateID, name, 0, "")
+}
+
+func (s *containerService) CreateAppSessionByTemplateForAnalysisNode(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
+	return s.createAppSessionByTemplate(ctx, userID, projectID, containerTemplateID, name, analysisNodeID, workspacePath)
+}
+
+func (s *containerService) createAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
@@ -138,10 +146,12 @@ func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userI
 	session := &types.AppSession{
 		UserID:              userID,
 		ProjectID:           projectID,
+		AnalysisNodeID:      analysisNodeID,
 		ContainerTemplateID: containerTemplateID,
 		Name:                name,
 		AppType:             tpl.AppType,
 		Status:              "CREATING",
+		WorkspacePath:       strings.TrimSpace(workspacePath),
 	}
 	if err := s.containerRepo.CreateAppSession(ctx, session); err != nil {
 		return nil, err
@@ -251,12 +261,12 @@ func (s *containerService) ListAppSessionByUserID(ctx context.Context, userID st
 	return filtered, nil
 }
 
-func (s *containerService) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) (*types.PageResult, error) {
+func (s *containerService) PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) (*types.PageResult, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}
 	}
 
-	items, total, err := s.containerRepo.PageAppSessionByUserID(ctx, userID, pagination)
+	items, total, err := s.containerRepo.PageAppSessionByUserID(ctx, userID, pagination, query)
 	if err != nil {
 		return nil, err
 	}

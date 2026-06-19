@@ -13,15 +13,20 @@ import (
 )
 
 type Config struct {
-	Server   *ServerConfig   `yaml:"server"   json:"server"`
-	Database *DatabaseConfig `yaml:"database" json:"database"`
-	Feed     *FeedConfig     `yaml:"feed"     json:"feed"`
-	Proxy    *ProxyConfig    `yaml:"proxy"    json:"proxy"`
-	Route    *RouteConfig    `yaml:"route"    json:"route"`
-	Storage  *StorageConfig  `yaml:"storage"  json:"storage"`
+	Server    *ServerConfig    `yaml:"server"   json:"server"`
+	Database  *DatabaseConfig  `yaml:"database" json:"database"`
+	Feed      *FeedConfig      `yaml:"feed"     json:"feed"`
+	Proxy     *ProxyConfig     `yaml:"proxy"    json:"proxy"`
+	Route     *RouteConfig     `yaml:"route"    json:"route"`
+	Storage   *StorageConfig   `yaml:"storage"  json:"storage"`
+	Container *ContainerConfig `yaml:"container" json:"container"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
 	// Audio  *AudioConfig  `yaml`
+}
+
+type ContainerConfig struct {
+	RefreshImageStatusOnStart bool `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
 }
 
 type StorageConfig struct {
@@ -154,6 +159,9 @@ func LoadConfig() (*Config, error) {
 			ImageDir: "",
 			BaseDir:  "",
 		},
+		Container: &ContainerConfig{
+			RefreshImageStatusOnStart: true,
+		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,
 		// 	FetchIntervalSec:        300,
@@ -191,6 +199,9 @@ func LoadConfig() (*Config, error) {
 		cfg.Storage = &StorageConfig{ImageDir: ""}
 	} else if strings.TrimSpace(cfg.Storage.ImageDir) == "" {
 		cfg.Storage.ImageDir = ""
+	}
+	if cfg.Container == nil {
+		cfg.Container = &ContainerConfig{RefreshImageStatusOnStart: true}
 	}
 
 	if cfg.Route == nil {

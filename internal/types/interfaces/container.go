@@ -22,12 +22,13 @@ type ContainerService interface {
 	PageContainerTemplate(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)
 
 	CreateAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string) (*types.AppSession, error)
+	CreateAppSessionByTemplateForAnalysisNode(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error)
 	StartAppSession(ctx context.Context, userID string, appSessionID int64) error
 	StopAppSession(ctx context.Context, userID string, appSessionID int64) error
 	DeleteAppSession(ctx context.Context, userID string, appSessionID int64) error
 	GetAppSessionByID(ctx context.Context, userID string, appSessionID int64) (*types.AppSession, error)
 	ListAppSessionByUserID(ctx context.Context, userID string) ([]*types.AppSession, error)
-	PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) (*types.PageResult, error)
+	PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) (*types.PageResult, error)
 
 	PageContainerInstance(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)
 	PageContainerEvent(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)
@@ -56,7 +57,7 @@ type ContainerRepository interface {
 	UpdateAppSession(ctx context.Context, item *types.AppSession) error
 	DeleteAppSession(ctx context.Context, id int64) error
 	ListAppSession(ctx context.Context) ([]*types.AppSession, error)
-	PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination) ([]*types.AppSession, int64, error)
+	PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) ([]*types.AppSession, int64, error)
 
 	CreateContainerInstance(ctx context.Context, item *types.ContainerInstance) error
 	GetContainerInstanceByID(ctx context.Context, id int64) (*types.ContainerInstance, error)
