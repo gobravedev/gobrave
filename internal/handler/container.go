@@ -552,13 +552,13 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 		return
 	}
 
-	moduleItem, err := h.workflowService.GetModuleByModuleID(c.Request.Context(), analysisNode.ScriptID)
+	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
-		handleDataError(c, err, "failed to get module")
+		handleDataError(c, err, "failed to get script")
 		return
 	}
-	if moduleItem.ContainerTemplateID == 0 {
-		c.Error(errors.NewValidationError("module container_template_id is required"))
+	if scriptItem.ContainerTemplateID == 0 {
+		c.Error(errors.NewValidationError("script container_template_id is required"))
 		return
 	}
 
@@ -566,7 +566,7 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 		c.Request.Context(),
 		userID,
 		analysisItem.ProjectID,
-		moduleItem.ContainerTemplateID,
+		scriptItem.ContainerTemplateID,
 		req.Name,
 		int64(analysisNode.ID),
 		analysisNode.WorkspaceDir,

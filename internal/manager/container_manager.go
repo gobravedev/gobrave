@@ -21,16 +21,20 @@ import (
 )
 
 type ContainerManager struct {
-	repo interfaces.ContainerRepository
-	reg  *containerruntime.Registry
-	bus  event.Bus
-	res  ContainerRuntimeResolver
-	img  *ImageManager
-	cfg  *config.Config
+	repo         interfaces.ContainerRepository
+	analysisRepo interfaces.AnalysisRepository
+	workflowRepo interfaces.WorkflowRepository
+	reg          *containerruntime.Registry
+	bus          event.Bus
+	res          ContainerRuntimeResolver
+	img          *ImageManager
+	cfg          *config.Config
 }
 
 func NewContainerManager(
 	repo interfaces.ContainerRepository,
+	analysisRepo interfaces.AnalysisRepository,
+	workflowRepo interfaces.WorkflowRepository,
 	reg *containerruntime.Registry,
 	bus event.Bus,
 	res ContainerRuntimeResolver,
@@ -43,7 +47,7 @@ func NewContainerManager(
 	if img == nil {
 		img = NewImageManager(repo, reg)
 	}
-	return &ContainerManager{repo: repo, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
+	return &ContainerManager{repo: repo, analysisRepo: analysisRepo, workflowRepo: workflowRepo, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
 }
 
 // func (m *ContainerManager) Create(ctx context.Context, spec Spec) error {
@@ -525,12 +529,45 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 			setRuntimeVar(vars, "USER_ID", session.UserID)
 			setRuntimeVar(vars, "USERID", session.UserID)
 			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
+			user_project_dir := fmt.Sprintf("%s/data/%s", baseDir, session.ProjectID)
 			if baseDir != "" {
-				setRuntimeVar(vars, "USER_PROJECT_DIR", fmt.Sprintf("%s/data/%s", baseDir, session.ProjectID))
+				setRuntimeVar(vars, "USER_PROJECT_DIR", user_project_dir)
 			}
 
 			setRuntimeVar(vars, "PROJECTID", session.ProjectID)
 			setRuntimeVar(vars, "WORKSPACE_PATH", session.WorkspacePath)
+			if session.WorkspacePath == "" {
+				setRuntimeVar(vars, "WORKSPACE_PATH", user_project_dir)
+			}
+
+			analysisNodeID := session.AnalysisNodeID
+			if analysisNodeID != 0 {
+				analysisNode, err := m.analysisRepo.GetAnalysisNodeByID(ctx, analysisNodeID)
+				if err == nil && analysisNode != nil {
+					script, err := m.workflowRepo.GetScriptByScriptID(ctx, analysisNode.ScriptID)
+					if err == nil && script != nil {
+						// /home/admin/.brave/pipeline/script/4a34dad8-7ad6-4daf-9cdb-5cfb8f64d611/main.R
+						var suffix = ""
+						switch script.ScriptType {
+						case "r":
+							suffix = "main.R"
+						case "python":
+							suffix = "main.py"
+						case "shell":
+							suffix = "main.sh"
+						case "jupyter":
+							suffix = "main.ipynb"
+						default:
+							suffix = "main.R"
+						}
+
+						scriptFile := fmt.Sprintf("%s/pipeline/script/%s/%s", baseDir, script.ScriptID, suffix)
+						setRuntimeVar(vars, "SCRIPT_FILE", scriptFile)
+					}
+
+				}
+			}
+
 			setRuntimeVar(vars, "APP_TYPE", session.AppType)
 		}
 	}

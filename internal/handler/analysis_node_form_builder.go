@@ -6,7 +6,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/types"
 )
 
-func buildNodeFormJSON(dagDefinitionRaw string, module *types.Module, scriptID string) ([]interface{}, error) {
+func buildNodeFormJSON(dagDefinitionRaw string, script *types.Script, scriptID string) ([]interface{}, error) {
 	formJSON := make([]interface{}, 0)
 
 	nodeInDag := make(map[string]interface{})
@@ -31,8 +31,8 @@ func buildNodeFormJSON(dagDefinitionRaw string, module *types.Module, scriptID s
 	}
 
 	ioSchema := make(map[string]interface{})
-	if module.IOSchema != "" {
-		if err := json.Unmarshal([]byte(module.IOSchema), &ioSchema); err != nil {
+	if script.IOSchema != "" {
+		if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
 			return nil, err
 		}
 	}
@@ -40,9 +40,9 @@ func buildNodeFormJSON(dagDefinitionRaw string, module *types.Module, scriptID s
 		ioSchema[k] = v
 	}
 
-	if module.Content != "" {
+	if script.Content != "" {
 		content := make(map[string]interface{})
-		if err := json.Unmarshal([]byte(module.Content), &content); err != nil {
+		if err := json.Unmarshal([]byte(script.Content), &content); err != nil {
 			return nil, err
 		}
 		if contentFormJSON, ok := content["formJson"].([]interface{}); ok {

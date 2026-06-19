@@ -24,28 +24,28 @@ func (r *workflowRepository) GetWorkflowByWorkflowID(ctx context.Context, workfl
 	return item, nil
 }
 
-func (r *workflowRepository) GetModuleByModuleID(ctx context.Context, moduleID string) (*types.Module, error) {
-	item := &types.Module{}
-	if err := r.db.WithContext(ctx).Where("component_id = ?", moduleID).Take(item).Error; err != nil {
+func (r *workflowRepository) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
+	item := &types.Script{}
+	if err := r.db.WithContext(ctx).Where("component_id = ?", scriptID).Take(item).Error; err != nil {
 		return nil, err
 	}
 	return item, nil
 }
 
-func (r *workflowRepository) FindModulesByModuleIDs(ctx context.Context, moduleIDs []string) ([]*types.Module, error) {
-	items := make([]*types.Module, 0)
-	if len(moduleIDs) == 0 {
+func (r *workflowRepository) FindScriptsByScriptIDs(ctx context.Context, scriptIDs []string) ([]*types.Script, error) {
+	items := make([]*types.Script, 0)
+	if len(scriptIDs) == 0 {
 		return items, nil
 	}
-	err := r.db.WithContext(ctx).Where("component_id IN ?", moduleIDs).Find(&items).Error
+	err := r.db.WithContext(ctx).Where("component_id IN ?", scriptIDs).Find(&items).Error
 	if err != nil {
 		return nil, err
 	}
 	return items, nil
 }
 
-func (r *workflowRepository) GetModuleContainerSnapshotByModuleID(ctx context.Context, moduleID string) (*types.ModuleContainerSnapshot, error) {
-	item := &types.ModuleContainerSnapshot{}
+func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error) {
+	item := &types.ScriptContainerSnapshot{}
 
 	err := r.db.WithContext(ctx).
 		Table("pipeline_components AS pc").
@@ -61,7 +61,7 @@ func (r *workflowRepository) GetModuleContainerSnapshotByModuleID(ctx context.Co
 		`).
 		Joins("LEFT JOIN go_container_template AS ct ON pc.container_id = ct.id").
 		Joins("LEFT JOIN go_container_image AS ci ON ct.image_id = ci.id").
-		Where("pc.component_id = ?", moduleID).
+		Where("pc.component_id = ?", scriptID).
 		Limit(1).
 		Scan(item).Error
 	if err != nil {

@@ -20,12 +20,12 @@ func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowI
 	return s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
 }
 
-func (s *workflowService) GetModuleByModuleID(ctx context.Context, moduleID string) (*types.Module, error) {
-	return s.workflowRepo.GetModuleByModuleID(ctx, moduleID)
+func (s *workflowService) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
+	return s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 }
 
-func (s *workflowService) GetModuleContainerSnapshotByModuleID(ctx context.Context, moduleID string) (*types.ModuleContainerSnapshot, error) {
-	return s.workflowRepo.GetModuleContainerSnapshotByModuleID(ctx, moduleID)
+func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error) {
+	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
 }
 
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {
@@ -94,20 +94,20 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 		return formJSONWrap, nil
 	}
 
-	scripts, err := s.workflowRepo.FindModulesByModuleIDs(ctx, moduleIDs)
+	scripts, err := s.workflowRepo.FindScriptsByScriptIDs(ctx, moduleIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, script := range scripts {
-		moduleID := script.ModuleID
+		scriptID := script.ScriptID
 		ioSchema := make(map[string]any)
 		if script.IOSchema != "" {
 			_ = json.Unmarshal([]byte(script.IOSchema), &ioSchema)
 		}
 
 		inputNames := getInputNames(ioSchema)
-		nodeIDs := nodeIDsByModuleID[moduleID]
+		nodeIDs := nodeIDsByModuleID[scriptID]
 		missingInputNames := make(map[string]struct{})
 		for _, nodeID := range nodeIDs {
 			incomingHandles := nodeIncomingHandles[nodeID]
@@ -118,15 +118,15 @@ func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowI
 			}
 		}
 		if len(missingInputNames) > 0 {
-			inputScriptIDs[moduleID] = struct{}{}
+			inputScriptIDs[scriptID] = struct{}{}
 		}
 
-		if _, isInputScript := inputScriptIDs[moduleID]; isInputScript && script.IOSchema != "" {
+		if _, isInputScript := inputScriptIDs[scriptID]; isInputScript && script.IOSchema != "" {
 			merged := make(map[string]any, len(ioSchema)+4)
 			for k, v := range ioSchema {
 				merged[k] = v
 			}
-			if node, exists := nodesMap[moduleID]; exists {
+			if node, exists := nodesMap[scriptID]; exists {
 				for k, v := range node {
 					merged[k] = v
 				}

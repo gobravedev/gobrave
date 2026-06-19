@@ -2,16 +2,16 @@ package types
 
 import "time"
 
-type Module struct {
+type Script struct {
 	ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ModuleID            string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
+	ScriptID            string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	InstallKey          string    `json:"install_key" gorm:"type:varchar(255)"`
 	ComponentType       string    `json:"component_type" gorm:"type:varchar(255)"`
 	ComponentName       string    `json:"component_name" gorm:"type:varchar(255)"`
 	Description         string    `json:"description" gorm:"type:longtext"`
 	ComponentIDs        string    `json:"component_ids" gorm:"type:longtext"`
 	Img                 string    `json:"img" gorm:"type:varchar(255)"`
-	ContainerTemplateID int64     `json:"container_id,string" gorm:"column:container_id;type:bigint"`
+	ContainerTemplateID int64     `json:"container_template_id,string" gorm:"column:container_template_id;type:bigint"`
 	ToolsContainerID    string    `json:"tools_container_id" gorm:"type:text"`
 	Prompt              string    `json:"prompt" gorm:"type:longtext"`
 	IOSchema            string    `json:"io_schema" gorm:"column:io_schema;type:longtext"`
@@ -28,7 +28,7 @@ type Module struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
-func (Module) TableName() string {
+func (Script) TableName() string {
 	return "pipeline_components"
 }
 
@@ -61,9 +61,9 @@ func (Workflow) TableName() string {
 	return "pipeline_components_relation"
 }
 
-// ModuleContainerSnapshot is a read model for analysis node visualization.
-// It flattens module -> container template -> container image fields via SQL join.
-type ModuleContainerSnapshot struct {
+// ScriptContainerSnapshot is a read model for analysis node visualization.
+// It flattens script -> container template -> container image fields via SQL join.
+type ScriptContainerSnapshot struct {
 	ScriptID       string `json:"script_id" gorm:"column:script_id"`
 	ContainerID    int64  `json:"container_id,string" gorm:"column:container_id"`
 	ContainerName  string `json:"container_name" gorm:"column:container_name"`

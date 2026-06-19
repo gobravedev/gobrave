@@ -373,7 +373,7 @@ func newTestManager(repo *mockContainerRepo, rt *dockerMockRuntime) *ContainerMa
 	reg := containerruntime.NewRegistry()
 	reg.Register("docker", rt)
 	imgMgr := NewImageManager(repo, reg)
-	return NewContainerManager(repo, reg, nil, NewDefaultContainerRuntimeResolver(), imgMgr, nil)
+	return NewContainerManager(repo, nil, nil, reg, nil, NewDefaultContainerRuntimeResolver(), imgMgr, nil)
 }
 
 func mustSeedTemplate(t *testing.T, repo *mockContainerRepo) {

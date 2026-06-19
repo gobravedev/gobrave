@@ -75,6 +75,10 @@ func NewAnalysisHandler(analysisService interfaces.AnalysisService, workflowServ
 	}
 }
 
+func (h *AnalysisHandler) ParseParams(c *gin.Context) {
+
+}
+
 // EditParamsV2 godoc
 // @Summary      编辑分析参数（V2）
 // @Description  查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result
@@ -200,17 +204,17 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		return
 	}
 
-	moduleItem, err := h.workflowService.GetModuleByModuleID(c.Request.Context(), analysisNode.ScriptID)
+	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
-			c.Error(errors.NewNotFoundError("module not found"))
+			c.Error(errors.NewNotFoundError("script not found"))
 			return
 		}
-		c.Error(errors.NewInternalServerError("failed to get module").WithDetails(err.Error()))
+		c.Error(errors.NewInternalServerError("failed to get script").WithDetails(err.Error()))
 		return
 	}
 
-	formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, moduleItem, analysisNode.ScriptID)
+	formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, scriptItem, analysisNode.ScriptID)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to build node form json").WithDetails(err.Error()))
 		return
@@ -315,7 +319,7 @@ func (h *AnalysisHandler) attachContainerInfoToNode(c *gin.Context, node map[str
 		return node, nil
 	}
 
-	snapshot, err := h.workflowService.GetModuleContainerSnapshotByModuleID(c.Request.Context(), scriptID)
+	snapshot, err := h.workflowService.GetScriptContainerSnapshotByScriptID(c.Request.Context(), scriptID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			return node, nil
