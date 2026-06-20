@@ -74,9 +74,6 @@ container:
   # DAG 流程结束（finished/failed/timeout）时，是否自动回收 owner_type=dag_node 的容器实例。
   # 可选: none | stop | delete
   dag_node_cleanup_on_dag_finished: delete
-  # DAG 流程结束时容器清理范围。
-  # all: 清理 DAG 下所有容器；keep_failed: 保留失败节点对应容器，仅清理非失败节点容器。
-  dag_node_cleanup_scope_on_dag_finished: keep_failed
 
 tenant:
   # default_tenant_id: "default"

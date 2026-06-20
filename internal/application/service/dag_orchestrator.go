@@ -21,8 +21,6 @@ const (
 	cleanupPolicyNone      = "none"
 	cleanupPolicyStop      = "stop"
 	cleanupPolicyDelete    = "delete"
-	cleanupScopeAll        = "all"
-	cleanupScopeKeepFailed = "keep_failed"
 	analysisRunLeaseTTL    = 90 * time.Second
 	analysisRunHeartbeat   = 15 * time.Second
 	analysisStatusRunning  = "running"
@@ -132,7 +130,6 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 	runtime := dagruntime.NewRuntimeEngine(o.repo)
 	onNodeFailedCleanupPolicy := o.cleanupPolicyOnNodeFailed()
 	onDagFinishedCleanupPolicy := o.cleanupPolicyOnDagFinished()
-	onDagFinishedCleanupScope := o.cleanupScopeOnDagFinished()
 	storageBase := ""
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
@@ -177,13 +174,13 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 			finalStatus := analysisStatusFailed
 			if stoppedByUser {
 				_ = o.markActiveNodesStopped(context.Background(), analysisID, "dag stopped by user")
-				if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete, cleanupScopeAll); cleanupErr == nil {
+				if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete); cleanupErr == nil {
 					finalStatus = analysisStatusStopped
 				} else {
 					logger.Warnf(context.Background(), "[DagOrchestrator] stop cleanup failed after scheduler error, analysis_id=%s err=%v", analysisID, cleanupErr)
 				}
 			} else {
-				o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy, onDagFinishedCleanupScope)
+				o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
 			}
 
 			o.registry.MarkFinished(analysisID, finalStatus)
@@ -197,7 +194,7 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 		finalStatus := analysisStatusFinished
 		if stoppedByUser {
 			_ = o.markActiveNodesStopped(context.Background(), analysisID, "dag stopped by user")
-			if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete, cleanupScopeAll); cleanupErr != nil {
+			if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete); cleanupErr != nil {
 				finalStatus = analysisStatusFailed
 				logger.Warnf(context.Background(), "[DagOrchestrator] stop cleanup failed, analysis_id=%s err=%v", analysisID, cleanupErr)
 			} else {
@@ -209,7 +206,9 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 			} else if failedCount := result.Snapshot.StatusCount[dagruntime.StatusFailed]; failedCount > 0 {
 				finalStatus = analysisStatusFailed
 			}
-			o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy, onDagFinishedCleanupScope)
+			if finalStatus == analysisStatusFinished {
+				o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
+			}
 		}
 
 		o.registry.MarkFinished(analysisID, finalStatus)
@@ -365,7 +364,7 @@ func (o *dagOrchestrator) finalizeStop(analysisID string) {
 		finalStatus = analysisStatusFailed
 		logger.Warnf(ctx, "[DagOrchestrator] mark nodes stopped failed, analysis_id=%s err=%v", analysisID, err)
 	}
-	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, cleanupPolicyDelete, cleanupScopeAll); err != nil {
+	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, cleanupPolicyDelete); err != nil {
 		finalStatus = analysisStatusFailed
 		logger.Warnf(ctx, "[DagOrchestrator] stop cleanup failed, analysis_id=%s err=%v", analysisID, err)
 	}
@@ -511,13 +510,6 @@ func (o *dagOrchestrator) cleanupPolicyOnDagFinished() string {
 	return cleanupPolicyDelete
 }
 
-func (o *dagOrchestrator) cleanupScopeOnDagFinished() string {
-	if o.cfg != nil && o.cfg.Container != nil {
-		return normalizeCleanupScope(o.cfg.Container.DagNodeCleanupScopeOnDagFinished, cleanupScopeAll)
-	}
-	return cleanupScopeAll
-}
-
 func (o *dagOrchestrator) deleteContainerOnNodeSuccess() bool {
 	if o.cfg == nil || o.cfg.Container == nil {
 		return false
@@ -534,26 +526,16 @@ func normalizeCleanupPolicy(value string, defaultValue string) string {
 	}
 }
 
-func normalizeCleanupScope(value string, defaultValue string) string {
-	switch strings.TrimSpace(strings.ToLower(value)) {
-	case cleanupScopeAll, cleanupScopeKeepFailed:
-		return strings.TrimSpace(strings.ToLower(value))
-	default:
-		return defaultValue
-	}
-}
-
-func (o *dagOrchestrator) cleanupByAnalysisID(ctx context.Context, analysisID string, policy string, scope string) {
-	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, policy, scope); err != nil {
+func (o *dagOrchestrator) cleanupByAnalysisID(ctx context.Context, analysisID string, policy string) {
+	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, policy); err != nil {
 		logger.Warnf(ctx, "[DagOrchestrator] cleanup by analysis_id failed, analysis_id=%s err=%v", analysisID, err)
 	}
 }
 
-func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysisID string, policy string, scope string) error {
+func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysisID string, policy string) error {
 	if policy == cleanupPolicyNone || o.containerRepo == nil || o.containerMgr == nil || analysisID == "" {
 		return nil
 	}
-	scope = normalizeCleanupScope(scope, cleanupScopeAll)
 
 	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 	if err != nil {
@@ -564,13 +546,9 @@ func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysi
 	}
 
 	ownerSet := make(map[int64]struct{}, len(nodes))
-	failedOwnerSet := make(map[int64]struct{})
 	for _, node := range nodes {
 		if node != nil && node.ID > 0 {
 			ownerSet[int64(node.ID)] = struct{}{}
-			if strings.TrimSpace(strings.ToLower(node.Status)) == dagruntime.StatusFailed {
-				failedOwnerSet[int64(node.ID)] = struct{}{}
-			}
 		}
 	}
 
@@ -587,11 +565,6 @@ func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysi
 		}
 		if _, ok := ownerSet[inst.OwnerID]; !ok {
 			continue
-		}
-		if scope == cleanupScopeKeepFailed {
-			if _, isFailedOwner := failedOwnerSet[inst.OwnerID]; isFailedOwner {
-				continue
-			}
 		}
 		if err := o.cleanupContainerInstance(ctx, inst, policy); err != nil && firstErr == nil {
 			firstErr = err
