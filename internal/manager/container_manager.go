@@ -358,12 +358,37 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 		}
 		_ = m.transition(context.Background(), inst, fsm.Running, "ContainerResumed")
 
+	case "ContainerExited":
+		now := time.Now()
+		inst.FinishedAt = &now
+		if code, ok := parseRuntimeExitCode(e.Message); ok {
+			inst.ExitCode = &code
+		}
+		_ = m.transition(context.Background(), inst, fsm.Stopped, "ContainerStopped")
+
 	case "ContainerFailed":
+		now := time.Now()
+		inst.FinishedAt = &now
+		if code, ok := parseRuntimeExitCode(e.Message); ok {
+			inst.ExitCode = &code
+		}
 		_ = m.transition(context.Background(), inst, fsm.Failed, "ContainerFailed")
 
 	default:
 		_ = m.createContainerEvent(context.Background(), inst.ID, e.Type, e.Message)
 	}
+}
+
+func parseRuntimeExitCode(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	code, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return code, true
 }
 
 func (m *ContainerManager) transition(

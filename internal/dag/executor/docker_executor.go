@@ -73,8 +73,9 @@ func (e *DockerExecutor) Execute(ctx context.Context, node *types.AnalysisNode) 
 	}
 
 	return &Result{
-		Status:          "done",
+		Status:          "running",
 		ResolvedOutputs: resolvedOutputs,
 		ExitCode:        0,
+		Deferred:        true,
 	}, nil
 }

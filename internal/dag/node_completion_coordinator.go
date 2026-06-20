@@ -1,0 +1,242 @@
+package dag
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/gobravedev/gobrave/internal/event"
+	"github.com/gobravedev/gobrave/internal/logger"
+	"github.com/gobravedev/gobrave/internal/types"
+	"github.com/gobravedev/gobrave/internal/types/interfaces"
+)
+
+var _ event.Handler = (*NodeCompletionCoordinator)(nil)
+
+type NodeCompletionCoordinator struct {
+	analysisRepo   interfaces.AnalysisRepository
+	containerRepo  interfaces.ContainerRepository
+	runtime        *RuntimeEngine
+	bus            event.Bus
+	cleanup        NodeFailureCleanupFunc
+	pollInterval   time.Duration
+	pollBatchLimit int
+}
+
+func NewNodeCompletionCoordinator(
+	analysisRepo interfaces.AnalysisRepository,
+	containerRepo interfaces.ContainerRepository,
+	runtime *RuntimeEngine,
+	bus event.Bus,
+	cleanup NodeFailureCleanupFunc,
+	pollInterval time.Duration,
+) *NodeCompletionCoordinator {
+	if runtime == nil {
+		runtime = NewRuntimeEngine(analysisRepo)
+	}
+	if pollInterval <= 0 {
+		pollInterval = 2 * time.Second
+	}
+	return &NodeCompletionCoordinator{
+		analysisRepo:   analysisRepo,
+		containerRepo:  containerRepo,
+		runtime:        runtime,
+		bus:            bus,
+		cleanup:        cleanup,
+		pollInterval:   pollInterval,
+		pollBatchLimit: 0,
+	}
+}
+
+func (c *NodeCompletionCoordinator) Handle(evt event.Event) {
+	ce, ok := evt.(types.ContainerEvent)
+	if !ok {
+		return
+	}
+
+	eventName := strings.TrimSpace(ce.Event)
+	switch eventName {
+	case "ContainerStopped", "ContainerFailed":
+		c.reconcileContainerByID(context.Background(), ce.ContainerInstanceID, eventName)
+	default:
+	}
+}
+
+func (c *NodeCompletionCoordinator) Start(ctx context.Context) {
+	if c == nil || c.containerRepo == nil || c.runtime == nil {
+		return
+	}
+
+	ticker := time.NewTicker(c.pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.pollOnce(ctx)
+		}
+	}
+}
+
+func (c *NodeCompletionCoordinator) pollOnce(ctx context.Context) {
+	instances, err := c.containerRepo.ListContainerInstance(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] list container instances failed: %v", err)
+		return
+	}
+
+	processed := 0
+	for _, inst := range instances {
+		if inst == nil || inst.OwnerType != types.ContainerOwnerDagNode {
+			continue
+		}
+		if !c.isContainerTerminal(inst.Status) {
+			continue
+		}
+		if c.pollBatchLimit > 0 && processed >= c.pollBatchLimit {
+			break
+		}
+		processed++
+		c.reconcileContainerByID(ctx, inst.ID, "poll")
+	}
+}
+
+func (c *NodeCompletionCoordinator) reconcileContainerByID(ctx context.Context, containerInstanceID int64, source string) {
+	inst, err := c.containerRepo.GetContainerInstanceByID(ctx, containerInstanceID)
+	if err != nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] load container instance failed, source=%s instance_id=%d err=%v", source, containerInstanceID, err)
+		return
+	}
+	c.reconcileContainer(ctx, inst, source)
+}
+
+func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst *types.ContainerInstance, source string) {
+	if inst == nil || inst.OwnerType != types.ContainerOwnerDagNode || inst.OwnerID <= 0 {
+		return
+	}
+
+	node, err := c.analysisRepo.GetAnalysisNodeByID(ctx, inst.OwnerID)
+	if err != nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] load analysis node failed, source=%s owner_id=%d err=%v", source, inst.OwnerID, err)
+		return
+	}
+	if node == nil {
+		return
+	}
+
+	nodeStatus := strings.TrimSpace(strings.ToLower(node.Status))
+	if IsTerminalStatus(nodeStatus) {
+		return
+	}
+	if nodeStatus != StatusRunning && nodeStatus != StatusSubmitted {
+		return
+	}
+
+	finalStatus, exitCode, errorMessage, shouldComplete := c.resolveNodeStatus(inst)
+	if !shouldComplete {
+		return
+	}
+
+	outputs := c.buildResolvedOutputs(inst)
+	if _, err := c.runtime.CompleteNode(ctx, node.AnalysisID, node.NodeID, finalStatus, outputs, exitCode, errorMessage); err != nil {
+		latest, latestErr := c.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID)
+		if latestErr == nil && latest != nil && IsTerminalStatus(latest.Status) {
+			return
+		}
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] complete node failed, source=%s analysis_id=%s node_id=%s status=%s err=%v", source, node.AnalysisID, node.NodeID, finalStatus, err)
+		return
+	}
+
+	if finalStatus == StatusFailed {
+		c.runCleanup(ctx, node)
+	}
+	c.publishNodeResult(node, finalStatus, exitCode, errorMessage)
+}
+
+func (c *NodeCompletionCoordinator) buildResolvedOutputs(inst *types.ContainerInstance) map[string]any {
+	outputs := map[string]any{}
+	if inst == nil {
+		return outputs
+	}
+	outputs["container_instance_id"] = inst.ID
+	outputs["container_runtime_id"] = inst.RuntimeID
+	outputs["container_ip"] = inst.IPAddress
+	outputs["container_status"] = string(inst.Status)
+	outputs["container_owner_type"] = string(inst.OwnerType)
+	outputs["container_owner_id"] = inst.OwnerID
+	if inst.ExitCode != nil {
+		outputs["container_exit_code"] = *inst.ExitCode
+	}
+	return outputs
+}
+
+func (c *NodeCompletionCoordinator) resolveNodeStatus(inst *types.ContainerInstance) (string, int, string, bool) {
+	if inst == nil {
+		return "", 0, "", false
+	}
+
+	exitCode := 0
+	if inst.ExitCode != nil {
+		exitCode = *inst.ExitCode
+	}
+
+	switch strings.TrimSpace(strings.ToLower(string(inst.Status))) {
+	case string(types.ContainerFailed):
+		if exitCode == 0 {
+			exitCode = 1
+		}
+		return StatusFailed, exitCode, fmt.Sprintf("container execution failed (exit_code=%d)", exitCode), true
+	case string(types.ContainerStopped), string(types.ContainerExited):
+		if exitCode == 0 {
+			return StatusDone, 0, "", true
+		}
+		return StatusFailed, exitCode, fmt.Sprintf("container exited with non-zero code (%d)", exitCode), true
+	default:
+		return "", 0, "", false
+	}
+}
+
+func (c *NodeCompletionCoordinator) isContainerTerminal(status types.ContainerStatus) bool {
+	switch strings.TrimSpace(strings.ToLower(string(status))) {
+	case string(types.ContainerStopped), string(types.ContainerFailed), string(types.ContainerExited):
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *NodeCompletionCoordinator) runCleanup(ctx context.Context, node *types.AnalysisNode) {
+	if c.cleanup == nil || node == nil {
+		return
+	}
+	c.cleanup(ctx, node)
+}
+
+func (c *NodeCompletionCoordinator) publishNodeResult(node *types.AnalysisNode, status string, exitCode int, errorMessage string) {
+	if node == nil {
+		return
+	}
+	eventName := EventNodeCompleted
+	if strings.EqualFold(status, StatusFailed) {
+		eventName = EventNodeFailed
+	}
+	payload := map[string]any{
+		"status":    status,
+		"exit_code": exitCode,
+	}
+	if strings.TrimSpace(errorMessage) != "" {
+		payload["error"] = errorMessage
+	}
+	if c.bus != nil {
+		c.bus.Publish(RuntimeEvent{
+			Name:       eventName,
+			AnalysisID: node.AnalysisID,
+			NodeID:     node.NodeID,
+			OccurredAt: time.Now().UTC(),
+			Payload:    payload,
+		})
+	}
+}

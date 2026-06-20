@@ -70,3 +70,11 @@ docker run --rm \
   --providers.docker.exposedbydefault=false \
   --providers.file.directory=/etc/traefik/dynamic \
   --providers.file.watch=true
+
+
+
+
+
+  我可以继续把 DockerExecutor 对接你现有 ContainerManager/AppSession 启动逻辑，做到真实容器执行节点。
+我可以补 DAG 运行状态查询与停止接口（running registry + stop API + recent records）。
+我可以补一组 DAG 调度单元测试（ready 计算、输出传播、失败分支、终止条件）。

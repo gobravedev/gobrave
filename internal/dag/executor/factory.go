@@ -44,6 +44,6 @@ func (f *Factory) Resolve(executorName string) Executor {
 	case "", "local":
 		fallthrough
 	default:
-		return f.local
+		return f.docker
 	}
 }

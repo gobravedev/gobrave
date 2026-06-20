@@ -11,6 +11,7 @@ type Result struct {
 	ResolvedOutputs map[string]any
 	ExitCode        int
 	ErrorMessage    string
+	Deferred        bool
 }
 
 type Executor interface {

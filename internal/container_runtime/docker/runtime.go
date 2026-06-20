@@ -117,7 +117,41 @@ func (d *DockerRuntime) Start(ctx context.Context, id string) error {
 	}
 
 	d.emitEvent("ContainerStarted", id, "")
+	go d.waitContainerExit(id)
 	return nil
+}
+
+func (d *DockerRuntime) waitContainerExit(runtimeID string) {
+	containerID, err := d.toContainerID(runtimeID)
+	if err != nil {
+		d.emitEvent("ContainerFailed", runtimeID, err.Error())
+		return
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		d.emitEvent("ContainerFailed", runtimeID, err.Error())
+		return
+	}
+
+	statusCh, errCh := cli.ContainerWait(context.Background(), containerID, container.WaitConditionNotRunning)
+	select {
+	case waitErr := <-errCh:
+		if waitErr != nil {
+			d.emitEvent("ContainerFailed", runtimeID, waitErr.Error())
+		}
+	case result := <-statusCh:
+		exitCode := int(result.StatusCode)
+		if result.Error != nil {
+			d.emitEvent("ContainerFailed", runtimeID, result.Error.Message)
+			return
+		}
+		if exitCode == 0 {
+			d.emitEvent("ContainerExited", runtimeID, strconv.Itoa(exitCode))
+			return
+		}
+		d.emitEvent("ContainerFailed", runtimeID, strconv.Itoa(exitCode))
+	}
 }
 
 func (d *DockerRuntime) Stop(ctx context.Context, id string) error {

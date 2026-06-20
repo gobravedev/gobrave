@@ -71,32 +71,66 @@ func (s *DagScheduler) Run(ctx context.Context) (*SchedulerResult, error) {
 	submitted := 0
 	failedToSubmit := 0
 	timedOut := false
+	ticker := time.NewTicker(s.cfg.PollInterval)
+	defer ticker.Stop()
+	probeInterval := s.cfg.PollInterval
+	maxProbeInterval := s.cfg.PollInterval * 8
+	if maxProbeInterval < s.cfg.PollInterval {
+		maxProbeInterval = s.cfg.PollInterval
+	}
+	nextProbeAt := time.Now()
 
 	for submitted < s.cfg.MaxSteps {
-		if err := s.runtime.RefreshReadyStatus(ctx, s.analysisID); err != nil {
-			return nil, err
-		}
+		queueLen := pool.QueueLen()
+		now := time.Now()
+		if queueLen < s.cfg.QueueSize && !now.Before(nextProbeAt) {
+			if err := s.runtime.RefreshReadyStatus(ctx, s.analysisID); err != nil {
+				return nil, err
+			}
 
-		for submitted < s.cfg.MaxSteps && pool.QueueLen() < s.cfg.QueueSize {
-			node, err := s.runtime.ClaimNextReadyNode(ctx, s.analysisID)
-			if err != nil {
-				failedToSubmit++
-				break
+			slots := s.cfg.QueueSize - queueLen
+			remaining := s.cfg.MaxSteps - submitted
+			if slots > remaining {
+				slots = remaining
 			}
-			if node == nil {
-				break
+			hasProgress := false
+
+			for i := 0; i < slots; i++ {
+				node, err := s.runtime.ClaimNextReadyNode(ctx, s.analysisID)
+				if err != nil {
+					failedToSubmit++
+					break
+				}
+				if node == nil {
+					break
+				}
+				if ok := pool.Enqueue(node.AnalysisNodeID); !ok {
+					failedToSubmit++
+					break
+				}
+				submitted++
+				hasProgress = true
+				s.publish(RuntimeEvent{
+					Name:       EventNodeSubmitted,
+					AnalysisID: s.analysisID,
+					NodeID:     node.NodeID,
+					OccurredAt: time.Now().UTC(),
+				})
 			}
-			if ok := pool.Enqueue(node.AnalysisNodeID); !ok {
-				failedToSubmit++
-				break
+
+			if hasProgress {
+				probeInterval = s.cfg.PollInterval
+			} else if probeInterval < maxProbeInterval {
+				probeInterval *= 2
+				if probeInterval > maxProbeInterval {
+					probeInterval = maxProbeInterval
+				}
 			}
-			submitted++
-			s.publish(RuntimeEvent{
-				Name:       EventNodeSubmitted,
-				AnalysisID: s.analysisID,
-				NodeID:     node.NodeID,
-				OccurredAt: time.Now().UTC(),
-			})
+			nextProbeAt = now.Add(probeInterval)
+		} else if queueLen >= s.cfg.QueueSize {
+			// Queue saturation means workers are busy; probe again as soon as capacity is available.
+			probeInterval = s.cfg.PollInterval
+			nextProbeAt = now
 		}
 
 		snapshot, err := s.runtime.GetSnapshot(ctx, s.analysisID)
@@ -127,7 +161,7 @@ func (s *DagScheduler) Run(ctx context.Context) (*SchedulerResult, error) {
 				TimedOut:            timedOut,
 				Snapshot:            finalSnapshot,
 			}, nil
-		case <-time.After(s.cfg.PollInterval):
+		case <-ticker.C:
 		}
 	}
 

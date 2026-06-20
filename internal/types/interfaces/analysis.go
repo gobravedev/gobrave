@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/gobravedev/gobrave/internal/types"
 )
@@ -20,6 +21,7 @@ type AnalysisRepository interface {
 	GetAnalysisNodeByNodeID(ctx context.Context, analysisID string, nodeID string) (*types.AnalysisNode, error)
 	WithTransaction(ctx context.Context, fn func(AnalysisRepository) error) error
 	CreateAnalysis(ctx context.Context, item *types.Analysis) error
+	TryMarkAnalysisRunning(ctx context.Context, analysisID string, now time.Time, staleBefore time.Time) (bool, error)
 	UpdateAnalysisByAnalysisID(ctx context.Context, analysisID string, values map[string]any) error
 	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error)
 	ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error)

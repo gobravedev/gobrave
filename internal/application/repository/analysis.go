@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
@@ -26,6 +27,20 @@ func (r *analysisRepository) WithTransaction(ctx context.Context, fn func(interf
 
 func (r *analysisRepository) CreateAnalysis(ctx context.Context, item *types.Analysis) error {
 	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *analysisRepository) TryMarkAnalysisRunning(ctx context.Context, analysisID string, now time.Time, staleBefore time.Time) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&types.Analysis{}).
+		Where("analysis_id = ? AND (job_status IS NULL OR job_status <> ? OR updated_at IS NULL OR updated_at < ?)", analysisID, "running", staleBefore).
+		Updates(map[string]any{
+			"job_status": "running",
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 func (r *analysisRepository) UpdateAnalysisByAnalysisID(ctx context.Context, analysisID string, values map[string]any) error {

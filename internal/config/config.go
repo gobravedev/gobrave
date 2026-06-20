@@ -26,7 +26,9 @@ type Config struct {
 }
 
 type ContainerConfig struct {
-	RefreshImageStatusOnStart bool `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
+	RefreshImageStatusOnStart   bool   `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
+	DagNodeCleanupOnFailed      string `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
+	DagNodeCleanupOnDagFinished string `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
 }
 
 type StorageConfig struct {
@@ -160,7 +162,9 @@ func LoadConfig() (*Config, error) {
 			BaseDir:  "",
 		},
 		Container: &ContainerConfig{
-			RefreshImageStatusOnStart: true,
+			RefreshImageStatusOnStart:   true,
+			DagNodeCleanupOnFailed:      "stop",
+			DagNodeCleanupOnDagFinished: "delete",
 		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,
@@ -201,8 +205,15 @@ func LoadConfig() (*Config, error) {
 		cfg.Storage.ImageDir = ""
 	}
 	if cfg.Container == nil {
-		cfg.Container = &ContainerConfig{RefreshImageStatusOnStart: true}
+		cfg.Container = &ContainerConfig{
+			RefreshImageStatusOnStart:   true,
+			DagNodeCleanupOnFailed:      "stop",
+			DagNodeCleanupOnDagFinished: "delete",
+		}
 	}
+
+	cfg.Container.DagNodeCleanupOnFailed = normalizeContainerCleanupPolicy(cfg.Container.DagNodeCleanupOnFailed, "stop")
+	cfg.Container.DagNodeCleanupOnDagFinished = normalizeContainerCleanupPolicy(cfg.Container.DagNodeCleanupOnDagFinished, "delete")
 
 	if cfg.Route == nil {
 		cfg.Route = &RouteConfig{Registry: "gateway"}
@@ -253,4 +264,14 @@ func normalizePathPrefix(value, fallback string) string {
 		return fallback
 	}
 	return prefix
+}
+
+func normalizeContainerCleanupPolicy(value string, fallback string) string {
+	v := strings.TrimSpace(strings.ToLower(value))
+	switch v {
+	case "none", "stop", "delete":
+		return v
+	default:
+		return fallback
+	}
 }
