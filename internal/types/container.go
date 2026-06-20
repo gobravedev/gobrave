@@ -299,6 +299,7 @@ type ContainerSpec struct {
 	Command    []string
 	Env        map[string]string
 	Volumes    []ContainerVolume
+	User       string
 
 	CPU    float64
 	Memory int64

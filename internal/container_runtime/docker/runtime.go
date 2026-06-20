@@ -486,6 +486,7 @@ func (d *DockerRuntime) toContainerConfig(spec *types.ContainerSpec) *container.
 		Cmd:        spec.Command,
 		WorkingDir: spec.WorkDir,
 		Env:        env,
+		User:       strings.TrimSpace(spec.User),
 	}
 }
 

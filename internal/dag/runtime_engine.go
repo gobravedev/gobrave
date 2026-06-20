@@ -2,8 +2,8 @@ package dag
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -205,9 +205,8 @@ func (e *RuntimeEngine) CompleteNode(
 	}
 
 	if IsSuccessStatus(status) {
-		payload := toJSON(resolvedOutputs)
-		updates["resolved_outputs"] = payload
-		updates["output_validation_errors"] = "[]"
+		updates["resolved_outputs"] = types.JSONMap(resolvedOutputs)
+		updates["output_validation_errors"] = types.JSONSlice{}
 	}
 
 	if err := e.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, updates); err != nil {
@@ -229,18 +228,24 @@ func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string,
 	if len(outputs) == 0 {
 		return nil
 	}
+	sourceNodeID = strings.TrimSpace(sourceNodeID)
+	if sourceNodeID == "" {
+		return nil
+	}
+
 	edges, err := e.repo.ListAnalysisEdgesByAnalysisID(ctx, analysisID)
 	if err != nil {
 		return err
 	}
 
 	for _, edge := range edges {
-		if edge.SourceNode != sourceNodeID {
+		if strings.TrimSpace(edge.SourceNode) != sourceNodeID {
 			continue
 		}
 		sourceHandle := strings.TrimSpace(edge.SourceHandle)
 		targetHandle := strings.TrimSpace(edge.TargetHandle)
-		if sourceHandle == "" || targetHandle == "" {
+		targetNodeID := strings.TrimSpace(edge.TargetNode)
+		if sourceHandle == "" || targetHandle == "" || targetNodeID == "" {
 			continue
 		}
 		value, ok := outputs[sourceHandle]
@@ -248,7 +253,7 @@ func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string,
 			continue
 		}
 
-		targetNode, err := e.repo.GetAnalysisNodeByNodeID(ctx, analysisID, edge.TargetNode)
+		targetNode, err := e.repo.GetAnalysisNodeByNodeID(ctx, analysisID, targetNodeID)
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
 				continue
@@ -256,9 +261,9 @@ func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string,
 			return err
 		}
 
-		params := fromJSONMap(targetNode.Params)
-		resolvedInputs := fromJSONMap(targetNode.ResolvedInputs)
-		inputPatterns := fromJSONMap(targetNode.InputsPatterns)
+		params := cloneAnyMap(targetNode.Params)
+		resolvedInputs := cloneAnyMap(targetNode.ResolvedInputs)
+		inputPatterns := map[string]any(targetNode.InputsPatterns)
 		inputCfg := asMap(inputPatterns[targetHandle])
 		multiple := asBool(inputCfg["multiple"])
 
@@ -271,8 +276,8 @@ func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string,
 		}
 
 		if err := e.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, targetNode.AnalysisNodeID, map[string]any{
-			"params":          toJSON(params),
-			"resolved_inputs": toJSON(resolvedInputs),
+			"params":          types.JSONMap(params),
+			"resolved_inputs": types.JSONMap(resolvedInputs),
 		}); err != nil {
 			return err
 		}
@@ -281,48 +286,69 @@ func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string,
 	return nil
 }
 
-func toJSON(v any) string {
-	if v == nil {
-		return "{}"
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	return string(b)
-}
-
-func fromJSONMap(raw string) map[string]any {
-	out := map[string]any{}
-	if strings.TrimSpace(raw) == "" {
-		return out
-	}
-	_ = json.Unmarshal([]byte(raw), &out)
-	return out
-}
-
 func asMap(v any) map[string]any {
+	if v == nil {
+		return map[string]any{}
+	}
+	if m, ok := v.(types.JSONMap); ok {
+		return map[string]any(m)
+	}
 	if m, ok := v.(map[string]any); ok {
 		return m
 	}
-	if m, ok := v.(map[string]interface{}); ok {
-		return map[string]any(m)
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
+		out := make(map[string]any, rv.Len())
+		for _, key := range rv.MapKeys() {
+			out[key.String()] = rv.MapIndex(key).Interface()
+		}
+		return out
 	}
 	return map[string]any{}
 }
 
 func asBool(v any) bool {
-	b, ok := v.(bool)
-	return ok && b
-}
-
-func isListValue(v any) bool {
-	switch v.(type) {
-	case []any:
-		return true
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		normalized := strings.TrimSpace(strings.ToLower(val))
+		return normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "y"
+	case int:
+		return val != 0
+	case int8:
+		return val != 0
+	case int16:
+		return val != 0
+	case int32:
+		return val != 0
+	case int64:
+		return val != 0
+	case uint:
+		return val != 0
+	case uint8:
+		return val != 0
+	case uint16:
+		return val != 0
+	case uint32:
+		return val != 0
+	case uint64:
+		return val != 0
+	case float32:
+		return val != 0
+	case float64:
+		return val != 0
 	default:
 		return false
 	}
+}
+
+func isListValue(v any) bool {
+	if v == nil {
+		return false
+	}
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array
 }
 
 func appendToList(current any, value any) []any {
@@ -335,7 +361,27 @@ func appendToList(current any, value any) []any {
 	if arr, ok := current.([]interface{}); ok {
 		return append(arr, value)
 	}
+	rv := reflect.ValueOf(current)
+	if rv.IsValid() && (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) {
+		out := make([]any, 0, rv.Len()+1)
+		for i := 0; i < rv.Len(); i++ {
+			out = append(out, rv.Index(i).Interface())
+		}
+		out = append(out, value)
+		return out
+	}
 	return []any{current, value}
+}
+
+func cloneAnyMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }
 
 func isTerminalNodeStatus(node *types.AnalysisNode) bool {

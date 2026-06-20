@@ -138,6 +138,12 @@ func (m *ContainerManager) CreateByTemplate(
 
 	resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
 	if ownerType == types.ContainerOwnerDagNode && strings.EqualFold(runtimeName, "docker") {
+		if uid := strings.TrimSpace(resolveVars["USERID"]); uid != "" {
+			if gid := strings.TrimSpace(resolveVars["GROUPID"]); gid != "" {
+				spec.User = uid + ":" + gid
+			}
+		}
+
 		logPath := strings.TrimSpace(resolveVars["LOG_PATH"])
 		if logPath == "" {
 			if envLogPath, ok := os.LookupEnv("LOG_PATH"); ok {

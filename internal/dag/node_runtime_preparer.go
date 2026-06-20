@@ -187,12 +187,7 @@ func (p *FileSystemNodeRuntimePreparer) buildNodeParams(node *types.AnalysisNode
 		}
 	}
 
-	resolvedInputs := map[string]any{}
-	if strings.TrimSpace(node.ResolvedInputs) != "" {
-		if err := json.Unmarshal([]byte(node.ResolvedInputs), &resolvedInputs); err != nil {
-			return nil, fmt.Errorf("parse node resolved_inputs failed: %w", err)
-		}
-	}
+	resolvedInputs := map[string]any(node.ResolvedInputs)
 
 	merged := map[string]any{}
 	for k, v := range baseParams {

@@ -2,8 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/types"
@@ -24,8 +22,8 @@ func (e *LocalExecutor) Execute(ctx context.Context, node *types.AnalysisNode) (
 	}
 
 	outputs := map[string]any{}
-	if strings.TrimSpace(node.ResolvedOutputs) != "" {
-		_ = json.Unmarshal([]byte(node.ResolvedOutputs), &outputs)
+	if node.ResolvedOutputs != nil {
+		outputs = map[string]any(node.ResolvedOutputs)
 	}
 
 	return &Result{

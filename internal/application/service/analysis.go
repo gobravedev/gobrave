@@ -274,20 +274,20 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			NodeName:               toString(row["node_name"]),
 			SampleID:               toString(row["sample_id"]),
 			ScriptID:               toString(row["script_id"]),
-			InputsPatterns:         mustJSONString(row["inputs_patterns"]),
-			ResolvedInputs:         mustJSONString(row["resolved_inputs"]),
-			OutputPatterns:         mustJSONString(row["output_patterns"]),
-			ResolvedOutputs:        mustJSONString(row["resolved_outputs"]),
-			Params:                 mustJSONString(row["params"]),
+			InputsPatterns:         toJSONMap(row["inputs_patterns"]),
+			ResolvedInputs:         toJSONMap(row["resolved_inputs"]),
+			OutputPatterns:         toJSONMap(row["output_patterns"]),
+			ResolvedOutputs:        toJSONMap(row["resolved_outputs"]),
+			Params:                 toJSONMap(row["params"]),
 			Status:                 status,
 			Executor:               toString(row["executor"]),
 			Retry:                  intFromAny(row["retry"], 0),
 			MaxRetry:               intFromAny(row["max_retry"], 3),
 			CacheHit:               cacheHit,
-			UpstreamIDs:            mustJSONString(row["upstream_ids"]),
-			DownstreamIDs:          mustJSONString(row["downstream_ids"]),
-			InputValidationErrors:  mustJSONString(row["input_validation_errors"]),
-			OutputValidationErrors: mustJSONString(row["output_validation_errors"]),
+			UpstreamIDs:            toJSONSlice(row["upstream_ids"]),
+			DownstreamIDs:          toJSONSlice(row["downstream_ids"]),
+			InputValidationErrors:  toJSONSlice(row["input_validation_errors"]),
+			OutputValidationErrors: toJSONSlice(row["output_validation_errors"]),
 			LogPath:                logPath,
 			WorkspaceDir:           workspaceDir,
 			OutputDir:              outputDir,
@@ -417,15 +417,78 @@ func intFromAny(v any, fallback int) int {
 	return fallback
 }
 
-func mustJSONString(value any) string {
+func toJSONMap(value any) types.JSONMap {
 	if value == nil {
-		return "{}"
+		return types.JSONMap{}
 	}
-	buf, err := json.Marshal(value)
-	if err != nil {
-		return "{}"
+	switch v := value.(type) {
+	case types.JSONMap:
+		return v
+	case map[string]any:
+		return types.JSONMap(v)
+	case string:
+		return parseJSONMap([]byte(v))
+	case []byte:
+		return parseJSONMap(v)
+	default:
+		buf, err := json.Marshal(v)
+		if err != nil {
+			return types.JSONMap{}
+		}
+		return parseJSONMap(buf)
 	}
-	return string(buf)
+}
+
+func parseJSONMap(raw []byte) types.JSONMap {
+	out := types.JSONMap{}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(trimmed), &out); err != nil {
+		return types.JSONMap{}
+	}
+	return out
+}
+
+func toJSONSlice(value any) types.JSONSlice {
+	if value == nil {
+		return types.JSONSlice{}
+	}
+	switch v := value.(type) {
+	case types.JSONSlice:
+		return v
+	case []any:
+		return types.JSONSlice(v)
+	case []string:
+		out := make(types.JSONSlice, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out
+	case string:
+		return parseJSONSlice([]byte(v))
+	case []byte:
+		return parseJSONSlice(v)
+	default:
+		buf, err := json.Marshal(v)
+		if err != nil {
+			return types.JSONSlice{}
+		}
+		return parseJSONSlice(buf)
+	}
+}
+
+func parseJSONSlice(raw []byte) types.JSONSlice {
+	out := make(types.JSONSlice, 0)
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(trimmed), &out); err != nil {
+		return types.JSONSlice{}
+	}
+	return out
 }
 
 func shouldKeepNodeStatusForCache(status string) bool {

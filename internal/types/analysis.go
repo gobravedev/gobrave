@@ -1,6 +1,122 @@
 package types
 
-import "time"
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type JSONMap map[string]any
+
+func (m JSONMap) Value() (driver.Value, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	buf, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (m *JSONMap) Scan(value any) error {
+	if m == nil {
+		return fmt.Errorf("types.JSONMap: scan on nil pointer")
+	}
+
+	data, err := normalizeJSONScanInput(value)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 || string(data) == "null" {
+		*m = JSONMap{}
+		return nil
+	}
+
+	out := map[string]any{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return err
+	}
+	*m = out
+	return nil
+}
+
+func (m JSONMap) MarshalJSON() ([]byte, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(map[string]any(m))
+}
+
+type JSONSlice []any
+
+func (s JSONSlice) Value() (driver.Value, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	buf, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (s *JSONSlice) Scan(value any) error {
+	if s == nil {
+		return fmt.Errorf("types.JSONSlice: scan on nil pointer")
+	}
+
+	data, err := normalizeJSONScanInput(value)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 || string(data) == "null" {
+		*s = JSONSlice{}
+		return nil
+	}
+
+	out := make([]any, 0)
+	if err := json.Unmarshal(data, &out); err == nil {
+		*s = out
+		return nil
+	}
+
+	// Backward compatibility: some historical rows stored object-shaped JSON
+	// in columns now treated as array-like fields.
+	obj := map[string]any{}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		if len(obj) == 0 {
+			*s = JSONSlice{}
+			return nil
+		}
+		*s = JSONSlice{obj}
+		return nil
+	}
+
+	return fmt.Errorf("types.JSONSlice: unsupported JSON payload: %s", string(data))
+}
+
+func (s JSONSlice) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]any(s))
+}
+
+func normalizeJSONScanInput(value any) ([]byte, error) {
+	switch v := value.(type) {
+	case nil:
+		return nil, nil
+	case []byte:
+		return []byte(strings.TrimSpace(string(v))), nil
+	case string:
+		return []byte(strings.TrimSpace(v)), nil
+	default:
+		return nil, fmt.Errorf("unsupported JSON scan type %T", value)
+	}
+}
 
 // Analysis maps to Python brave's nextflow table.
 type Analysis struct {
@@ -53,11 +169,11 @@ type AnalysisNode struct {
 	NodeName               string     `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
 	SampleID               string     `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`
 	ScriptID               string     `json:"script_id" gorm:"column:script_id;type:varchar(255)"`
-	InputsPatterns         string     `json:"inputs_patterns" gorm:"column:inputs_patterns;type:json"`
-	ResolvedInputs         string     `json:"resolved_inputs" gorm:"column:resolved_inputs;type:json"`
-	OutputPatterns         string     `json:"output_patterns" gorm:"column:output_patterns;type:json"`
-	ResolvedOutputs        string     `json:"resolved_outputs" gorm:"column:resolved_outputs;type:json"`
-	Params                 string     `json:"params" gorm:"column:params;type:json"`
+	InputsPatterns         JSONMap    `json:"inputs_patterns" gorm:"column:inputs_patterns;type:json"`
+	ResolvedInputs         JSONMap    `json:"resolved_inputs" gorm:"column:resolved_inputs;type:json"`
+	OutputPatterns         JSONMap    `json:"output_patterns" gorm:"column:output_patterns;type:json"`
+	ResolvedOutputs        JSONMap    `json:"resolved_outputs" gorm:"column:resolved_outputs;type:json"`
+	Params                 JSONMap    `json:"params" gorm:"column:params;type:json"`
 	CPU                    int        `json:"cpu" gorm:"column:cpu"`
 	Memory                 string     `json:"memory" gorm:"column:memory;type:varchar(64)"`
 	Disk                   string     `json:"disk" gorm:"column:disk;type:varchar(64)"`
@@ -73,10 +189,10 @@ type AnalysisNode struct {
 	ErrorMessage           string     `json:"error_message" gorm:"column:error_message;type:text"`
 	InputHash              string     `json:"input_hash" gorm:"column:input_hash;type:varchar(255)"`
 	CacheHit               bool       `json:"cache_hit" gorm:"column:cache_hit"`
-	UpstreamIDs            string     `json:"upstream_ids" gorm:"column:upstream_ids;type:json"`
-	DownstreamIDs          string     `json:"downstream_ids" gorm:"column:downstream_ids;type:json"`
-	InputValidationErrors  string     `json:"input_validation_errors" gorm:"column:input_validation_errors;type:json"`
-	OutputValidationErrors string     `json:"output_validation_errors" gorm:"column:output_validation_errors;type:json"`
+	UpstreamIDs            JSONSlice  `json:"upstream_ids" gorm:"column:upstream_ids;type:json"`
+	DownstreamIDs          JSONSlice  `json:"downstream_ids" gorm:"column:downstream_ids;type:json"`
+	InputValidationErrors  JSONSlice  `json:"input_validation_errors" gorm:"column:input_validation_errors;type:json"`
+	OutputValidationErrors JSONSlice  `json:"output_validation_errors" gorm:"column:output_validation_errors;type:json"`
 	LogPath                string     `json:"log_path" gorm:"column:log_path;type:varchar(255)"`
 	WorkspaceDir           string     `json:"workspace_dir" gorm:"column:workspace_dir;type:varchar(255)"`
 	OutputDir              string     `json:"output_dir" gorm:"column:output_dir;type:varchar(255)"`
