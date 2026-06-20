@@ -232,6 +232,38 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 		manager.RunImageStatusRefreshOnStart(imageMgr)
 	}))
+	must(container.Invoke(func(cfg *config.Config, orchestrator interfaces.DagOrchestrator) {
+		enabled := true
+		if cfg != nil && cfg.Container != nil {
+			enabled = cfg.Container.RecoverRunningDagOnStart
+		}
+		if !enabled {
+			logger.Infof(context.Background(), "[Container] startup running DAG recovery disabled by config")
+			return
+		}
+
+		recovered, err := orchestrator.RecoverRunningAnalyses(context.Background())
+		if err != nil {
+			logger.Warnf(context.Background(), "[Container] startup running DAG recovery failed: %v", err)
+		} else {
+			logger.Infof(context.Background(), "[Container] startup running DAG recovery completed, recovered=%d", recovered)
+		}
+
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				recovered, err := orchestrator.RecoverRunningAnalyses(context.Background())
+				if err != nil {
+					logger.Warnf(context.Background(), "[Container] periodic running DAG recovery failed: %v", err)
+					continue
+				}
+				if recovered > 0 {
+					logger.Infof(context.Background(), "[Container] periodic running DAG recovery completed, recovered=%d", recovered)
+				}
+			}
+		}()
+	}))
 	must(container.Invoke(manager.RunOutboxDispatcher))
 
 	return container

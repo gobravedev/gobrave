@@ -27,6 +27,7 @@ type Config struct {
 
 type ContainerConfig struct {
 	RefreshImageStatusOnStart   bool   `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
+	RecoverRunningDagOnStart    bool   `yaml:"recover_running_dag_on_start" json:"recover_running_dag_on_start"`
 	DagNodeCleanupOnFailed      string `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
 	DagNodeCleanupOnDagFinished string `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
 }
@@ -163,6 +164,7 @@ func LoadConfig() (*Config, error) {
 		},
 		Container: &ContainerConfig{
 			RefreshImageStatusOnStart:   true,
+			RecoverRunningDagOnStart:    true,
 			DagNodeCleanupOnFailed:      "stop",
 			DagNodeCleanupOnDagFinished: "delete",
 		},
@@ -207,6 +209,7 @@ func LoadConfig() (*Config, error) {
 	if cfg.Container == nil {
 		cfg.Container = &ContainerConfig{
 			RefreshImageStatusOnStart:   true,
+			RecoverRunningDagOnStart:    true,
 			DagNodeCleanupOnFailed:      "stop",
 			DagNodeCleanupOnDagFinished: "delete",
 		}

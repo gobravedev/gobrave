@@ -58,6 +58,18 @@ func (r *analysisRepository) GetAnalysisByAnalysisID(ctx context.Context, analys
 	return item, nil
 }
 
+func (r *analysisRepository) ListAnalysisByJobStatus(ctx context.Context, jobStatus string) ([]*types.Analysis, error) {
+	items := make([]*types.Analysis, 0)
+	err := r.db.WithContext(ctx).
+		Where("job_status = ?", jobStatus).
+		Order("updated_at ASC").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *analysisRepository) GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error) {
 	item := &types.AnalysisNode{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {

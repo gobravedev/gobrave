@@ -83,6 +83,14 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 		return nil
 	}
 
+	if err := o.prepareNodesForResume(ctx, analysisID); err != nil {
+		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+			"job_status": "failed",
+			"updated_at": time.Now().UTC(),
+		})
+		return fmt.Errorf("prepare nodes for resume failed: %w", err)
+	}
+
 	heartbeatStop := make(chan struct{})
 	go o.renewAnalysisRunningLease(analysisID, heartbeatStop)
 
@@ -157,6 +165,105 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 	}()
 
 	return nil
+}
+
+func (o *dagOrchestrator) RecoverRunningAnalyses(ctx context.Context) (int, error) {
+	if o == nil || o.repo == nil {
+		return 0, nil
+	}
+
+	items, err := o.repo.ListAnalysisByJobStatus(ctx, "running")
+	if err != nil {
+		return 0, err
+	}
+
+	recovered := 0
+	for _, item := range items {
+		if item == nil || strings.TrimSpace(item.AnalysisID) == "" {
+			continue
+		}
+		wasRunning := o.registry != nil && o.registry.IsRunning(item.AnalysisID)
+		if err := o.StartAsync(ctx, item.AnalysisID); err != nil {
+			logger.Warnf(ctx, "[DagOrchestrator] recover running analysis failed, analysis_id=%s err=%v", item.AnalysisID, err)
+			continue
+		}
+		isRunning := o.registry != nil && o.registry.IsRunning(item.AnalysisID)
+		if !wasRunning && isRunning {
+			recovered++
+		}
+	}
+
+	return recovered, nil
+}
+
+func (o *dagOrchestrator) prepareNodesForResume(ctx context.Context, analysisID string) error {
+	if o == nil || o.repo == nil || strings.TrimSpace(analysisID) == "" {
+		return nil
+	}
+
+	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	instancesByOwner := map[int64]*types.ContainerInstance{}
+	if o.containerRepo != nil {
+		instances, listErr := o.containerRepo.ListContainerInstance(ctx)
+		if listErr != nil {
+			return listErr
+		}
+		for _, inst := range instances {
+			if inst == nil || inst.OwnerType != types.ContainerOwnerDagNode || inst.OwnerID <= 0 {
+				continue
+			}
+			existing := instancesByOwner[inst.OwnerID]
+			if existing == nil || inst.ID > existing.ID {
+				instancesByOwner[inst.OwnerID] = inst
+			}
+		}
+	}
+
+	for _, node := range nodes {
+		if node == nil || strings.TrimSpace(node.AnalysisNodeID) == "" {
+			continue
+		}
+
+		status := strings.TrimSpace(strings.ToLower(node.Status))
+		hasContainer := instancesByOwner[int64(node.ID)] != nil
+		targetStatus, shouldReset := resumeNodeStatusForRestart(status, hasContainer)
+		if !shouldReset {
+			continue
+		}
+		if err := o.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
+			"status":        targetStatus,
+			"started_at":    nil,
+			"finished_at":   nil,
+			"error_message": nil,
+			"exit_code":     0,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func resumeNodeStatusForRestart(status string, hasContainer bool) (string, bool) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	switch status {
+	case dagruntime.StatusSubmitted:
+		return dagruntime.StatusReady, true
+	case dagruntime.StatusRunning:
+		if hasContainer {
+			return "", false
+		}
+		return dagruntime.StatusReady, true
+	default:
+		return "", false
+	}
 }
 
 func (o *dagOrchestrator) renewAnalysisRunningLease(analysisID string, stop <-chan struct{}) {

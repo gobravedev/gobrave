@@ -16,6 +16,7 @@ type AnalysisService interface {
 
 type AnalysisRepository interface {
 	GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error)
+	ListAnalysisByJobStatus(ctx context.Context, jobStatus string) ([]*types.Analysis, error)
 	GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error)
 	GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error)
 	GetAnalysisNodeByNodeID(ctx context.Context, analysisID string, nodeID string) (*types.AnalysisNode, error)

@@ -52,6 +52,9 @@ container:
   # 服务启动时是否异步刷新 ContainerImage 状态。
   # true: 启动 goroutine 刷新镜像状态；false: 跳过启动刷新。
   refresh_image_status_on_start: true
+  # 服务启动时是否自动恢复 job_status=running 的 analysis DAG。
+  # true: 扫描并尝试恢复；false: 不自动恢复。
+  recover_running_dag_on_start: true
   # DAG 节点失败时，是否自动回收 owner_type=dag_node 的容器实例。
   # 可选: none | stop | delete
   dag_node_cleanup_on_failed: stop

@@ -4,4 +4,5 @@ import "context"
 
 type DagOrchestrator interface {
 	StartAsync(ctx context.Context, analysisID string) error
+	RecoverRunningAnalyses(ctx context.Context) (int, error)
 }
