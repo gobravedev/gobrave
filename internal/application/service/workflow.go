@@ -20,6 +20,81 @@ func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowI
 	return s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
 }
 
+func (s *workflowService) GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error) {
+	findWorkflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	dagDefinition := make(map[string]any)
+	if findWorkflow.DagDefinition == "" {
+		return dagDefinition, nil
+	}
+	if err := json.Unmarshal([]byte(findWorkflow.DagDefinition), &dagDefinition); err != nil {
+		return dagDefinition, nil
+	}
+
+	nodesRaw, ok := dagDefinition["nodes"].([]any)
+	if !ok || len(nodesRaw) == 0 {
+		return dagDefinition, nil
+	}
+
+	scriptIDs := make([]string, 0, len(nodesRaw))
+	seen := make(map[string]struct{})
+	for _, nodeAny := range nodesRaw {
+		node, ok := nodeAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		scriptID, _ := node["script_id"].(string)
+		if scriptID == "" {
+			continue
+		}
+		if _, exists := seen[scriptID]; exists {
+			continue
+		}
+		seen[scriptID] = struct{}{}
+		scriptIDs = append(scriptIDs, scriptID)
+	}
+
+	scriptNodeMap := make(map[string]map[string]any)
+	if len(scriptIDs) > 0 {
+		scripts, err := s.workflowRepo.FindScriptsByScriptIDs(ctx, scriptIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, script := range scripts {
+			scriptNodeMap[script.ScriptID] = buildScriptVisItem(script)
+		}
+	}
+
+	nodesRes := make([]any, 0, len(nodesRaw))
+	for _, nodeAny := range nodesRaw {
+		node, ok := nodeAny.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		scriptID, _ := node["script_id"].(string)
+		scriptNode, exists := scriptNodeMap[scriptID]
+		if exists {
+			merged := cloneAnyMap(scriptNode)
+			for k, v := range node {
+				merged[k] = v
+			}
+			nodesRes = append(nodesRes, merged)
+			continue
+		}
+
+		merged := cloneAnyMap(node)
+		merged["name"] = "unknown"
+		nodesRes = append(nodesRes, merged)
+	}
+
+	dagDefinition["nodes"] = nodesRes
+	return dagDefinition, nil
+}
+
 func (s *workflowService) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
 	return s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 }
@@ -217,4 +292,82 @@ func buildInputScriptFormJSON(ioSchema map[string]any, formJSONWrap *[]any, inpu
 	if inputs, ok := ioSchema["inputs"].([]any); ok {
 		*formJSONWrap = append(*formJSONWrap, filterInputs(inputs, inputNames)...)
 	}
+}
+
+func buildScriptVisItem(script *types.Script) map[string]any {
+	node := map[string]any{
+		"name":      script.ComponentName,
+		"id":        script.ScriptID,
+		"script_id": script.ScriptID,
+		"node_id":   script.ScriptID + "_1",
+		"inputs":    map[string]any{},
+		"outputs":   map[string]any{},
+	}
+
+	if script.IOSchema == "" {
+		return node
+	}
+
+	ioSchema := make(map[string]any)
+	if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
+		return node
+	}
+
+	node["inputs"] = formatIOSchemaItems(ioSchema["inputs"])
+	node["outputs"] = formatIOSchemaItems(ioSchema["outputs"])
+
+	if scatter, ok := ioSchema["scatter"]; ok {
+		node["scatter"] = scatter
+	}
+	if gather, ok := ioSchema["gather"]; ok {
+		node["gather"] = gather
+	}
+	if ui, ok := ioSchema["ui"].(map[string]any); ok {
+		if color, exists := ui["color"]; exists {
+			node["color"] = color
+		}
+		if icon, exists := ui["icon"]; exists {
+			node["icon"] = icon
+		}
+	}
+
+	return node
+}
+
+func formatIOSchemaItems(raw any) map[string]any {
+	items, ok := raw.([]any)
+	if !ok {
+		return map[string]any{}
+	}
+
+	result := make(map[string]any)
+	for _, itemAny := range items {
+		item, ok := itemAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := item["name"].(string)
+		if name == "" {
+			continue
+		}
+
+		formatted := make(map[string]any)
+		for k, v := range item {
+			if k == "name" {
+				continue
+			}
+			formatted[k] = v
+		}
+		result[name] = formatted
+	}
+
+	return result
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

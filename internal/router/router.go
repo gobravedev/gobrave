@@ -225,6 +225,9 @@ func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler
 }
 
 func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
+	r.POST("/analysis/parse-params", handler.ParseParams)
+	r.POST("/analysis/controller", handler.SaveAnalysisController)
+	r.POST("/fast-api/analysis-controller", handler.SaveAnalysisController)
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
 	r.GET("/analysis/visualization-node-file/:analysisNodeId", handler.VisualizationNodeFile)

@@ -1,0 +1,43 @@
+package compiler
+
+import "fmt"
+
+type OutputStage struct {
+	builder *RuntimeNodeBuilder
+}
+
+type RuntimeNodeBuilder struct{}
+
+func (s *OutputStage) Name() string { return "OutputStage" }
+
+func (s *OutputStage) Run(ctx *CompileContext) error {
+	if s.builder == nil {
+		s.builder = &RuntimeNodeBuilder{}
+	}
+	ctx.AnalysisNodes = make([]map[string]any, 0, len(ctx.StateOrder))
+	for _, state := range ctx.StateOrder {
+		ctx.AnalysisNodes = append(ctx.AnalysisNodes, s.builder.Build(ctx, state))
+	}
+	return nil
+}
+
+func (b *RuntimeNodeBuilder) Build(ctx *CompileContext, state *NodeRuntimeState) map[string]any {
+	node := map[string]any{
+		"analysis_id":             ctx.AnalysisID,
+		"node_id":                 state.NodeID,
+		"node_name":               state.NodeName,
+		"script_id":               state.ScriptID,
+		"inputs_patterns":         state.Inputs,
+		"resolved_inputs":         state.ResolvedInputs,
+		"output_patterns":         state.Outputs,
+		"resolved_outputs":        state.ResolvedOutput,
+		"params":                  state.NodeParams,
+		"input_validation_errors": state.InputErrors,
+		"executor":                fmt.Sprintf("%v", firstNonNil(ctx.Params["executor"], "")),
+		"max_retry":               state.MaxRetry,
+	}
+	if state.Kind == "sample" {
+		node["sample_id"] = fmt.Sprintf("%v", firstNonNil(state.Sample["sample_id"], ""))
+	}
+	return node
+}

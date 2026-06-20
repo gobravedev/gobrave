@@ -10,10 +10,19 @@ type AnalysisService interface {
 	GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error)
 	GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error)
 	GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error)
+	SaveAnalysisController(ctx context.Context, input *types.AnalysisControllerSaveInput) (*types.Analysis, error)
 }
 
 type AnalysisRepository interface {
 	GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error)
 	GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error)
 	GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error)
+	WithTransaction(ctx context.Context, fn func(AnalysisRepository) error) error
+	CreateAnalysis(ctx context.Context, item *types.Analysis) error
+	UpdateAnalysisByAnalysisID(ctx context.Context, analysisID string, values map[string]any) error
+	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error)
+	DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) error
+	CreateAnalysisNodes(ctx context.Context, items []*types.AnalysisNode) error
+	DeleteAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) error
+	CreateAnalysisEdges(ctx context.Context, items []*types.AnalysisEdge) error
 }

@@ -8,6 +8,7 @@ import (
 
 type WorkflowService interface {
 	GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error)
+	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error)

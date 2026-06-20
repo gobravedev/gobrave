@@ -370,6 +370,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.Workflow{},
 		&types.Analysis{},
 		&types.AnalysisNode{},
+		&types.AnalysisEdge{},
 		&types.AuthToken{},
 		&types.ContainerImage{},
 		&types.ContainerTemplate{},

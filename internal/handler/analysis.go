@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gobravedev/gobrave/internal/compiler"
 	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -65,6 +66,14 @@ type VisualizationNodeFileResponse struct {
 	ServerStatus string                      `json:"server_status"`
 }
 
+type analysisControllerRequest struct {
+	RequestParam   map[string]interface{} `json:"request_param" binding:"required"`
+	AnalysisNodeID string                 `json:"analysis_node_id"`
+	Save           bool                   `json:"save"`
+	IsSubmit       bool                   `json:"is_submit"`
+	IsReport       bool                   `json:"is_report"`
+}
+
 func NewAnalysisHandler(analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, dataService interfaces.DataService, containerService interfaces.ContainerService, cfg *config.Config) *AnalysisHandler {
 	return &AnalysisHandler{
 		analysisService:  analysisService,
@@ -76,7 +85,144 @@ func NewAnalysisHandler(analysisService interfaces.AnalysisService, workflowServ
 }
 
 func (h *AnalysisHandler) ParseParams(c *gin.Context) {
+	params := make(map[string]interface{})
+	if err := c.ShouldBindJSON(&params); err != nil {
+		c.Error(errors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+	requestParam, ok := params["request_param"].(map[string]interface{})
+	if !ok {
+		c.Error(errors.NewValidationError("request_param is required and must be an object"))
+		return
+	}
+	workflowID, ok := requestParam["relation_id"].(string)
+	if !ok || strings.TrimSpace(workflowID) == "" {
+		c.Error(errors.NewValidationError("request_param.relation_id is required and must be a string"))
+		return
+	}
+	formJSONWrap, err := h.workflowService.GetFormJSONByWorkflowID(c.Request.Context(), workflowID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get form JSON").WithDetails(err.Error()))
+		return
+	}
+	parseAnalysisResult, err := buildParseAnalysisResult(c.Request.Context(), h.dataService, requestParam, formJSONWrap)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to build parse analysis result").WithDetails(err.Error()))
+		return
+	}
+	dagDefinition, err := h.workflowService.GetWorkflowVisByWorkflowID(c.Request.Context(), workflowID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get workflow visualization").WithDetails(err.Error()))
+		return
+	}
 
+	analysisID, _ := requestParam["analysis_id"].(string)
+	if strings.TrimSpace(analysisID) == "" {
+		analysisID = "preview"
+	}
+
+	runtimeDAG, err := compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to compile runtime dag").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"form_json":             formJSONWrap,
+		"dag_definition":        dagDefinition,
+		"parse_analysis_result": parseAnalysisResult,
+		"params":                parseAnalysisResult,
+		"analysis_nodes":        runtimeDAG["analysis_nodes"],
+		"analysis_edges":        runtimeDAG["analysis_edges"],
+	})
+}
+
+func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req analysisControllerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+
+	workflowID, ok := req.RequestParam["relation_id"].(string)
+	if !ok || strings.TrimSpace(workflowID) == "" {
+		c.Error(errors.NewValidationError("request_param.relation_id is required and must be a string"))
+		return
+	}
+
+	formJSONWrap, err := h.workflowService.GetFormJSONByWorkflowID(c.Request.Context(), workflowID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get form JSON").WithDetails(err.Error()))
+		return
+	}
+
+	parseAnalysisResult, err := buildParseAnalysisResult(c.Request.Context(), h.dataService, req.RequestParam, formJSONWrap)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to build parse analysis result").WithDetails(err.Error()))
+		return
+	}
+
+	dagDefinition, err := h.workflowService.GetWorkflowVisByWorkflowID(c.Request.Context(), workflowID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get workflow visualization").WithDetails(err.Error()))
+		return
+	}
+
+	// isRunNode := strings.TrimSpace(req.AnalysisNodeID) != ""
+	// dagRuntime := map[string]any{}
+	// if !isRunNode {
+	// 	analysisID, _ := req.RequestParam["analysis_id"].(string)
+	// 	if strings.TrimSpace(analysisID) == "" {
+	// 		analysisID = "preview"
+	// 	}
+	// 	dagRuntime, err = compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
+	// 	if err != nil {
+	// 		c.Error(errors.NewInternalServerError("failed to compile runtime dag").WithDetails(err.Error()))
+	// 		return
+	// 	}
+	// }
+	dagRuntime, err := compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to compile runtime dag").WithDetails(err.Error()))
+		return
+	}
+	if !req.Save {
+		c.JSON(http.StatusOK, gin.H{
+			"params":      parseAnalysisResult,
+			"dag_runtime": dagRuntime,
+		})
+		return
+	}
+
+	saved, err := h.analysisService.SaveAnalysisController(c.Request.Context(), &types.AnalysisControllerSaveInput{
+		RequestParam:        req.RequestParam,
+		ParseAnalysisResult: parseAnalysisResult,
+		DagRuntime:          dagRuntime,
+		IsRunNode:           req.IsSubmit, // 只有提交才会真正执行节点，否则仅保存参数和编译结果
+		IsReport:            req.IsReport,
+	})
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
+		return
+	}
+
+	response := gin.H{
+		"analysis_id":           saved.AnalysisID,
+		"dag_definition":        dagDefinition,
+		"parse_analysis_result": parseAnalysisResult,
+		"params":                parseAnalysisResult,
+		"dag_runtime":           dagRuntime,
+	}
+
+	if req.IsSubmit {
+		response["submit_skipped"] = true
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // EditParamsV2 godoc
