@@ -19,6 +19,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -185,6 +186,16 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 	// 		return
 	// 	}
 	// }
+	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == "" || analysisID == "<nil>" {
+		if req.Save {
+			analysisID = uuid.NewString()
+			req.RequestParam["analysis_id"] = analysisID
+		} else {
+			analysisID = "preview"
+		}
+	}
+
 	dagRuntime, err := compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to compile runtime dag").WithDetails(err.Error()))
