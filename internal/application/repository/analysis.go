@@ -6,6 +6,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type analysisRepository struct {
@@ -58,6 +59,14 @@ func (r *analysisRepository) GetAnalysisNodeByAnalysisNodeID(ctx context.Context
 	return item, nil
 }
 
+func (r *analysisRepository) GetAnalysisNodeByNodeID(ctx context.Context, analysisID string, nodeID string) (*types.AnalysisNode, error) {
+	item := &types.AnalysisNode{}
+	if err := r.db.WithContext(ctx).Where("analysis_id = ? AND node_id = ?", analysisID, nodeID).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error) {
 	items := make([]*types.AnalysisNode, 0)
 	err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Find(&items).Error
@@ -65,6 +74,54 @@ func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, 
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *analysisRepository) ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error) {
+	items := make([]*types.AnalysisEdge, 0)
+	err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (r *analysisRepository) UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("analysis_node_id = ?", analysisNodeID).Updates(values).Error
+}
+
+func (r *analysisRepository) ClaimNextReadyNode(ctx context.Context, analysisID string, fromStatus string, toStatus string) (*types.AnalysisNode, error) {
+	var claimed *types.AnalysisNode
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		node := &types.AnalysisNode{}
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("analysis_id = ? AND status = ?", analysisID, fromStatus).
+			Order("id ASC").
+			Take(node).Error; err != nil {
+			return err
+		}
+
+		result := tx.Model(&types.AnalysisNode{}).
+			Where("id = ? AND status = ?", node.ID, fromStatus).
+			Updates(map[string]any{"status": toStatus})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		node.Status = toStatus
+		claimed = node
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return claimed, nil
 }
 
 func (r *analysisRepository) DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) error {

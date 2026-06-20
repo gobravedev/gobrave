@@ -176,7 +176,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			return err
 		}
 
-		if input.DagRuntime != nil && !input.IsRunNode {
+		if input.DagRuntime != nil {
 			if err := s.persistDagRuntime(ctx, tx, savedAnalysis, input.DagRuntime); err != nil {
 				return err
 			}

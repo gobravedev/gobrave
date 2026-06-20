@@ -28,6 +28,7 @@ type AnalysisHandler struct {
 	workflowService  interfaces.WorkflowService
 	dataService      interfaces.DataService
 	containerService interfaces.ContainerService
+	dagOrchestrator  interfaces.DagOrchestrator
 	config           *config.Config
 }
 
@@ -75,12 +76,20 @@ type analysisControllerRequest struct {
 	IsReport       bool                   `json:"is_report"`
 }
 
-func NewAnalysisHandler(analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, dataService interfaces.DataService, containerService interfaces.ContainerService, cfg *config.Config) *AnalysisHandler {
+func NewAnalysisHandler(
+	analysisService interfaces.AnalysisService,
+	workflowService interfaces.WorkflowService,
+	dataService interfaces.DataService,
+	containerService interfaces.ContainerService,
+	dagOrchestrator interfaces.DagOrchestrator,
+	cfg *config.Config,
+) *AnalysisHandler {
 	return &AnalysisHandler{
 		analysisService:  analysisService,
 		workflowService:  workflowService,
 		dataService:      dataService,
 		containerService: containerService,
+		dagOrchestrator:  dagOrchestrator,
 		config:           cfg,
 	}
 }
@@ -213,12 +222,19 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 		RequestParam:        req.RequestParam,
 		ParseAnalysisResult: parseAnalysisResult,
 		DagRuntime:          dagRuntime,
-		IsRunNode:           req.IsSubmit, // 只有提交才会真正执行节点，否则仅保存参数和编译结果
+		IsRunNode:           req.IsSubmit,
 		IsReport:            req.IsReport,
 	})
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
 		return
+	}
+
+	if req.IsSubmit {
+		if err := h.dagOrchestrator.StartAsync(c.Request.Context(), saved.AnalysisID); err != nil {
+			c.Error(errors.NewInternalServerError("failed to start dag scheduler").WithDetails(err.Error()))
+			return
+		}
 	}
 
 	response := gin.H{
@@ -229,9 +245,7 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 		"dag_runtime":           dagRuntime,
 	}
 
-	if req.IsSubmit {
-		response["submit_skipped"] = true
-	}
+	response["submit_started"] = req.IsSubmit
 
 	c.JSON(http.StatusOK, response)
 }
