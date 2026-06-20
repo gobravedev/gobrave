@@ -27,6 +27,9 @@ type DockerRuntime struct {
 	once    sync.Once
 	client  *client.Client
 	initErr error
+
+	monitorMu      sync.Mutex
+	monitoringByID map[string]struct{}
 }
 
 func NewDockerRuntime() *DockerRuntime {
@@ -117,11 +120,50 @@ func (d *DockerRuntime) Start(ctx context.Context, id string) error {
 	}
 
 	d.emitEvent("ContainerStarted", id, "")
-	go d.waitContainerExit(id)
+	return d.Monitor(ctx, id)
+}
+
+func (d *DockerRuntime) Monitor(ctx context.Context, runtimeID string) error {
+	if _, err := d.toContainerID(runtimeID); err != nil {
+		return err
+	}
+
+	cli, err := d.getClient()
+	if err != nil {
+		return err
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	containerID, _ := d.toContainerID(runtimeID)
+	if _, err := cli.ContainerInspect(ctx, containerID); err != nil {
+		if errdefs.IsNotFound(err) {
+			d.emitEvent("ContainerDeleted", runtimeID, "container not found")
+			return nil
+		}
+		return fmt.Errorf("inspect container %s for monitor: %w", containerID, err)
+	}
+
+	d.monitorMu.Lock()
+	if d.monitoringByID == nil {
+		d.monitoringByID = map[string]struct{}{}
+	}
+	if _, ok := d.monitoringByID[runtimeID]; ok {
+		d.monitorMu.Unlock()
+		return nil
+	}
+	d.monitoringByID[runtimeID] = struct{}{}
+	d.monitorMu.Unlock()
+
+	go d.waitContainerExit(runtimeID)
 	return nil
 }
 
 func (d *DockerRuntime) waitContainerExit(runtimeID string) {
+	defer d.unmarkMonitoring(runtimeID)
+
 	containerID, err := d.toContainerID(runtimeID)
 	if err != nil {
 		d.emitEvent("ContainerFailed", runtimeID, err.Error())
@@ -135,23 +177,54 @@ func (d *DockerRuntime) waitContainerExit(runtimeID string) {
 	}
 
 	statusCh, errCh := cli.ContainerWait(context.Background(), containerID, container.WaitConditionNotRunning)
-	select {
-	case waitErr := <-errCh:
-		if waitErr != nil {
+	for statusCh != nil || errCh != nil {
+		select {
+		case waitErr, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			if waitErr == nil {
+				continue
+			}
+			if errdefs.IsNotFound(waitErr) {
+				d.emitEvent("ContainerDeleted", runtimeID, waitErr.Error())
+				return
+			}
 			d.emitEvent("ContainerFailed", runtimeID, waitErr.Error())
-		}
-	case result := <-statusCh:
-		exitCode := int(result.StatusCode)
-		if result.Error != nil {
-			d.emitEvent("ContainerFailed", runtimeID, result.Error.Message)
+			return
+		case result, ok := <-statusCh:
+			if !ok {
+				statusCh = nil
+				continue
+			}
+
+			exitCode := int(result.StatusCode)
+			if result.Error != nil {
+				if strings.Contains(strings.ToLower(result.Error.Message), "no such container") {
+					d.emitEvent("ContainerDeleted", runtimeID, result.Error.Message)
+					return
+				}
+				d.emitEvent("ContainerFailed", runtimeID, result.Error.Message)
+				return
+			}
+			if exitCode == 0 {
+				d.emitEvent("ContainerExited", runtimeID, strconv.Itoa(exitCode))
+				return
+			}
+			d.emitEvent("ContainerFailed", runtimeID, strconv.Itoa(exitCode))
 			return
 		}
-		if exitCode == 0 {
-			d.emitEvent("ContainerExited", runtimeID, strconv.Itoa(exitCode))
-			return
-		}
-		d.emitEvent("ContainerFailed", runtimeID, strconv.Itoa(exitCode))
 	}
+}
+
+func (d *DockerRuntime) unmarkMonitoring(runtimeID string) {
+	d.monitorMu.Lock()
+	defer d.monitorMu.Unlock()
+	if d.monitoringByID == nil {
+		return
+	}
+	delete(d.monitoringByID, runtimeID)
 }
 
 func (d *DockerRuntime) Stop(ctx context.Context, id string) error {

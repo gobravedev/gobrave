@@ -223,11 +223,22 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			rt.SetEventHandler(mgr)
 		}
 	}))
+
+	// Startup runtime reconciler
+	must(container.Invoke(func(mgr *manager.ContainerManager) {
+		mgr.RunRuntimeReconciler(context.Background(), 30*time.Second)
+	}))
+	// Startup node completion coordinator
+	must(container.Invoke(func(orchestrator interfaces.DagOrchestrator) {
+		orchestrator.EnsureCompletionCoordinatorStarted(context.Background())
+	}))
+	// Startup event handlers
 	must(container.Invoke(func(bus event.Bus, in eventHandlerGroupIn) {
 		for _, h := range in.Handlers {
 			bus.Subscribe(h)
 		}
 	}))
+	// Startup image status refresh
 	must(container.Invoke(func(cfg *config.Config, imageMgr *manager.ImageManager) {
 		enabled := true
 		if cfg != nil && cfg.Container != nil {
@@ -240,6 +251,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 
 		manager.RunImageStatusRefreshOnStart(imageMgr)
 	}))
+
+	// Startup DAG recovery
 	must(container.Invoke(func(cfg *config.Config, orchestrator interfaces.DagOrchestrator) {
 		enabled := true
 		if cfg != nil && cfg.Container != nil {

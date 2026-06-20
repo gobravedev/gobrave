@@ -316,6 +316,7 @@ type dockerMockRuntime struct {
 	lastSpec   *types.ContainerSpec
 	lastImage  string
 	lastPolicy string
+	monitored  []string
 	startErr   error
 	stopErr    error
 	pauseErr   error
@@ -323,6 +324,7 @@ type dockerMockRuntime struct {
 	deleteErr  error
 	createErr  error
 	imageErr   error
+	monitorErr error
 	logsResult string
 }
 
@@ -367,6 +369,14 @@ func (d *dockerMockRuntime) SetEventHandler(handler containerruntime.RuntimeEven
 
 func (d *dockerMockRuntime) Exec(ctx context.Context, runtimeID string, cmd []string) (string, error) {
 	return "", nil
+}
+
+func (d *dockerMockRuntime) Monitor(ctx context.Context, runtimeID string) error {
+	if d.monitorErr != nil {
+		return d.monitorErr
+	}
+	d.monitored = append(d.monitored, runtimeID)
+	return nil
 }
 
 func newTestManager(repo *mockContainerRepo, rt *dockerMockRuntime) *ContainerManager {
@@ -476,6 +486,52 @@ func TestContainerManager_OnEvent_PauseAndResume(t *testing.T) {
 	mgr.OnEvent(containerruntime.RuntimeEvent{Type: "ContainerResumed", RuntimeID: "docker-abc-4"})
 	if inst.Status != types.ContainerRunning {
 		t.Fatalf("expected running after resume event, got %s", inst.Status)
+	}
+}
+
+func TestContainerManager_OnEvent_ContainerDeleted_TransitionsToStopped(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	rt := &dockerMockRuntime{}
+	mgr := newTestManager(repo, rt)
+
+	inst := &types.ContainerInstance{RuntimeID: "docker-abc-deleted", Status: types.ContainerRunning, Name: "demo"}
+	if err := repo.CreateContainerInstance(ctx, inst); err != nil {
+		t.Fatalf("seed instance failed: %v", err)
+	}
+
+	mgr.OnEvent(containerruntime.RuntimeEvent{Type: "ContainerDeleted", RuntimeID: inst.RuntimeID, Message: "container not found"})
+	if inst.Status != types.ContainerStopped {
+		t.Fatalf("expected stopped after delete event, got %s", inst.Status)
+	}
+}
+
+func TestContainerManager_RecoverRuntimeMonitoring_OnlyActiveStatuses(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockContainerRepo()
+	rt := &dockerMockRuntime{}
+	mgr := newTestManager(repo, rt)
+
+	activeRunning := &types.ContainerInstance{RuntimeID: "docker-run-1", Status: types.ContainerRunning, Name: "run"}
+	activePaused := &types.ContainerInstance{RuntimeID: "docker-pause-1", Status: types.ContainerPaused, Name: "pause"}
+	inactiveStopped := &types.ContainerInstance{RuntimeID: "docker-stop-1", Status: types.ContainerStopped, Name: "stop"}
+	noRuntimeID := &types.ContainerInstance{RuntimeID: "", Status: types.ContainerRunning, Name: "no-runtime"}
+
+	for _, inst := range []*types.ContainerInstance{activeRunning, activePaused, inactiveStopped, noRuntimeID} {
+		if err := repo.CreateContainerInstance(ctx, inst); err != nil {
+			t.Fatalf("seed instance failed: %v", err)
+		}
+	}
+
+	recovered, err := mgr.RecoverRuntimeMonitoring(ctx)
+	if err != nil {
+		t.Fatalf("recover runtime monitoring failed: %v", err)
+	}
+	if recovered != 2 {
+		t.Fatalf("expected 2 recovered monitors, got %d", recovered)
+	}
+	if len(rt.monitored) != 2 {
+		t.Fatalf("expected 2 monitor calls, got %d", len(rt.monitored))
 	}
 }
 

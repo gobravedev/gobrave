@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/config"
@@ -29,6 +30,7 @@ type ContainerManager struct {
 	res          ContainerRuntimeResolver
 	img          *ImageManager
 	cfg          *config.Config
+	monitorOnce  sync.Once
 }
 
 func NewContainerManager(
@@ -390,8 +392,105 @@ func (m *ContainerManager) OnEvent(e containerruntime.RuntimeEvent) {
 		}
 		_ = m.transition(context.Background(), inst, fsm.Failed, "ContainerFailed")
 
+	case "ContainerDeleted":
+		now := time.Now()
+		inst.FinishedAt = &now
+		_ = m.transition(context.Background(), inst, fsm.Stopped, "ContainerStopped")
+		_ = m.createContainerEvent(context.Background(), inst.ID, "ContainerDeleted", e.Message)
+
 	default:
 		_ = m.createContainerEvent(context.Background(), inst.ID, e.Type, e.Message)
+	}
+}
+
+func (m *ContainerManager) RecoverRuntimeMonitoring(ctx context.Context) (int, error) {
+	instances, err := m.repo.ListContainerInstance(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	recovered := 0
+	for _, inst := range instances {
+		if !shouldRecoverRuntimeMonitoring(inst) {
+			continue
+		}
+
+		rt, err := m.getRuntimeByInstance(inst)
+		if err != nil {
+			logger.Warnf(ctx, "[ContainerManager] resolve runtime for monitoring failed, instance_id=%d runtime_id=%s err=%v", inst.ID, inst.RuntimeID, err)
+			continue
+		}
+
+		monitor, ok := rt.(containerruntime.RuntimeMonitor)
+		if !ok {
+			continue
+		}
+
+		if err := monitor.Monitor(ctx, inst.RuntimeID); err != nil {
+			logger.Warnf(ctx, "[ContainerManager] recover runtime monitoring failed, instance_id=%d runtime_id=%s err=%v", inst.ID, inst.RuntimeID, err)
+			continue
+		}
+		logger.Debugf(ctx, "[ContainerManager] recover runtime monitoring succeeded, name=%s instance_id=%d runtime_id=%s", inst.Name, inst.ID, inst.RuntimeID)
+
+		recovered++
+	}
+
+	return recovered, nil
+}
+
+// 恢复运行时监控的条件：
+func (m *ContainerManager) RunRuntimeReconciler(ctx context.Context, interval time.Duration) {
+	m.monitorOnce.Do(func() {
+		if interval <= 0 {
+			interval = 30 * time.Second
+		}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		go func() {
+			recovered, err := m.RecoverRuntimeMonitoring(ctx)
+			if err != nil {
+				logger.Warnf(ctx, "[ContainerManager] startup runtime monitor recovery failed: %v", err)
+			} else {
+				logger.Infof(ctx, "[ContainerManager] startup runtime monitor recovery completed, recovered=%d", recovered)
+			}
+
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					recovered, err := m.RecoverRuntimeMonitoring(context.Background())
+					if err != nil {
+						logger.Warnf(context.Background(), "[ContainerManager] periodic runtime monitor recovery failed: %v", err)
+						continue
+					}
+					if recovered > 0 {
+						logger.Infof(context.Background(), "[ContainerManager] periodic runtime monitor recovery completed, recovered=%d", recovered)
+					}
+				}
+			}
+		}()
+	})
+}
+
+func shouldRecoverRuntimeMonitoring(inst *types.ContainerInstance) bool {
+	if inst == nil {
+		return false
+	}
+	if strings.TrimSpace(inst.RuntimeID) == "" {
+		return false
+	}
+
+	switch inst.Status {
+	case types.ContainerCreating, types.ContainerRunning, types.ContainerPaused:
+		return true
+	default:
+		return false
 	}
 }
 

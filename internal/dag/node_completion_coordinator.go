@@ -2,6 +2,7 @@ package dag
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,26 +11,35 @@ import (
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"gorm.io/gorm"
 )
 
 var _ event.Handler = (*NodeCompletionCoordinator)(nil)
 
 type NodeCompletionCoordinator struct {
-	analysisRepo   interfaces.AnalysisRepository
-	containerRepo  interfaces.ContainerRepository
-	runtime        *RuntimeEngine
-	bus            event.Bus
-	cleanup        NodeFailureCleanupFunc
-	pollInterval   time.Duration
-	pollBatchLimit int
+	analysisRepo    interfaces.AnalysisRepository
+	containerRepo   interfaces.ContainerRepository
+	containerOps    nodeContainerOperator
+	runtime         *RuntimeEngine
+	bus             event.Bus
+	cleanup         NodeFailureCleanupFunc
+	deleteOnSuccess bool
+	pollInterval    time.Duration
+	pollBatchLimit  int
+}
+
+type nodeContainerOperator interface {
+	Delete(ctx context.Context, id int64) error
 }
 
 func NewNodeCompletionCoordinator(
 	analysisRepo interfaces.AnalysisRepository,
 	containerRepo interfaces.ContainerRepository,
+	containerOps nodeContainerOperator,
 	runtime *RuntimeEngine,
 	bus event.Bus,
 	cleanup NodeFailureCleanupFunc,
+	deleteOnSuccess bool,
 	pollInterval time.Duration,
 ) *NodeCompletionCoordinator {
 	if runtime == nil {
@@ -39,13 +49,15 @@ func NewNodeCompletionCoordinator(
 		pollInterval = 2 * time.Second
 	}
 	return &NodeCompletionCoordinator{
-		analysisRepo:   analysisRepo,
-		containerRepo:  containerRepo,
-		runtime:        runtime,
-		bus:            bus,
-		cleanup:        cleanup,
-		pollInterval:   pollInterval,
-		pollBatchLimit: 0,
+		analysisRepo:    analysisRepo,
+		containerRepo:   containerRepo,
+		containerOps:    containerOps,
+		runtime:         runtime,
+		bus:             bus,
+		cleanup:         cleanup,
+		deleteOnSuccess: deleteOnSuccess,
+		pollInterval:    pollInterval,
+		pollBatchLimit:  0,
 	}
 }
 
@@ -120,10 +132,15 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 
 	node, err := c.analysisRepo.GetAnalysisNodeByID(ctx, inst.OwnerID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.cleanupOrphanContainer(ctx, inst, source, "analysis node not found")
+			return
+		}
 		logger.Warnf(ctx, "[NodeCompletionCoordinator] load analysis node failed, source=%s owner_id=%d err=%v", source, inst.OwnerID, err)
 		return
 	}
 	if node == nil {
+		c.cleanupOrphanContainer(ctx, inst, source, "analysis node is nil")
 		return
 	}
 
@@ -152,8 +169,21 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 
 	if finalStatus == StatusFailed {
 		c.runCleanup(ctx, node)
+	} else if finalStatus == StatusDone {
+		c.cleanupSuccessfulContainer(ctx, inst, source)
 	}
 	c.publishNodeResult(node, finalStatus, exitCode, errorMessage)
+}
+
+func (c *NodeCompletionCoordinator) cleanupSuccessfulContainer(ctx context.Context, inst *types.ContainerInstance, source string) {
+	if !c.deleteOnSuccess || inst == nil || c.containerOps == nil {
+		return
+	}
+	if err := c.containerOps.Delete(ctx, inst.ID); err != nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] cleanup successful container failed, source=%s instance_id=%d runtime_id=%s owner_id=%d err=%v", source, inst.ID, inst.RuntimeID, inst.OwnerID, err)
+		return
+	}
+	logger.Infof(ctx, "[NodeCompletionCoordinator] cleaned successful container, source=%s instance_id=%d runtime_id=%s owner_id=%d", source, inst.ID, inst.RuntimeID, inst.OwnerID)
 }
 
 func (c *NodeCompletionCoordinator) buildResolvedOutputs(inst *types.ContainerInstance) map[string]any {
@@ -239,4 +269,19 @@ func (c *NodeCompletionCoordinator) publishNodeResult(node *types.AnalysisNode, 
 			Payload:    payload,
 		})
 	}
+}
+
+func (c *NodeCompletionCoordinator) cleanupOrphanContainer(ctx context.Context, inst *types.ContainerInstance, source string, reason string) {
+	if inst == nil {
+		return
+	}
+	if c.containerOps == nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] orphan container detected but container cleanup is disabled, source=%s instance_id=%d runtime_id=%s owner_id=%d reason=%s", source, inst.ID, inst.RuntimeID, inst.OwnerID, reason)
+		return
+	}
+	if err := c.containerOps.Delete(ctx, inst.ID); err != nil {
+		logger.Warnf(ctx, "[NodeCompletionCoordinator] cleanup orphan container failed, source=%s instance_id=%d runtime_id=%s owner_id=%d reason=%s err=%v", source, inst.ID, inst.RuntimeID, inst.OwnerID, reason, err)
+		return
+	}
+	logger.Infof(ctx, "[NodeCompletionCoordinator] cleaned orphan container, source=%s instance_id=%d runtime_id=%s owner_id=%d reason=%s", source, inst.ID, inst.RuntimeID, inst.OwnerID, reason)
 }

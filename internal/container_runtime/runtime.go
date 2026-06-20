@@ -28,6 +28,12 @@ type Runtime interface {
 	Exec(ctx context.Context, runtimeID string, cmd []string) (string, error)
 }
 
+// RuntimeMonitor is an optional extension interface for reconnecting runtime
+// lifecycle monitoring after process restarts.
+type RuntimeMonitor interface {
+	Monitor(ctx context.Context, runtimeID string) error
+}
+
 // RuntimeImageManager is an optional extension interface for runtime-side
 // image lifecycle operations used by ImageManager.
 type RuntimeImageManager interface {

@@ -388,21 +388,25 @@ func (h *Hub) sendWithoutAck(c *client, data any) error {
 
 func (h *Hub) registerClient(c *client) {
 	var evicted *client
+	var totalForUser int
 
 	h.mu.Lock()
 	clients := h.clientsByUser[c.userID]
 	if len(clients) >= h.maxConnectionsPerUser {
 		evicted = clients[0]
 		clients = clients[1:]
-		delete(h.clientByID, evicted.id)
 	}
 	clients = append(clients, c)
 	h.clientsByUser[c.userID] = clients
 	h.clientByID[c.id] = c
+	totalForUser = len(clients)
 	h.mu.Unlock()
 
+	logger.Infof(context.Background(), "[Realtime] client registered total=%d user_id=%s client_id=%s transport=%s", totalForUser, c.userID, c.id, c.transport)
 	if evicted != nil {
-		evicted.close()
+		// Reuse the unified unregister path so eviction and normal disconnect
+		// share the same cleanup behavior.
+		h.unregisterClient(evicted.id)
 	}
 }
 
