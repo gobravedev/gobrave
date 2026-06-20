@@ -36,6 +36,7 @@ func (r *defaultContainerRuntimeResolver) Resolve(_ context.Context, in *Contain
 	resolved := cloneContainerSpec(in.Spec)
 	resolved.Image = resolveTemplateVariables(strings.TrimSpace(resolved.Image), in.Variables)
 	resolved.WorkDir = resolveTemplateVariables(strings.TrimSpace(resolved.WorkDir), in.Variables)
+	resolved.Entrypoint = resolveStringSlice(resolved.Entrypoint, in.Variables)
 	resolved.Command = resolveStringSlice(resolved.Command, in.Variables)
 
 	resolvedEnv := make(map[string]string, len(resolved.Env))
@@ -74,6 +75,9 @@ func cloneContainerSpec(spec *types.ContainerSpec) *types.ContainerSpec {
 	*cloned = *spec
 	if spec.Command != nil {
 		cloned.Command = append([]string(nil), spec.Command...)
+	}
+	if spec.Entrypoint != nil {
+		cloned.Entrypoint = append([]string(nil), spec.Entrypoint...)
 	}
 	if spec.Env != nil {
 		cloned.Env = make(map[string]string, len(spec.Env))

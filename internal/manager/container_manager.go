@@ -134,8 +134,24 @@ func (m *ContainerManager) CreateByTemplate(
 		WorkDir: tpl.WorkDir,
 	}
 
+	resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
+	if ownerType == types.ContainerOwnerDagNode && strings.EqualFold(runtimeName, "docker") {
+		logPath := strings.TrimSpace(resolveVars["LOG_PATH"])
+		if logPath == "" {
+			if envLogPath, ok := os.LookupEnv("LOG_PATH"); ok {
+				logPath = strings.TrimSpace(envLogPath)
+			}
+		}
+		applyDagNodeTaskSpec(spec, logPath)
+
+		if strings.TrimSpace(spec.WorkDir) == "" {
+			if workspacePath := strings.TrimSpace(resolveVars["WORKSPACE_PATH"]); workspacePath != "" {
+				spec.WorkDir = workspacePath
+			}
+		}
+	}
+
 	if m.res != nil {
-		resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
 		m.ensureRuntimeFilesAndDirs(ctx, resolveVars)
 		spec, err = m.res.Resolve(ctx, &ContainerRuntimeResolveInput{Spec: spec, Variables: resolveVars})
 		if err != nil {
@@ -597,6 +613,25 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 		}
 	}
 
+	if ownerType == types.ContainerOwnerDagNode && ownerID > 0 && m.analysisRepo != nil {
+		if node, err := m.analysisRepo.GetAnalysisNodeByID(ctx, ownerID); err == nil && node != nil {
+			setRuntimeVar(vars, "ANALYSIS_NODE_ID", strconv.FormatUint(uint64(node.ID), 10))
+			setRuntimeVar(vars, "ANALYSIS_ID", node.AnalysisID)
+			setRuntimeVar(vars, "NODE_ID", node.NodeID)
+			setRuntimeVar(vars, "WORKSPACE_PATH", node.WorkspaceDir)
+			setRuntimeVar(vars, "WORKSPACE_DIR", node.WorkspaceDir)
+			setRuntimeVar(vars, "OUTPUT_DIR", node.OutputDir)
+			setRuntimeVar(vars, "COMMAND_PATH", node.CommandPath)
+			setRuntimeVar(vars, "LOG_PATH", node.LogPath)
+
+			if strings.TrimSpace(node.LogPath) == "" {
+				if outputDir := strings.TrimSpace(node.OutputDir); outputDir != "" {
+					setRuntimeVar(vars, "LOG_PATH", filepath.Join(outputDir, "run.log"))
+				}
+			}
+		}
+	}
+
 	return vars
 }
 
@@ -660,6 +695,26 @@ func parseCommand(raw string) []string {
 		return nil
 	}
 	return strings.Fields(cmd)
+}
+
+func applyDagNodeTaskSpec(spec *types.ContainerSpec, logPath string) {
+	if spec == nil {
+		return
+	}
+
+	quotedLogPath := shellSingleQuote(strings.TrimSpace(logPath))
+	script := "bash ./run.sh 2>&1 | tee " + quotedLogPath + "; exit ${PIPESTATUS[0]}"
+
+	spec.Entrypoint = []string{"bash"}
+	spec.Command = []string{"-c", script}
+}
+
+func shellSingleQuote(text string) string {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		value = "./run.log"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func (m *ContainerManager) syncInstanceIPAddress(ctx context.Context, rt containerruntime.Runtime, inst *types.ContainerInstance) {

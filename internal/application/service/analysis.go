@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/config"
+	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -195,6 +196,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces.AnalysisRepository, analysis *types.Analysis, dagRuntime map[string]any) error {
 	nodeRows := toMapSlice(dagRuntime["analysis_nodes"])
 	edgeRows := toMapSlice(dagRuntime["analysis_edges"])
+	useCache := analysis != nil && analysis.IsCache
 
 	existingNodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID)
 	if err != nil {
@@ -249,6 +251,22 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			return err
 		}
 
+		status := fallbackString(toString(row["status"]), dagruntime.StatusPending)
+		cacheHit := toBool(row["cache_hit"])
+
+		if useCache {
+			if existing != nil && shouldKeepNodeStatusForCache(existing.Status) {
+				status = strings.TrimSpace(existing.Status)
+				cacheHit = true
+			} else {
+				status = dagruntime.StatusPending
+				cacheHit = false
+			}
+		} else {
+			status = dagruntime.StatusPending
+			cacheHit = false
+		}
+
 		node := &types.AnalysisNode{
 			AnalysisNodeID:         analysisNodeID,
 			AnalysisID:             analysis.AnalysisID,
@@ -261,11 +279,11 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			OutputPatterns:         mustJSONString(row["output_patterns"]),
 			ResolvedOutputs:        mustJSONString(row["resolved_outputs"]),
 			Params:                 mustJSONString(row["params"]),
-			Status:                 fallbackString(toString(row["status"]), "pending"),
+			Status:                 status,
 			Executor:               toString(row["executor"]),
 			Retry:                  intFromAny(row["retry"], 0),
 			MaxRetry:               intFromAny(row["max_retry"], 3),
-			CacheHit:               toBool(row["cache_hit"]),
+			CacheHit:               cacheHit,
 			UpstreamIDs:            mustJSONString(row["upstream_ids"]),
 			DownstreamIDs:          mustJSONString(row["downstream_ids"]),
 			InputValidationErrors:  mustJSONString(row["input_validation_errors"]),
@@ -276,8 +294,8 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			CommandPath:            commandPath,
 			ParamsPath:             paramsPath,
 		}
-		if node.Status == "" {
-			node.Status = "pending"
+		if strings.TrimSpace(node.Status) == "" {
+			node.Status = dagruntime.StatusPending
 		}
 		nodes = append(nodes, node)
 	}
@@ -408,4 +426,14 @@ func mustJSONString(value any) string {
 		return "{}"
 	}
 	return string(buf)
+}
+
+func shouldKeepNodeStatusForCache(status string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(status))
+	switch normalized {
+	case dagruntime.StatusReady, dagruntime.StatusDone, dagruntime.StatusCached:
+		return true
+	default:
+		return false
+	}
 }

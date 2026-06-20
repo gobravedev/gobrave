@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/types"
@@ -122,10 +123,15 @@ func (r *analysisRepository) UpdateAnalysisNodeByAnalysisNodeID(ctx context.Cont
 func (r *analysisRepository) ClaimNextReadyNode(ctx context.Context, analysisID string, fromStatus string, toStatus string) (*types.AnalysisNode, error) {
 	var claimed *types.AnalysisNode
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		node := &types.AnalysisNode{}
-		if err := tx.
+		query := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("analysis_id = ? AND status = ?", analysisID, fromStatus).
+			Where("analysis_id = ? AND status = ?", analysisID, fromStatus)
+		if strings.EqualFold(strings.TrimSpace(fromStatus), "ready") {
+			query = query.Where("(cache_hit IS NULL OR cache_hit = ?)", false)
+		}
+
+		node := &types.AnalysisNode{}
+		if err := query.
 			Order("id ASC").
 			Take(node).Error; err != nil {
 			return err

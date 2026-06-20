@@ -49,12 +49,12 @@ func (e *RuntimeEngine) GetSnapshot(ctx context.Context, analysisID string) (*Ru
 			status = StatusPending
 		}
 		statusCount[status]++
-		if IsTerminalStatus(status) {
+		if isTerminalNodeStatus(node) {
 			completed++
 		} else {
 			isFinished = false
 		}
-		if status == StatusReady {
+		if status == StatusReady && !node.CacheHit {
 			readyCount++
 		}
 		if status == StatusRunning || status == StatusSubmitted {
@@ -115,11 +115,11 @@ func (e *RuntimeEngine) RefreshReadyStatus(ctx context.Context, analysisID strin
 				continue
 			}
 			upstreamStatus := strings.TrimSpace(strings.ToLower(upstream.Status))
-			if !IsTerminalStatus(upstreamStatus) {
+			if !isTerminalNodeStatus(upstream) {
 				canRun = false
 				break
 			}
-			if !IsSuccessStatus(upstreamStatus) {
+			if !isSuccessNodeStatus(upstream) {
 				canRun = false
 				_ = e.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
 					"status":        StatusSkipped,
@@ -336,6 +336,28 @@ func appendToList(current any, value any) []any {
 		return append(arr, value)
 	}
 	return []any{current, value}
+}
+
+func isTerminalNodeStatus(node *types.AnalysisNode) bool {
+	if node == nil {
+		return false
+	}
+	status := strings.TrimSpace(strings.ToLower(node.Status))
+	if status == StatusReady && node.CacheHit {
+		return true
+	}
+	return IsTerminalStatus(status)
+}
+
+func isSuccessNodeStatus(node *types.AnalysisNode) bool {
+	if node == nil {
+		return false
+	}
+	status := strings.TrimSpace(strings.ToLower(node.Status))
+	if status == StatusReady && node.CacheHit {
+		return true
+	}
+	return IsSuccessStatus(status)
 }
 
 func SortNodesByStartedAt(nodes []*types.AnalysisNode) {

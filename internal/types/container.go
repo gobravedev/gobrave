@@ -294,10 +294,11 @@ func (GatewayRoute) TableName() string {
 }
 
 type ContainerSpec struct {
-	Image   string
-	Command []string
-	Env     map[string]string
-	Volumes []ContainerVolume
+	Image      string
+	Entrypoint []string
+	Command    []string
+	Env        map[string]string
+	Volumes    []ContainerVolume
 
 	CPU    float64
 	Memory int64

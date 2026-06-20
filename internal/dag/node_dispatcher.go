@@ -14,11 +14,12 @@ import (
 type NodeFailureCleanupFunc func(ctx context.Context, node *types.AnalysisNode)
 
 type NodeDispatcher struct {
-	runtime *RuntimeEngine
-	repo    interfaces.AnalysisRepository
-	bus     event.Bus
-	factory *executor.Factory
-	cleanup NodeFailureCleanupFunc
+	runtime  *RuntimeEngine
+	repo     interfaces.AnalysisRepository
+	bus      event.Bus
+	factory  *executor.Factory
+	cleanup  NodeFailureCleanupFunc
+	preparer NodeRuntimePreparer
 }
 
 func NewNodeDispatcher(
@@ -27,12 +28,35 @@ func NewNodeDispatcher(
 	bus event.Bus,
 	factory *executor.Factory,
 	cleanup NodeFailureCleanupFunc,
+	preparer NodeRuntimePreparer,
 ) *NodeDispatcher {
-	return &NodeDispatcher{runtime: runtime, repo: repo, bus: bus, factory: factory, cleanup: cleanup}
+	if preparer == nil {
+		preparer = NoopNodeRuntimePreparer{}
+	}
+	return &NodeDispatcher{runtime: runtime, repo: repo, bus: bus, factory: factory, cleanup: cleanup, preparer: preparer}
 }
 
 func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analysisNodeID string) error {
-	node, err := d.runtime.MarkNodeRunning(ctx, analysisNodeID)
+	node, err := d.repo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+	if err != nil {
+		return err
+	}
+	if err := d.preparer.Prepare(ctx, node); err != nil {
+		_, _ = d.runtime.CompleteNode(ctx, analysisID, node.NodeID, StatusFailed, nil, 1, fmt.Sprintf("prepare runtime failed: %v", err))
+		d.runCleanup(ctx, node)
+		d.publish(RuntimeEvent{
+			Name:       EventNodeFailed,
+			AnalysisID: analysisID,
+			NodeID:     node.NodeID,
+			OccurredAt: time.Now().UTC(),
+			Payload: map[string]any{
+				"error": fmt.Sprintf("prepare runtime failed: %v", err),
+			},
+		})
+		return err
+	}
+
+	node, err = d.runtime.MarkNodeRunning(ctx, analysisNodeID)
 	if err != nil {
 		return err
 	}

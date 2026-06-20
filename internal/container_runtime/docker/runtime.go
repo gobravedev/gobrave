@@ -409,6 +409,7 @@ func (d *DockerRuntime) toContainerConfig(spec *types.ContainerSpec) *container.
 
 	return &container.Config{
 		Image:      spec.Image,
+		Entrypoint: spec.Entrypoint,
 		Cmd:        spec.Command,
 		WorkingDir: spec.WorkDir,
 		Env:        env,

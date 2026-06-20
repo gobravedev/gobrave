@@ -589,6 +589,43 @@ func TestContainerManager_CreateByTemplate_UsesAppSessionContextVariables(t *tes
 	}
 }
 
+func TestContainerManager_CreateByTemplate_DagNodeUsesTaskCommand(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("LOG_PATH", "/tmp/dag-task.log")
+
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest"}
+	repo.templates[10] = &types.ContainerTemplate{
+		ID:      10,
+		ImageID: 1,
+		Command: "sleep infinity",
+	}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-dag"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerDagNode, 2001, "dag-node-1"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	if rt.lastSpec == nil {
+		t.Fatalf("runtime create spec was not captured")
+	}
+	if len(rt.lastSpec.Entrypoint) != 1 || rt.lastSpec.Entrypoint[0] != "bash" {
+		t.Fatalf("expected entrypoint [bash], got %#v", rt.lastSpec.Entrypoint)
+	}
+	if len(rt.lastSpec.Command) != 2 {
+		t.Fatalf("expected command length 2, got %#v", rt.lastSpec.Command)
+	}
+	if rt.lastSpec.Command[0] != "-c" {
+		t.Fatalf("expected command[0] to be -c, got %q", rt.lastSpec.Command[0])
+	}
+	expectedScript := "bash ./run.sh 2>&1 | tee '/tmp/dag-task.log'; exit ${PIPESTATUS[0]}"
+	if rt.lastSpec.Command[1] != expectedScript {
+		t.Fatalf("unexpected task script, expected %q, got %q", expectedScript, rt.lastSpec.Command[1])
+	}
+}
+
 func TestContainerManager_CreateByTemplate_UpdatesImageStatusToReady(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockContainerRepo()

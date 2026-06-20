@@ -63,3 +63,26 @@ func TestResumeNodeStatusForRestart(t *testing.T) {
 		})
 	}
 }
+
+func TestIsFailedNodeStatusForContainerCleanup(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+		want   bool
+	}{
+		{name: "failed", status: dagruntime.StatusFailed, want: true},
+		{name: "failed with whitespace and uppercase", status: "  FAILED  ", want: true},
+		{name: "running", status: dagruntime.StatusRunning, want: false},
+		{name: "done", status: dagruntime.StatusDone, want: false},
+		{name: "empty", status: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isFailedNodeStatusForContainerCleanup(tt.status)
+			if got != tt.want {
+				t.Fatalf("unexpected result: got=%v want=%v", got, tt.want)
+			}
+		})
+	}
+}
