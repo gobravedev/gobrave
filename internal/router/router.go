@@ -36,6 +36,7 @@ type RouterParams struct {
 	SheetHandler     *handler.SheetHandler
 	UploadHandler    *handler.UploadHandler
 	ProxyHandler     *handler.ProxyHandler
+	RealtimeHandler  *handler.RealtimeHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -87,6 +88,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAnalysisRoutes(v1, params.AnalysisHandler)
 		RegisterWorkflowRoutes(v1, params.WorkflowHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
+		RegisterRealtimeRoutes(v1, params.RealtimeHandler)
 	}
 
 	r.Any("/brave-api", params.ProxyHandler.BraveAPIProxy)
@@ -228,9 +230,18 @@ func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler
 	r.POST("/analysis/parse-params", handler.ParseParams)
 	r.POST("/analysis/controller", handler.SaveAnalysisController)
 	r.POST("/fast-api/analysis-controller", handler.SaveAnalysisController)
+	r.POST("/analysis/stop/:analysisId", handler.StopAnalysis)
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
 	r.GET("/analysis/visualization-node-file/:analysisNodeId", handler.VisualizationNodeFile)
+}
+
+func RegisterRealtimeRoutes(r *gin.RouterGroup, handler *handler.RealtimeHandler) {
+	r.GET("/realtime/connect", handler.Connect)
+	r.GET("/realtime/ws", handler.ConnectWS)
+	r.GET("/realtime/sse", handler.ConnectSSE)
+	r.POST("/realtime/push", handler.Push)
+	r.GET("/realtime/stats", handler.Stats)
 }
 
 // serveImageStatic maps local image resources under /images.

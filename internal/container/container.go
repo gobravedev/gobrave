@@ -23,6 +23,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/manager"
+	"github.com/gobravedev/gobrave/internal/realtime"
 	"github.com/gobravedev/gobrave/internal/route"
 	"github.com/gobravedev/gobrave/internal/router"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -129,6 +130,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		dig.As(new(event.Handler)),
 		dig.Group("event_handlers"),
 	))
+	must(container.Provide(
+		realtime.NewDagRuntimeEventNotifier,
+		dig.As(new(event.Handler)),
+		dig.Group("event_handlers"),
+	))
 	// must(container.Provide(repository.NewTenantRepository))
 	// must(container.Provide(repository.NewTraceRepository))
 	// must(container.Provide(repository.NewRSSSourceRepository))
@@ -183,6 +189,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewSheetHandler))
 	must(container.Provide(handler.NewUploadHandler))
 	must(container.Provide(handler.NewProxyHandler))
+	must(container.Provide(realtime.NewHub))
+	must(container.Provide(handler.NewRealtimeHandler))
 	// must(container.Provide(handler.NewTraceHandler))
 
 	// must(container.Provide(grpcserver.NewTraceServer))

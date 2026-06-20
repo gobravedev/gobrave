@@ -250,6 +250,29 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *AnalysisHandler) StopAnalysis(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	analysisID := strings.TrimSpace(c.Param("analysisId"))
+	if analysisID == "" {
+		c.Error(errors.NewValidationError("analysisId is required"))
+		return
+	}
+
+	if err := h.dagOrchestrator.StopAsync(c.Request.Context(), analysisID); err != nil {
+		c.Error(errors.NewInternalServerError("failed to stop dag scheduler").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"analysis_id":  analysisID,
+		"job_status":   "stopping",
+		"stop_started": true,
+	})
+}
+
 // EditParamsV2 godoc
 // @Summary      编辑分析参数（V2）
 // @Description  查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result

@@ -1,6 +1,7 @@
 package dag
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -15,6 +16,8 @@ type RunningEntry struct {
 	PollIntervalMs int64
 	TimeoutSeconds int64
 	Status         string
+	StopRequested  bool
+	Cancel         context.CancelFunc
 }
 
 type RunningRegistry struct {
@@ -60,4 +63,30 @@ func (r *RunningRegistry) IsRunning(analysisID string) bool {
 	defer r.mu.RUnlock()
 	_, ok := r.running[analysisID]
 	return ok
+}
+
+func (r *RunningRegistry) RequestStop(analysisID string) bool {
+	r.mu.Lock()
+	entry := r.running[analysisID]
+	if entry == nil {
+		r.mu.Unlock()
+		return false
+	}
+	entry.StopRequested = true
+	entry.Status = "stopping"
+	entry.UpdatedAt = time.Now().UTC()
+	cancel := entry.Cancel
+	r.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	return true
+}
+
+func (r *RunningRegistry) IsStopping(analysisID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry := r.running[analysisID]
+	return entry != nil && entry.StopRequested
 }

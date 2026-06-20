@@ -19,10 +19,18 @@ type Config struct {
 	Proxy     *ProxyConfig     `yaml:"proxy"    json:"proxy"`
 	Route     *RouteConfig     `yaml:"route"    json:"route"`
 	Storage   *StorageConfig   `yaml:"storage"  json:"storage"`
+	Realtime  *RealtimeConfig  `yaml:"realtime" json:"realtime"`
 	Container *ContainerConfig `yaml:"container" json:"container"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
 	// Audio  *AudioConfig  `yaml`
+}
+
+type RealtimeConfig struct {
+	Transport             string `yaml:"transport" json:"transport"`
+	MaxConnectionsPerUser int    `yaml:"max_connections_per_user" json:"max_connections_per_user"`
+	AckTimeoutSeconds     int    `yaml:"ack_timeout_seconds" json:"ack_timeout_seconds"`
+	AckMaxRetries         int    `yaml:"ack_max_retries" json:"ack_max_retries"`
 }
 
 type ContainerConfig struct {
@@ -162,6 +170,12 @@ func LoadConfig() (*Config, error) {
 			ImageDir: "",
 			BaseDir:  "",
 		},
+		Realtime: &RealtimeConfig{
+			Transport:             "ws",
+			MaxConnectionsPerUser: 2,
+			AckTimeoutSeconds:     10,
+			AckMaxRetries:         3,
+		},
 		Container: &ContainerConfig{
 			RefreshImageStatusOnStart:   true,
 			RecoverRunningDagOnStart:    true,
@@ -213,6 +227,24 @@ func LoadConfig() (*Config, error) {
 			DagNodeCleanupOnFailed:      "stop",
 			DagNodeCleanupOnDagFinished: "delete",
 		}
+	}
+	if cfg.Realtime == nil {
+		cfg.Realtime = &RealtimeConfig{
+			Transport:             "ws",
+			MaxConnectionsPerUser: 2,
+			AckTimeoutSeconds:     10,
+			AckMaxRetries:         3,
+		}
+	}
+	cfg.Realtime.Transport = normalizeRealtimeTransport(cfg.Realtime.Transport)
+	if cfg.Realtime.MaxConnectionsPerUser <= 0 {
+		cfg.Realtime.MaxConnectionsPerUser = 2
+	}
+	if cfg.Realtime.AckTimeoutSeconds <= 0 {
+		cfg.Realtime.AckTimeoutSeconds = 10
+	}
+	if cfg.Realtime.AckMaxRetries < 0 {
+		cfg.Realtime.AckMaxRetries = 3
 	}
 
 	cfg.Container.DagNodeCleanupOnFailed = normalizeContainerCleanupPolicy(cfg.Container.DagNodeCleanupOnFailed, "stop")
@@ -276,5 +308,15 @@ func normalizeContainerCleanupPolicy(value string, fallback string) string {
 		return v
 	default:
 		return fallback
+	}
+}
+
+func normalizeRealtimeTransport(value string) string {
+	v := strings.TrimSpace(strings.ToLower(value))
+	switch v {
+	case "ws", "sse":
+		return v
+	default:
+		return "ws"
 	}
 }

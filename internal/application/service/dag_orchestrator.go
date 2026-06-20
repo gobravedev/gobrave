@@ -18,11 +18,16 @@ import (
 )
 
 const (
-	cleanupPolicyNone    = "none"
-	cleanupPolicyStop    = "stop"
-	cleanupPolicyDelete  = "delete"
-	analysisRunLeaseTTL  = 90 * time.Second
-	analysisRunHeartbeat = 15 * time.Second
+	cleanupPolicyNone      = "none"
+	cleanupPolicyStop      = "stop"
+	cleanupPolicyDelete    = "delete"
+	analysisRunLeaseTTL    = 90 * time.Second
+	analysisRunHeartbeat   = 15 * time.Second
+	analysisStatusRunning  = "running"
+	analysisStatusStopping = "stopping"
+	analysisStatusStopped  = "stopped"
+	analysisStatusFinished = "finished"
+	analysisStatusFailed   = "failed"
 )
 
 type dagOrchestrator struct {
@@ -85,7 +90,7 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 
 	if err := o.prepareNodesForResume(ctx, analysisID); err != nil {
 		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
-			"job_status": "failed",
+			"job_status": analysisStatusFailed,
 			"updated_at": time.Now().UTC(),
 		})
 		return fmt.Errorf("prepare nodes for resume failed: %w", err)
@@ -125,6 +130,7 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 			PollInterval:   500 * time.Millisecond,
 		},
 	)
+	runCtx, runCancel := context.WithCancel(context.Background())
 
 	o.registry.Register(&dagruntime.RunningEntry{
 		AnalysisID:     analysisID,
@@ -132,29 +138,52 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 		MaxConcurrency: 1,
 		QueueSize:      64,
 		PollIntervalMs: 500,
-		Status:         "running",
+		Status:         analysisStatusRunning,
+		Cancel:         runCancel,
 	})
 
 	go func() {
 		defer close(heartbeatStop)
-		result, err := scheduler.Run(context.Background())
+		result, err := scheduler.Run(runCtx)
+		stoppedByUser := o.registry != nil && o.registry.IsStopping(analysisID)
+
 		if err != nil {
-			o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
-			o.registry.MarkFinished(analysisID, "failed")
+			finalStatus := analysisStatusFailed
+			if stoppedByUser {
+				_ = o.markActiveNodesStopped(context.Background(), analysisID, "dag stopped by user")
+				if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete); cleanupErr == nil {
+					finalStatus = analysisStatusStopped
+				} else {
+					logger.Warnf(context.Background(), "[DagOrchestrator] stop cleanup failed after scheduler error, analysis_id=%s err=%v", analysisID, cleanupErr)
+				}
+			} else {
+				o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
+			}
+
+			o.registry.MarkFinished(analysisID, finalStatus)
 			_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
-				"job_status": "failed",
+				"job_status": finalStatus,
 				"updated_at": time.Now().UTC(),
 			})
 			return
 		}
 
-		o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
-
-		finalStatus := "finished"
-		if result == nil || result.Snapshot == nil {
-			finalStatus = "failed"
-		} else if failedCount := result.Snapshot.StatusCount[dagruntime.StatusFailed]; failedCount > 0 {
-			finalStatus = "failed"
+		finalStatus := analysisStatusFinished
+		if stoppedByUser {
+			_ = o.markActiveNodesStopped(context.Background(), analysisID, "dag stopped by user")
+			if cleanupErr := o.cleanupByAnalysisIDStrict(context.Background(), analysisID, cleanupPolicyDelete); cleanupErr != nil {
+				finalStatus = analysisStatusFailed
+				logger.Warnf(context.Background(), "[DagOrchestrator] stop cleanup failed, analysis_id=%s err=%v", analysisID, cleanupErr)
+			} else {
+				finalStatus = analysisStatusStopped
+			}
+		} else {
+			o.cleanupByAnalysisID(context.Background(), analysisID, onDagFinishedCleanupPolicy)
+			if result == nil || result.Snapshot == nil {
+				finalStatus = analysisStatusFailed
+			} else if failedCount := result.Snapshot.StatusCount[dagruntime.StatusFailed]; failedCount > 0 {
+				finalStatus = analysisStatusFailed
+			}
 		}
 
 		o.registry.MarkFinished(analysisID, finalStatus)
@@ -164,6 +193,37 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 		})
 	}()
 
+	return nil
+}
+
+func (o *dagOrchestrator) StopAsync(ctx context.Context, analysisID string) error {
+	analysisID = strings.TrimSpace(analysisID)
+	if analysisID == "" {
+		return fmt.Errorf("analysis_id is required")
+	}
+
+	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+
+	current := strings.TrimSpace(strings.ToLower(analysis.JobStatus))
+	if current == analysisStatusStopped {
+		return nil
+	}
+
+	if err := o.repo.UpdateAnalysisByAnalysisID(ctx, analysisID, map[string]any{
+		"job_status": analysisStatusStopping,
+		"updated_at": time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+
+	if o.registry != nil && o.registry.RequestStop(analysisID) {
+		return nil
+	}
+
+	go o.finalizeStop(analysisID)
 	return nil
 }
 
@@ -193,7 +253,67 @@ func (o *dagOrchestrator) RecoverRunningAnalyses(ctx context.Context) (int, erro
 		}
 	}
 
+	stoppingItems, err := o.repo.ListAnalysisByJobStatus(ctx, analysisStatusStopping)
+	if err != nil {
+		return recovered, err
+	}
+	for _, item := range stoppingItems {
+		if item == nil || strings.TrimSpace(item.AnalysisID) == "" {
+			continue
+		}
+		if err := o.StopAsync(ctx, item.AnalysisID); err != nil {
+			logger.Warnf(ctx, "[DagOrchestrator] recover stopping analysis failed, analysis_id=%s err=%v", item.AnalysisID, err)
+		}
+	}
+
 	return recovered, nil
+}
+
+func (o *dagOrchestrator) finalizeStop(analysisID string) {
+	ctx := context.Background()
+	finalStatus := analysisStatusStopped
+	if err := o.markActiveNodesStopped(ctx, analysisID, "dag stopped by user"); err != nil {
+		finalStatus = analysisStatusFailed
+		logger.Warnf(ctx, "[DagOrchestrator] mark nodes stopped failed, analysis_id=%s err=%v", analysisID, err)
+	}
+	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, cleanupPolicyDelete); err != nil {
+		finalStatus = analysisStatusFailed
+		logger.Warnf(ctx, "[DagOrchestrator] stop cleanup failed, analysis_id=%s err=%v", analysisID, err)
+	}
+	if o.registry != nil {
+		o.registry.MarkFinished(analysisID, finalStatus)
+	}
+	if err := o.repo.UpdateAnalysisByAnalysisID(ctx, analysisID, map[string]any{
+		"job_status": finalStatus,
+		"updated_at": time.Now().UTC(),
+	}); err != nil {
+		logger.Warnf(ctx, "[DagOrchestrator] mark analysis stopped failed, analysis_id=%s err=%v", analysisID, err)
+	}
+}
+
+func (o *dagOrchestrator) markActiveNodesStopped(ctx context.Context, analysisID string, reason string) error {
+	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, node := range nodes {
+		if node == nil || strings.TrimSpace(node.AnalysisNodeID) == "" {
+			continue
+		}
+		status := strings.TrimSpace(strings.ToLower(node.Status))
+		if dagruntime.IsTerminalStatus(status) {
+			continue
+		}
+		if err := o.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
+			"status":        dagruntime.StatusFailed,
+			"error_message": reason,
+			"finished_at":   now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (o *dagOrchestrator) prepareNodesForResume(ctx context.Context, analysisID string) error {
@@ -312,17 +432,22 @@ func normalizeCleanupPolicy(value string, defaultValue string) string {
 }
 
 func (o *dagOrchestrator) cleanupByAnalysisID(ctx context.Context, analysisID string, policy string) {
+	if err := o.cleanupByAnalysisIDStrict(ctx, analysisID, policy); err != nil {
+		logger.Warnf(ctx, "[DagOrchestrator] cleanup by analysis_id failed, analysis_id=%s err=%v", analysisID, err)
+	}
+}
+
+func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysisID string, policy string) error {
 	if policy == cleanupPolicyNone || o.containerRepo == nil || o.containerMgr == nil || analysisID == "" {
-		return
+		return nil
 	}
 
 	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 	if err != nil {
-		logger.Warnf(ctx, "[DagOrchestrator] list analysis nodes for cleanup failed, analysis_id=%s err=%v", analysisID, err)
-		return
+		return err
 	}
 	if len(nodes) == 0 {
-		return
+		return nil
 	}
 
 	ownerSet := make(map[int64]struct{}, len(nodes))
@@ -334,9 +459,10 @@ func (o *dagOrchestrator) cleanupByAnalysisID(ctx context.Context, analysisID st
 
 	instances, err := o.containerRepo.ListContainerInstance(ctx)
 	if err != nil {
-		logger.Warnf(ctx, "[DagOrchestrator] list container instances for cleanup failed, analysis_id=%s err=%v", analysisID, err)
-		return
+		return err
 	}
+
+	var firstErr error
 
 	for _, inst := range instances {
 		if inst == nil || inst.OwnerType != types.ContainerOwnerDagNode {
@@ -345,8 +471,12 @@ func (o *dagOrchestrator) cleanupByAnalysisID(ctx context.Context, analysisID st
 		if _, ok := ownerSet[inst.OwnerID]; !ok {
 			continue
 		}
-		o.cleanupContainerInstance(ctx, inst, policy)
+		if err := o.cleanupContainerInstance(ctx, inst, policy); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
+
+	return firstErr
 }
 
 func (o *dagOrchestrator) cleanupDagNodeContainer(ctx context.Context, node *types.AnalysisNode, policy string) {
@@ -365,14 +495,14 @@ func (o *dagOrchestrator) cleanupDagNodeContainer(ctx context.Context, node *typ
 			continue
 		}
 		if inst.OwnerType == types.ContainerOwnerDagNode && inst.OwnerID == int64(node.ID) {
-			o.cleanupContainerInstance(ctx, inst, policy)
+			_ = o.cleanupContainerInstance(ctx, inst, policy)
 		}
 	}
 }
 
-func (o *dagOrchestrator) cleanupContainerInstance(ctx context.Context, inst *types.ContainerInstance, policy string) {
+func (o *dagOrchestrator) cleanupContainerInstance(ctx context.Context, inst *types.ContainerInstance, policy string) error {
 	if inst == nil || o.containerMgr == nil {
-		return
+		return nil
 	}
 
 	var err error
@@ -382,10 +512,12 @@ func (o *dagOrchestrator) cleanupContainerInstance(ctx context.Context, inst *ty
 	case cleanupPolicyStop:
 		err = o.containerMgr.Stop(ctx, inst.ID)
 	default:
-		return
+		return nil
 	}
 
 	if err != nil {
 		logger.Warnf(ctx, "[DagOrchestrator] dag node container cleanup failed, policy=%s instance_id=%d runtime_id=%s err=%v", policy, inst.ID, inst.RuntimeID, err)
+		return err
 	}
+	return nil
 }

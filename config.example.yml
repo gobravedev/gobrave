@@ -48,6 +48,16 @@ storage:
   # 留空时默认使用“可执行文件所在目录/images”。
   image_dir: ""
 
+realtime:
+  # ws | sse
+  transport: ws
+  # 每个 user_id 同时在线连接数上限，超过会自动踢掉最早连接
+  max_connections_per_user: 2
+  # websocket 发送 require_ack 消息时的单次等待时长（秒）
+  ack_timeout_seconds: 10
+  # websocket ACK 超时后的重试次数
+  ack_max_retries: 3
+
 container:
   # 服务启动时是否异步刷新 ContainerImage 状态。
   # true: 启动 goroutine 刷新镜像状态；false: 跳过启动刷新。
