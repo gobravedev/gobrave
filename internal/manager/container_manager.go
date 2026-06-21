@@ -700,11 +700,11 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 
 	if ctx != nil {
 		if userID, ok := ctx.Value(types.UserIDContextKey).(string); ok {
-			setRuntimeVar(vars, "USER_ID", userID)
+			setRuntimeVar(vars, "SYS_USER_ID", userID)
 			// setRuntimeVar(vars, "USERID", userID)
 		}
 		if userID, ok := ctx.Value(types.UserIDContextKey.String()).(string); ok {
-			setRuntimeVar(vars, "USER_ID", userID)
+			setRuntimeVar(vars, "SYS_USER_ID", userID)
 			// setRuntimeVar(vars, "USERID", userID)
 		}
 	}
@@ -713,8 +713,8 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 		if session, err := m.repo.GetAppSessionByID(ctx, ownerID); err == nil && session != nil {
 			setRuntimeVar(vars, "APP_SESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "APPSESSION_ID", strconv.FormatInt(session.ID, 10))
-			setRuntimeVar(vars, "USER_ID", session.UserID)
-			setRuntimeVar(vars, "USERID", session.UserID)
+			setRuntimeVar(vars, "SYS_USER_ID", session.UserID)
+			// setRuntimeVar(vars, "USERID", session.UserID)
 			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
 			user_project_dir := fmt.Sprintf("%s/data/%s", baseDir, session.ProjectID)
 			if baseDir != "" {
