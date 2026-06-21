@@ -15,6 +15,7 @@ import (
 	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -213,9 +214,10 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 		if nodeID == "" {
 			continue
 		}
-
+		// 存在的 node 保持原有的 analysis_node_id、workspace_dir、output_dir、params_path、command_path、log_path 等字段，避免重复创建和覆盖
 		existing := existingByNodeID[nodeID]
 		analysisNodeID := strings.TrimSpace(toString(row["analysis_node_id"]))
+		id := utils.GenerateID()
 		if existing != nil && strings.TrimSpace(existing.AnalysisNodeID) != "" {
 			analysisNodeID = existing.AnalysisNodeID
 		}
@@ -245,6 +247,9 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			if strings.TrimSpace(existing.LogPath) != "" {
 				logPath = existing.LogPath
 			}
+			if existing.ID != 0 {
+				id = existing.ID
+			}
 		}
 
 		if err := os.MkdirAll(outputDir, 0o755); err != nil {
@@ -268,6 +273,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 		}
 
 		node := &types.AnalysisNode{
+			ID:                     id,
 			AnalysisNodeID:         analysisNodeID,
 			AnalysisID:             analysis.AnalysisID,
 			NodeID:                 nodeID,

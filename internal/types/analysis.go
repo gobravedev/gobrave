@@ -162,7 +162,9 @@ func (Analysis) TableName() string {
 
 // AnalysisNode maps to Python brave's analysis_nodes table.
 type AnalysisNode struct {
-	ID                     uint       `json:"id" gorm:"primaryKey;autoIncrement"`
+	// ID                     uint       `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+
 	AnalysisNodeID         string     `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
 	AnalysisID             string     `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
 	NodeID                 string     `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
