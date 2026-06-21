@@ -542,6 +542,9 @@ func extractIDs(value interface{}) ([]string, bool) {
 		}
 		if sample, ok := v["sample"]; ok {
 			ids := extractIDList(sample)
+			if len(ids) == 1 {
+				return ids, true
+			}
 			return ids, false
 		}
 		if val, ok := v["value"]; ok {
