@@ -4,20 +4,23 @@ import (
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 // Project maps to Python brave's t_project table.
 type Project struct {
-	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ProjectID    string    `json:"project_id" gorm:"type:varchar(255);uniqueIndex;not null"`
-	ProjectName  string    `json:"project_name" gorm:"type:varchar(255)"`
-	MetadataForm string    `json:"metadata_form" gorm:"type:text"`
-	Research     string    `json:"research" gorm:"type:text"`
-	Parameter    string    `json:"parameter" gorm:"type:text"`
-	Description  string    `json:"description" gorm:"type:text"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uint           `json:"id" gorm:"primaryKey;autoIncrement"`
+	ProjectID    string         `json:"project_id" gorm:"type:varchar(255);uniqueIndex;not null"`
+	ProjectName  string         `json:"project_name" gorm:"type:varchar(255)"`
+	MetadataForm string         `json:"metadata_form" gorm:"type:text"`
+	Research     string         `json:"research" gorm:"type:text"`
+	Parameter    string         `json:"parameter" gorm:"type:text"`
+	Volumes      datatypes.JSON `json:"volumes" gorm:"type:json"`
+
+	Description string    `json:"description" gorm:"type:text"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func (Project) TableName() string {

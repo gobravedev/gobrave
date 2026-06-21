@@ -16,6 +16,7 @@ type mockContainerRepo struct {
 	images    map[int64]*types.ContainerImage
 	templates map[int64]*types.ContainerTemplate
 	sessions  map[int64]*types.AppSession
+	projects  map[string]*types.Project
 	instances map[int64]*types.ContainerInstance
 	events    []*types.ContainerEvent
 	outbox    []*types.OutboxEvent
@@ -27,6 +28,7 @@ func newMockContainerRepo() *mockContainerRepo {
 		images:    map[int64]*types.ContainerImage{},
 		templates: map[int64]*types.ContainerTemplate{},
 		sessions:  map[int64]*types.AppSession{},
+		projects:  map[string]*types.Project{},
 		instances: map[int64]*types.ContainerInstance{},
 		events:    make([]*types.ContainerEvent, 0),
 		outbox:    make([]*types.OutboxEvent, 0),
@@ -139,6 +141,14 @@ func (m *mockContainerRepo) GetAppSessionByID(ctx context.Context, id int64) (*t
 	item, ok := m.sessions[id]
 	if !ok {
 		return nil, errors.New("app session not found")
+	}
+	return item, nil
+}
+
+func (m *mockContainerRepo) GetProjectByProjectID(ctx context.Context, projectID string) (*types.Project, error) {
+	item, ok := m.projects[projectID]
+	if !ok {
+		return nil, errors.New("project not found")
 	}
 	return item, nil
 }
@@ -642,6 +652,44 @@ func TestContainerManager_CreateByTemplate_UsesAppSessionContextVariables(t *tes
 	}
 	if got := rt.lastSpec.Env["APP_SESSION_ID"]; got != "1001" {
 		t.Fatalf("expected APP_SESSION_ID from owner context, got %q", got)
+	}
+}
+
+func TestContainerManager_CreateByTemplate_AppSessionMergesProjectVolumes(t *testing.T) {
+	ctx := context.Background()
+
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest"}
+	repo.templates[10] = &types.ContainerTemplate{
+		ID:      10,
+		ImageID: 1,
+		Command: "bash -lc echo ok",
+		Volumes: datatypes.JSON([]byte(`[{"source":"/template/src","target":"/template/dst","mode":"ro"}]`)),
+	}
+	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: "session-project"}
+	repo.projects["session-project"] = &types.Project{
+		ProjectID: "session-project",
+		Volumes:   datatypes.JSON([]byte(`[{"source":"/project/src","target":"/project/dst","mode":"rw"}]`)),
+	}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-11"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	if rt.lastSpec == nil {
+		t.Fatalf("runtime create spec was not captured")
+	}
+	if len(rt.lastSpec.Volumes) != 2 {
+		t.Fatalf("expected merged template+project volumes, got %d", len(rt.lastSpec.Volumes))
+	}
+	if got := rt.lastSpec.Volumes[0].Source; got != "/template/src" {
+		t.Fatalf("expected first volume from template, got %q", got)
+	}
+	if got := rt.lastSpec.Volumes[1].Source; got != "/project/src" {
+		t.Fatalf("expected second volume from project, got %q", got)
 	}
 }
 

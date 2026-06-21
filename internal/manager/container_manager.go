@@ -117,6 +117,7 @@ func (m *ContainerManager) CreateByTemplate(
 	}
 
 	volumes := parseVolumes(tpl.Volumes)
+	volumes = append(volumes, m.resolveOwnerProjectVolumes(ctx, ownerType, ownerID)...)
 
 	// volumes默认添加 cfg.Storage.BaseDir 目录的绑定，确保容器可以访问到这个目录下的文件（如Rprofile等）
 	if m.cfg != nil && m.cfg.Storage != nil && m.cfg.Storage.BaseDir != "" {
@@ -199,6 +200,46 @@ func (m *ContainerManager) CreateByTemplate(
 	}
 
 	return inst, nil
+}
+
+func (m *ContainerManager) resolveOwnerProjectVolumes(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) []types.ContainerVolume {
+	projectID := strings.TrimSpace(m.resolveProjectIDByOwner(ctx, ownerType, ownerID))
+	if projectID == "" {
+		return nil
+	}
+
+	project, err := m.repo.GetProjectByProjectID(ctx, projectID)
+	if err != nil || project == nil {
+		return nil
+	}
+
+	return parseVolumes(project.Volumes)
+}
+
+func (m *ContainerManager) resolveProjectIDByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) string {
+	switch ownerType {
+	case types.ContainerOwnerAppSession:
+		session, err := m.repo.GetAppSessionByID(ctx, ownerID)
+		if err != nil || session == nil {
+			return ""
+		}
+		return session.ProjectID
+	case types.ContainerOwnerDagNode:
+		if m.analysisRepo == nil {
+			return ""
+		}
+		node, err := m.analysisRepo.GetAnalysisNodeByID(ctx, ownerID)
+		if err != nil || node == nil {
+			return ""
+		}
+		analysis, err := m.analysisRepo.GetAnalysisByAnalysisID(ctx, node.AnalysisID)
+		if err != nil || analysis == nil {
+			return ""
+		}
+		return analysis.ProjectID
+	default:
+		return ""
+	}
 }
 
 func (m *ContainerManager) Start(ctx context.Context, id int64) error {
