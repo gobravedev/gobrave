@@ -34,11 +34,12 @@ type RealtimeConfig struct {
 }
 
 type ContainerConfig struct {
-	RefreshImageStatusOnStart    bool   `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
-	RecoverRunningDagOnStart     bool   `yaml:"recover_running_dag_on_start" json:"recover_running_dag_on_start"`
-	DeleteContainerOnNodeSuccess bool   `yaml:"delete_container_on_node_success" json:"delete_container_on_node_success"`
-	DagNodeCleanupOnFailed       string `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
-	DagNodeCleanupOnDagFinished  string `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
+	RefreshImageStatusOnStart           bool   `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
+	RecoverRunningDagOnStart            bool   `yaml:"recover_running_dag_on_start" json:"recover_running_dag_on_start"`
+	CleanupDagNodeContainersBeforeStart bool   `yaml:"cleanup_dag_node_containers_before_start" json:"cleanup_dag_node_containers_before_start"`
+	DeleteContainerOnNodeSuccess        bool   `yaml:"delete_container_on_node_success" json:"delete_container_on_node_success"`
+	DagNodeCleanupOnFailed              string `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
+	DagNodeCleanupOnDagFinished         string `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
 }
 
 type StorageConfig struct {
@@ -178,11 +179,12 @@ func LoadConfig() (*Config, error) {
 			AckMaxRetries:         3,
 		},
 		Container: &ContainerConfig{
-			RefreshImageStatusOnStart:    true,
-			RecoverRunningDagOnStart:     true,
-			DeleteContainerOnNodeSuccess: true,
-			DagNodeCleanupOnFailed:       "stop",
-			DagNodeCleanupOnDagFinished:  "delete",
+			RefreshImageStatusOnStart:           true,
+			RecoverRunningDagOnStart:            true,
+			CleanupDagNodeContainersBeforeStart: true,
+			DeleteContainerOnNodeSuccess:        true,
+			DagNodeCleanupOnFailed:              "stop",
+			DagNodeCleanupOnDagFinished:         "delete",
 		},
 		// Ingest: &IngestConfig{
 		// 	Enabled:                 true,
@@ -224,11 +226,12 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.Container == nil {
 		cfg.Container = &ContainerConfig{
-			RefreshImageStatusOnStart:    true,
-			RecoverRunningDagOnStart:     true,
-			DeleteContainerOnNodeSuccess: false,
-			DagNodeCleanupOnFailed:       "stop",
-			DagNodeCleanupOnDagFinished:  "delete",
+			RefreshImageStatusOnStart:           true,
+			RecoverRunningDagOnStart:            true,
+			CleanupDagNodeContainersBeforeStart: true,
+			DeleteContainerOnNodeSuccess:        false,
+			DagNodeCleanupOnFailed:              "stop",
+			DagNodeCleanupOnDagFinished:         "delete",
 		}
 	}
 	if cfg.Realtime == nil {

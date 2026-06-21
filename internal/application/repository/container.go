@@ -252,6 +252,22 @@ func (r *containerRepository) ListContainerInstance(ctx context.Context) ([]*typ
 	return items, nil
 }
 
+func (r *containerRepository) ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) ([]*types.ContainerInstance, error) {
+	if len(ownerIDs) == 0 {
+		return []*types.ContainerInstance{}, nil
+	}
+
+	items := make([]*types.ContainerInstance, 0)
+	err := r.db.WithContext(ctx).
+		Where("owner_type = ? AND owner_id IN ?", ownerType, ownerIDs).
+		Order("id DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *containerRepository) PageContainerInstance(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerInstance, int64, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}

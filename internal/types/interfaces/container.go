@@ -67,6 +67,7 @@ type ContainerRepository interface {
 	UpdateContainerInstance(ctx context.Context, item *types.ContainerInstance) error
 	DeleteContainerInstance(ctx context.Context, id int64) error
 	ListContainerInstance(ctx context.Context) ([]*types.ContainerInstance, error)
+	ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) ([]*types.ContainerInstance, error)
 	PageContainerInstance(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerInstance, int64, error)
 
 	CreateContainerEvent(ctx context.Context, item *types.ContainerEvent) error

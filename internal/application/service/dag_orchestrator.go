@@ -105,12 +105,12 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 		return nil
 	}
 
-	if err := o.cleanupFailedDagNodeContainersBeforeStart(ctx, analysisID); err != nil {
+	if err := o.cleanupDagNodeContainersBeforeStart(ctx, analysisID); err != nil {
 		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
 			"job_status": analysisStatusFailed,
 			"updated_at": time.Now().UTC(),
 		})
-		return fmt.Errorf("cleanup failed dag node containers before start failed: %w", err)
+		return fmt.Errorf("cleanup dag node containers before start failed: %w", err)
 	}
 
 	if err := o.prepareNodesForResume(ctx, analysisID); err != nil {
@@ -221,67 +221,21 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 	return nil
 }
 
-func (o *dagOrchestrator) cleanupFailedDagNodeContainersBeforeStart(ctx context.Context, analysisID string) error {
-	if o == nil || o.repo == nil || o.containerRepo == nil || o.containerMgr == nil {
+func (o *dagOrchestrator) cleanupDagNodeContainersBeforeStart(ctx context.Context, analysisID string) error {
+	if o == nil || strings.TrimSpace(analysisID) == "" {
 		return nil
 	}
-	if strings.TrimSpace(analysisID) == "" {
+	if !o.cleanupDagNodeContainersBeforeStartEnabled() {
 		return nil
 	}
-
-	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
-	if err != nil {
-		return err
-	}
-	if len(nodes) == 0 {
-		return nil
-	}
-
-	failedOwnerSet := make(map[int64]struct{})
-	for _, node := range nodes {
-		if node == nil || node.ID == 0 {
-			continue
-		}
-		if !isFailedNodeStatusForContainerCleanup(node.Status) {
-			continue
-		}
-		failedOwnerSet[int64(node.ID)] = struct{}{}
-	}
-	if len(failedOwnerSet) == 0 {
-		return nil
-	}
-
-	instances, err := o.containerRepo.ListContainerInstance(ctx)
-	if err != nil {
-		return err
-	}
-
-	var firstErr error
-	for _, inst := range instances {
-		if inst == nil || inst.OwnerType != types.ContainerOwnerDagNode || inst.OwnerID <= 0 {
-			continue
-		}
-		if _, ok := failedOwnerSet[inst.OwnerID]; !ok {
-			continue
-		}
-
-		if strings.TrimSpace(inst.RuntimeID) == "" {
-			if err := o.containerRepo.DeleteContainerInstance(ctx, inst.ID); err != nil && firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-
-		if err := o.containerMgr.Delete(ctx, inst.ID); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	return firstErr
+	return o.cleanupByAnalysisIDStrict(ctx, analysisID, cleanupPolicyDelete)
 }
 
-func isFailedNodeStatusForContainerCleanup(status string) bool {
-	return strings.TrimSpace(strings.ToLower(status)) == dagruntime.StatusFailed
+func (o *dagOrchestrator) cleanupDagNodeContainersBeforeStartEnabled() bool {
+	if o == nil || o.cfg == nil || o.cfg.Container == nil {
+		return true
+	}
+	return o.cfg.Container.CleanupDagNodeContainersBeforeStart
 }
 
 func (o *dagOrchestrator) StopAsync(ctx context.Context, analysisID string) error {
@@ -419,7 +373,13 @@ func (o *dagOrchestrator) prepareNodesForResume(ctx context.Context, analysisID 
 
 	instancesByOwner := map[int64]*types.ContainerInstance{}
 	if o.containerRepo != nil {
-		instances, listErr := o.containerRepo.ListContainerInstance(ctx)
+		ownerIDs := make([]int64, 0, len(nodes))
+		for _, node := range nodes {
+			if node != nil && node.ID > 0 {
+				ownerIDs = append(ownerIDs, int64(node.ID))
+			}
+		}
+		instances, listErr := o.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, types.ContainerOwnerDagNode, ownerIDs)
 		if listErr != nil {
 			return listErr
 		}
@@ -546,13 +506,16 @@ func (o *dagOrchestrator) cleanupByAnalysisIDStrict(ctx context.Context, analysi
 	}
 
 	ownerSet := make(map[int64]struct{}, len(nodes))
+	ownerIDs := make([]int64, 0, len(nodes))
 	for _, node := range nodes {
 		if node != nil && node.ID > 0 {
-			ownerSet[int64(node.ID)] = struct{}{}
+			ownerID := int64(node.ID)
+			ownerSet[ownerID] = struct{}{}
+			ownerIDs = append(ownerIDs, ownerID)
 		}
 	}
 
-	instances, err := o.containerRepo.ListContainerInstance(ctx)
+	instances, err := o.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, types.ContainerOwnerDagNode, ownerIDs)
 	if err != nil {
 		return err
 	}
@@ -579,7 +542,7 @@ func (o *dagOrchestrator) cleanupDagNodeContainer(ctx context.Context, node *typ
 		return
 	}
 
-	instances, err := o.containerRepo.ListContainerInstance(ctx)
+	instances, err := o.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, types.ContainerOwnerDagNode, []int64{int64(node.ID)})
 	if err != nil {
 		logger.Warnf(ctx, "[DagOrchestrator] list container instances for node cleanup failed, node_id=%s err=%v", node.NodeID, err)
 		return

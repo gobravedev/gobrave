@@ -237,6 +237,29 @@ func (m *mockContainerRepo) ListContainerInstance(ctx context.Context) ([]*types
 	return items, nil
 }
 
+func (m *mockContainerRepo) ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) ([]*types.ContainerInstance, error) {
+	if len(ownerIDs) == 0 {
+		return []*types.ContainerInstance{}, nil
+	}
+
+	ownerSet := make(map[int64]struct{}, len(ownerIDs))
+	for _, id := range ownerIDs {
+		ownerSet[id] = struct{}{}
+	}
+
+	items := make([]*types.ContainerInstance, 0)
+	for _, v := range m.instances {
+		if v.OwnerType != ownerType {
+			continue
+		}
+		if _, ok := ownerSet[v.OwnerID]; !ok {
+			continue
+		}
+		items = append(items, v)
+	}
+	return items, nil
+}
+
 func (m *mockContainerRepo) PageContainerInstance(ctx context.Context, pagination *types.Pagination) ([]*types.ContainerInstance, int64, error) {
 	items, err := m.ListContainerInstance(ctx)
 	if err != nil {

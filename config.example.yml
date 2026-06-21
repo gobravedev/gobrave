@@ -65,6 +65,9 @@ container:
   # 服务启动时是否自动恢复 job_status=running 的 analysis DAG。
   # true: 扫描并尝试恢复；false: 不自动恢复。
   recover_running_dag_on_start: true
+  # DAG 启动前是否按 analysis_id 删除全部 owner_type=dag_node 的容器实例（包含运行中和失败残留）。
+  # true: 启动前先清理，避免冗余 container instance；false: 跳过此步骤。
+  cleanup_dag_node_containers_before_start: true
   # DAG 节点容器正常退出（exit_code=0）后是否立即删除 docker 和 container instance。
   # true: 节点完成后立刻删除；false: 不立即删除，交给 DAG 结束阶段策略处理。
   delete_container_on_node_success: true

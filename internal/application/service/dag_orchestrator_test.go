@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 )
 
@@ -64,22 +65,34 @@ func TestResumeNodeStatusForRestart(t *testing.T) {
 	}
 }
 
-func TestIsFailedNodeStatusForContainerCleanup(t *testing.T) {
+func TestCleanupDagNodeContainersBeforeStartEnabled(t *testing.T) {
 	tests := []struct {
-		name   string
-		status string
-		want   bool
+		name string
+		o    *dagOrchestrator
+		want bool
 	}{
-		{name: "failed", status: dagruntime.StatusFailed, want: true},
-		{name: "failed with whitespace and uppercase", status: "  FAILED  ", want: true},
-		{name: "running", status: dagruntime.StatusRunning, want: false},
-		{name: "done", status: dagruntime.StatusDone, want: false},
-		{name: "empty", status: "", want: false},
+		{name: "nil orchestrator defaults true", o: nil, want: true},
+		{name: "nil config defaults true", o: &dagOrchestrator{}, want: true},
+		{name: "nil container defaults true", o: &dagOrchestrator{cfg: &config.Config{}}, want: true},
+		{
+			name: "enabled true",
+			o: &dagOrchestrator{cfg: &config.Config{Container: &config.ContainerConfig{
+				CleanupDagNodeContainersBeforeStart: true,
+			}}},
+			want: true,
+		},
+		{
+			name: "enabled false",
+			o: &dagOrchestrator{cfg: &config.Config{Container: &config.ContainerConfig{
+				CleanupDagNodeContainersBeforeStart: false,
+			}}},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isFailedNodeStatusForContainerCleanup(tt.status)
+			got := tt.o.cleanupDagNodeContainersBeforeStartEnabled()
 			if got != tt.want {
 				t.Fatalf("unexpected result: got=%v want=%v", got, tt.want)
 			}
