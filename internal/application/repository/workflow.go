@@ -51,7 +51,7 @@ func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Co
 		Table("pipeline_components AS pc").
 		Select(`
 			pc.component_id AS script_id,
-			pc.container_id AS container_id,
+			pc.container_template_id AS container_template_id,
 			ct.name AS container_name,
 			ct.image_id AS image_id,
 			ci.full_name AS container_image,
@@ -59,7 +59,7 @@ func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Co
 			ci.tag AS image_tag,
 			ci.status AS image_status
 		`).
-		Joins("LEFT JOIN go_container_template AS ct ON pc.container_id = ct.id").
+		Joins("LEFT JOIN go_container_template AS ct ON pc.container_template_id = ct.id").
 		Joins("LEFT JOIN go_container_image AS ci ON ct.image_id = ci.id").
 		Where("pc.component_id = ?", scriptID).
 		Limit(1).
