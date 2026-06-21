@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
+	"github.com/flosch/pongo2/v6"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
@@ -299,10 +299,13 @@ func writeBytesAtomic(path string, content []byte, mode os.FileMode) error {
 	return nil
 }
 
-var templateVarRegexp = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}`)
-
 func renderShellTemplate(content string, params map[string]any) (string, error) {
-	ctx := map[string]any{}
+	tpl, err := pongo2.FromString(content)
+	if err != nil {
+		return "", fmt.Errorf("parse shell template failed: %w", err)
+	}
+
+	ctx := pongo2.Context{}
 	for k, v := range params {
 		ctx[k] = v
 	}
@@ -315,24 +318,9 @@ func renderShellTemplate(content string, params map[string]any) (string, error) 
 		}
 	}
 
-	var renderErr error
-	rendered := templateVarRegexp.ReplaceAllStringFunc(content, func(raw string) string {
-		if renderErr != nil {
-			return raw
-		}
-		parts := templateVarRegexp.FindStringSubmatch(raw)
-		if len(parts) < 2 {
-			return raw
-		}
-		value, ok := resolveTemplatePath(ctx, parts[1])
-		if !ok {
-			renderErr = fmt.Errorf("shell template variable %q is undefined", parts[1])
-			return raw
-		}
-		return fmt.Sprintf("%v", value)
-	})
-	if renderErr != nil {
-		return "", renderErr
+	rendered, err := tpl.Execute(ctx)
+	if err != nil {
+		return "", fmt.Errorf("render shell template failed: %w", err)
 	}
 	return rendered, nil
 }
@@ -343,28 +331,4 @@ func templateAsMap(v any) (map[string]any, bool) {
 	}
 	m, ok := v.(map[string]any)
 	return m, ok
-}
-
-func resolveTemplatePath(ctx map[string]any, path string) (any, bool) {
-	parts := strings.Split(strings.TrimSpace(path), ".")
-	if len(parts) == 0 || parts[0] == "" {
-		return nil, false
-	}
-
-	current, ok := ctx[parts[0]]
-	if !ok {
-		return nil, false
-	}
-	for i := 1; i < len(parts); i++ {
-		nextMap, ok := templateAsMap(current)
-		if !ok {
-			return nil, false
-		}
-		next, exists := nextMap[parts[i]]
-		if !exists {
-			return nil, false
-		}
-		current = next
-	}
-	return current, true
 }

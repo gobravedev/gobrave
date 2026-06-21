@@ -22,11 +22,14 @@ func TestRenderShellTemplate(t *testing.T) {
 	}
 }
 
-func TestRenderShellTemplateStrictUndefined(t *testing.T) {
+func TestRenderShellTemplateUndefinedVariableUsesPongo2Default(t *testing.T) {
 	tmpl := "echo {{ missing.key }}"
-	_, err := renderShellTemplate(tmpl, map[string]any{"sample_id": "S1"})
-	if err == nil {
-		t.Fatalf("expected undefined variable error")
+	rendered, err := renderShellTemplate(tmpl, map[string]any{"sample_id": "S1"})
+	if err != nil {
+		t.Fatalf("expected no error for undefined variable with pongo2 default behavior: %v", err)
+	}
+	if rendered != "echo " {
+		t.Fatalf("unexpected rendered template: got=%q want=%q", rendered, "echo ")
 	}
 }
 
