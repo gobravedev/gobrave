@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	stderrs "errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/compiler"
 	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/errors"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/google/uuid"
@@ -130,8 +132,38 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 	if strings.TrimSpace(analysisID) == "" {
 		analysisID = "preview"
 	}
-
 	runtimeDAG, err := compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
+	if true {
+		// 将 parseAnalysisResult+dagDefinition 写入json文件
+
+		baseDir := h.config.Storage.BaseDir
+		dagDebug := filepath.Join(baseDir, "dag", analysisID)
+		_ = os.MkdirAll(dagDebug, os.ModePerm)
+		paramsPath := filepath.Join(dagDebug, "params.json")
+		f, err := os.Create(paramsPath)
+		if err == nil {
+			encoder := json.NewEncoder(f)
+			encoder.SetIndent("", "  ")
+			_ = encoder.Encode(map[string]interface{}{
+				"parse_analysis_result": parseAnalysisResult,
+				"dag_definition":        dagDefinition,
+				"analysis_id":           analysisID,
+			})
+			f.Close()
+		}
+
+		resultPath := filepath.Join(dagDebug, "runtime_dag.json")
+		f, err = os.Create(resultPath)
+		if err == nil {
+			encoder := json.NewEncoder(f)
+			encoder.SetIndent("", "  ")
+			_ = encoder.Encode(runtimeDAG)
+			f.Close()
+		}
+		logger.Infof(context.Background(), "debug dag runtime, analysis_id: %s, params_path: %s, result_path: %s", analysisID, paramsPath, resultPath)
+
+	}
+
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to compile runtime dag").WithDetails(err.Error()))
 		return
