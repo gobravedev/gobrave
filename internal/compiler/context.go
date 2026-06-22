@@ -121,7 +121,8 @@ func cloneMap(src map[string]any) map[string]any {
 }
 
 func nodeKey(node map[string]any) string {
-	return fmt.Sprintf("%v", firstNonNil(node["node_id"], node["id"], node["name"], ""))
+	// Prefer DAG-level `id` so source/target edge references match node lookup.
+	return fmt.Sprintf("%v", firstNonNil(node["id"], node["node_id"], node["name"], ""))
 }
 
 func nodeName(node map[string]any) string {

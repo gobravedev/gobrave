@@ -1,6 +1,9 @@
 package compiler
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type TopologyStage struct{}
 
@@ -11,25 +14,54 @@ func (s *TopologyStage) Run(ctx *CompileContext) error {
 	ctx.Edges = asMapSlice(ctx.Dag["edges"])
 
 	ctx.NodeMap = map[string]map[string]any{}
+	aliasToCanonical := map[string]string{}
 	for _, node := range ctx.Nodes {
 		nid := nodeKey(node)
 		if nid == "" {
 			return fmt.Errorf("dag node id is required")
 		}
 		ctx.NodeMap[nid] = node
+		registerNodeAliases(aliasToCanonical, nid, node)
 	}
 
 	ctx.Incoming = map[string][]map[string]any{}
 	ctx.Outgoing = map[string][]map[string]any{}
 	for _, edge := range ctx.Edges {
-		src := fmt.Sprintf("%v", firstNonNil(edge["source"], ""))
-		dst := fmt.Sprintf("%v", firstNonNil(edge["target"], ""))
+		src := canonicalNodeRef(aliasToCanonical, fmt.Sprintf("%v", firstNonNil(edge["source"], edge["source_node"], "")))
+		dst := canonicalNodeRef(aliasToCanonical, fmt.Sprintf("%v", firstNonNil(edge["target"], edge["target_node"], "")))
+		if src == "" || dst == "" {
+			continue
+		}
+		edge["source"] = src
+		edge["target"] = dst
 		ctx.Incoming[dst] = append(ctx.Incoming[dst], edge)
 		ctx.Outgoing[src] = append(ctx.Outgoing[src], edge)
 	}
 
 	ctx.Order = topology(ctx.Nodes, ctx.Edges)
 	return nil
+}
+
+func registerNodeAliases(aliasToCanonical map[string]string, canonical string, node map[string]any) {
+	for _, key := range []string{"id", "node_id", "name"} {
+		val := strings.TrimSpace(fmt.Sprintf("%v", firstNonNil(node[key], "")))
+		if val == "" {
+			continue
+		}
+		aliasToCanonical[val] = canonical
+	}
+	aliasToCanonical[canonical] = canonical
+}
+
+func canonicalNodeRef(aliasToCanonical map[string]string, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if canonical, ok := aliasToCanonical[raw]; ok {
+		return canonical
+	}
+	return raw
 }
 
 func topology(nodes []map[string]any, edges []map[string]any) []string {
