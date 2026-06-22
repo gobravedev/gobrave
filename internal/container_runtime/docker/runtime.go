@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -20,6 +22,8 @@ import (
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 )
+
+const dockerSocketPath = "/var/run/docker.sock"
 
 type DockerRuntime struct {
 	handler containerruntime.RuntimeEventHandler
@@ -516,7 +520,39 @@ func (d *DockerRuntime) toHostConfig(spec *types.ContainerSpec) *container.HostC
 		binds = append(binds, bind)
 	}
 
-	return &container.HostConfig{Resources: resources, Binds: binds}
+	groupAdd := []string{}
+	if hasDockerSocketVolume(spec.Volumes) {
+		if gid, ok := resolveSocketGID(dockerSocketPath); ok {
+			groupAdd = append(groupAdd, gid)
+		}
+	}
+
+	return &container.HostConfig{Resources: resources, Binds: binds, GroupAdd: groupAdd}
+}
+
+func hasDockerSocketVolume(volumes []types.ContainerVolume) bool {
+	for _, volume := range volumes {
+		source := strings.TrimSpace(volume.Source)
+		target := strings.TrimSpace(volume.Target)
+		if source == dockerSocketPath || target == dockerSocketPath {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveSocketGID(path string) (string, bool) {
+	info, err := os.Stat(strings.TrimSpace(path))
+	if err != nil {
+		return "", false
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", false
+	}
+
+	return strconv.FormatUint(uint64(stat.Gid), 10), true
 }
 
 func (d *DockerRuntime) toContainerID(runtimeID string) (string, error) {

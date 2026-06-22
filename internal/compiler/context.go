@@ -167,10 +167,7 @@ func sampleValue(sample map[string]any, handle string) any {
 	if v, ok := sample[handle]; ok {
 		return v
 	}
-	norm := func(key string) string {
-		re := regexp.MustCompile(`[^a-z0-9]`)
-		return re.ReplaceAllString(strings.ToLower(key), "")
-	}
+	norm := normalizeKey
 	mapped := make(map[string]any, len(sample))
 	for k, v := range sample {
 		mapped[norm(k)] = v
@@ -182,10 +179,7 @@ func sampleValue(sample map[string]any, handle string) any {
 }
 
 func sampleExtraMeta(sample map[string]any, inputHandles []string) map[string]any {
-	norm := func(key string) string {
-		re := regexp.MustCompile(`[^a-z0-9]`)
-		return re.ReplaceAllString(strings.ToLower(key), "")
-	}
+	norm := normalizeKey
 	consumed := map[string]struct{}{}
 	for _, h := range inputHandles {
 		consumed[norm(h)] = struct{}{}
@@ -423,4 +417,24 @@ func firstNonNil(values ...any) any {
 		return v
 	}
 	return nil
+}
+
+func normalizeKey(key string) string {
+	re := regexp.MustCompile(`[^a-z0-9]`)
+	return re.ReplaceAllString(strings.ToLower(key), "")
+}
+
+func scatterMatchesInputHandle(scatter string, inputHandle string) bool {
+	scatterNorm := normalizeKey(scatter)
+	handleNorm := normalizeKey(inputHandle)
+	if scatterNorm == "" || handleNorm == "" {
+		return false
+	}
+	if scatterNorm == handleNorm {
+		return true
+	}
+	if strings.TrimSuffix(scatterNorm, "s") == strings.TrimSuffix(handleNorm, "s") {
+		return true
+	}
+	return false
 }

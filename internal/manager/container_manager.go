@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/config"
@@ -698,6 +699,14 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 		setRuntimeVar(vars, "GROUPID", strconv.Itoa(os.Getgid()))
 	}
 
+	if dockerGID, ok := os.LookupEnv("DOCKER_GID"); ok {
+		setRuntimeVar(vars, "DOCKER_GID", dockerGID)
+	} else if gid, ok := resolvePathGID("/var/run/docker.sock"); ok {
+		setRuntimeVar(vars, "DOCKER_GID", gid)
+	} else {
+		setRuntimeVar(vars, "DOCKER_GID", vars["GROUPID"])
+	}
+
 	if ctx != nil {
 		if userID, ok := ctx.Value(types.UserIDContextKey).(string); ok {
 			setRuntimeVar(vars, "SYS_USER_ID", userID)
@@ -833,6 +842,25 @@ func ensureEmptyFileIfNotExists(ctx context.Context, filePath string) {
 		return
 	}
 	_ = file.Close()
+}
+
+func resolvePathGID(path string) (string, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", false
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", false
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", false
+	}
+
+	return strconv.FormatUint(uint64(stat.Gid), 10), true
 }
 
 func parseCommand(raw string) []string {

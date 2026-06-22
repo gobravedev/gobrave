@@ -77,6 +77,12 @@ func (s *SampleResolveStrategy) Resolve(ctx *CompileContext, state *NodeRuntimeS
 		}
 
 		direct := sampleValue(state.Sample, inputHandle)
+		if direct == nil {
+			scatter := scatterField(state.Node)
+			if scatterMatchesInputHandle(scatter, inputHandle) {
+				direct = cloneMap(state.Sample)
+			}
+		}
 		if direct != nil {
 			direct = projectInputValueBySchema(direct, inputSchema)
 			state.NodeParams[inputHandle] = direct
