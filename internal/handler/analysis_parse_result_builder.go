@@ -127,6 +127,7 @@ func buildAnalysisDictFromDB(
 		formType := anyToString(formItem["type"])
 		selectedGroupName := getGroupName(rawValue)
 		reGroupName := getReGroupName(rawValue)
+		extraByID := extractRequestExtrasByID(rawValue)
 
 		if formType == "CollectedGroupSelectSampleButton" {
 			analysisResult := copyAnyMap(items[0])
@@ -205,6 +206,7 @@ func buildAnalysisDictFromDB(
 
 		if isSingle {
 			one := copyAnyMap(items[0])
+			mergeMissingMapFields(one, extraByID[anyToString(one["id"])])
 			one["form_type"] = formType
 			one["selcted_group_name"] = selectedGroupName
 			one["re_groups_name"] = reGroupName
@@ -215,6 +217,7 @@ func buildAnalysisDictFromDB(
 		list := make([]interface{}, 0, len(items))
 		for _, item := range items {
 			e := copyAnyMap(item)
+			mergeMissingMapFields(e, extraByID[anyToString(e["id"])])
 			e["form_type"] = formType
 			e["selcted_group_name"] = selectedGroupName
 			e["re_groups_name"] = reGroupName
@@ -587,6 +590,68 @@ func extractIDs(value interface{}) ([]string, bool) {
 			return nil, true
 		}
 		return []string{id}, true
+	}
+}
+
+func extractRequestExtrasByID(value interface{}) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+
+	appendOne := func(raw map[string]interface{}) {
+		if raw == nil {
+			return
+		}
+		id := extractPrimaryID(raw)
+		if id == "" {
+			return
+		}
+		extras := copyAnyMap(raw)
+		delete(extras, "file")
+		delete(extras, "sample")
+		delete(extras, "value")
+		result[id] = extras
+	}
+
+	switch v := value.(type) {
+	case map[string]interface{}:
+		appendOne(v)
+	case []interface{}:
+		for _, one := range v {
+			raw, ok := one.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			appendOne(raw)
+		}
+	}
+
+	return result
+}
+
+func extractPrimaryID(raw map[string]interface{}) string {
+	id := strings.TrimSpace(anyToString(raw["file"]))
+	if id != "" {
+		return id
+	}
+	id = strings.TrimSpace(anyToString(raw["sample"]))
+	if id != "" {
+		return id
+	}
+	id = strings.TrimSpace(anyToString(raw["value"]))
+	if id != "" {
+		return id
+	}
+	return ""
+}
+
+func mergeMissingMapFields(dst map[string]interface{}, src map[string]interface{}) {
+	if dst == nil || src == nil {
+		return
+	}
+	for k, v := range src {
+		if _, exists := dst[k]; exists {
+			continue
+		}
+		dst[k] = v
 	}
 }
 

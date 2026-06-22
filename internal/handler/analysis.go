@@ -103,6 +103,10 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 		return
 	}
 	requestParam, ok := params["request_param"].(map[string]interface{})
+	analysisID, _ := requestParam["analysis_id"].(string)
+	if strings.TrimSpace(analysisID) == "" {
+		analysisID = "preview"
+	}
 	if !ok {
 		c.Error(errors.NewValidationError("request_param is required and must be an object"))
 		return
@@ -118,6 +122,34 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 		return
 	}
 	parseAnalysisResult, err := buildParseAnalysisResult(c.Request.Context(), h.dataService, requestParam, formJSONWrap)
+	// 将requestParam+formJSONWrap写入json文件，方便调试
+	if true {
+		baseDir := h.config.Storage.BaseDir
+		debugDir := filepath.Join(baseDir, "debug", "parse_analysis_result", analysisID)
+		_ = os.MkdirAll(debugDir, os.ModePerm)
+		debugPath := filepath.Join(debugDir, fmt.Sprintf("input.json"))
+		f, err := os.Create(debugPath)
+		if err == nil {
+			encoder := json.NewEncoder(f)
+			encoder.SetIndent("", "  ")
+			_ = encoder.Encode(map[string]interface{}{
+				"request_param": requestParam,
+				"form_json":     formJSONWrap,
+			})
+			f.Close()
+			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %s, debug_path: %s", analysisID, debugPath)
+		}
+		// 将 parseAnalysisResult 写入json文件
+		resultPath := filepath.Join(debugDir, "result.json")
+		f, err = os.Create(resultPath)
+		if err == nil {
+			encoder := json.NewEncoder(f)
+			encoder.SetIndent("", "  ")
+			_ = encoder.Encode(parseAnalysisResult)
+			f.Close()
+			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %s, result_path: %s", analysisID, resultPath)
+		}
+	}
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to build parse analysis result").WithDetails(err.Error()))
 		return
@@ -128,16 +160,12 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 		return
 	}
 
-	analysisID, _ := requestParam["analysis_id"].(string)
-	if strings.TrimSpace(analysisID) == "" {
-		analysisID = "preview"
-	}
 	runtimeDAG, err := compiler.BuildRuntimeTasks(analysisID, parseAnalysisResult, dagDefinition)
 	if true {
 		// 将 parseAnalysisResult+dagDefinition 写入json文件
 
 		baseDir := h.config.Storage.BaseDir
-		dagDebug := filepath.Join(baseDir, "dag", analysisID)
+		dagDebug := filepath.Join(baseDir, "debug", "dag", analysisID)
 		_ = os.MkdirAll(dagDebug, os.ModePerm)
 		paramsPath := filepath.Join(dagDebug, "params.json")
 		f, err := os.Create(paramsPath)
@@ -150,6 +178,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 				"analysis_id":           analysisID,
 			})
 			f.Close()
+			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %s, params_path: %s", analysisID, paramsPath)
 		}
 
 		resultPath := filepath.Join(dagDebug, "runtime_dag.json")
@@ -159,8 +188,8 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 			encoder.SetIndent("", "  ")
 			_ = encoder.Encode(runtimeDAG)
 			f.Close()
+			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %s, runtime_dag_path: %s", analysisID, resultPath)
 		}
-		logger.Infof(context.Background(), "debug dag runtime, analysis_id: %s, params_path: %s, result_path: %s", analysisID, paramsPath, resultPath)
 
 	}
 
