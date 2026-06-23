@@ -257,8 +257,16 @@ func (s *dataService) AddFileToDataset(ctx context.Context, req *types.AddFileTo
 	if relativePath == "" {
 		return nil, fmt.Errorf("path is required")
 	}
+	source := strings.TrimSpace(req.Source)
+	var candidatePath string
+	if source == "data" {
+		candidatePath = filepath.Join(absBaseDir, source, req.ProjectID, strings.TrimLeft(relativePath, string(filepath.Separator)))
+	} else if source == "analysis" {
+		candidatePath = relativePath
+	} else {
+		return nil, fmt.Errorf("invalid source: %s", source)
+	}
 
-	candidatePath := filepath.Join(absBaseDir, "data", req.ProjectID, strings.TrimLeft(relativePath, string(filepath.Separator)))
 	resolvedPath, err := utils.SafePathUnderBase(absBaseDir, candidatePath)
 	if err != nil {
 		return nil, err

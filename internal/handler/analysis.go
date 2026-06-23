@@ -61,6 +61,7 @@ type VisualizationResultResponse struct {
 	Images []map[string]interface{} `json:"images"`
 	Tables []map[string]interface{} `json:"tables"`
 	HTMLs  []map[string]interface{} `json:"htmls"`
+	Files  []map[string]interface{} `json:"files"`
 }
 
 type VisualizationNodeFileResponse struct {
@@ -622,6 +623,7 @@ func visualizationResultsPath(path string, cfg *config.Config) (VisualizationRes
 		Images: make([]map[string]interface{}, 0),
 		Tables: make([]map[string]interface{}, 0),
 		HTMLs:  make([]map[string]interface{}, 0),
+		Files:  make([]map[string]interface{}, 0),
 	}
 
 	path = strings.TrimSpace(path)
@@ -630,11 +632,26 @@ func visualizationResultsPath(path string, cfg *config.Config) (VisualizationRes
 	}
 
 	entries, err := os.ReadDir(path)
+
 	if err != nil {
 		if os.IsNotExist(err) {
 			return result, nil
 		}
 		return result, err
+	}
+
+	// add  filename and filepath in result.Files
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		filename := entry.Name()
+		fullPath := filepath.Join(path, filename)
+
+		result.Files = append(result.Files, map[string]interface{}{
+			"filename": filename,
+			"filepath": fullPath,
+		})
 	}
 
 	imageGroups := make(map[string][]map[string]interface{})

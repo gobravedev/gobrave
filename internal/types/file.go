@@ -69,6 +69,8 @@ type AddFileToDatasetRequest struct {
 	ProjectID string `json:"-"`
 	Path      string `json:"path" binding:"required"`
 	Role      string `json:"role"`
+	// data analysis external
+	Source string `json:"source"`
 }
 
 type AddFileToDatasetResponse struct {
