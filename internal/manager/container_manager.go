@@ -127,7 +127,26 @@ func (m *ContainerManager) CreateByTemplate(
 			Target: m.cfg.Storage.BaseDir,
 			Mode:   "rw",
 		})
+		// 添加 挂载点 $PACKAGE_DIR/brave-env.sh ，如果文件不存在则先创建
+		packageDir := filepath.Join(m.cfg.Storage.BaseDir, "package")
+		if err := os.MkdirAll(packageDir, 0755); err != nil {
+			return nil, err
+		}
+		braveEnvFile := filepath.Join(packageDir, "brave-env.sh")
+		if _, err := os.Stat(braveEnvFile); os.IsNotExist(err) {
+			if _, err := os.Create(braveEnvFile); err != nil {
+				return nil, err
+			}
+		}
+		volumes = append(volumes, types.ContainerVolume{
+			Source: braveEnvFile,
+			Target: "/etc/profile.d/brave-env.sh",
+			Mode:   "rw",
+		})
 	}
+	
+
+
 	spec := &types.ContainerSpec{
 		Image:   img.FullName,
 		Command: parseCommand(tpl.Command),
@@ -677,11 +696,13 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 	setRuntimeVar(vars, "OWNER_TYPE", string(ownerType))
 	setRuntimeVar(vars, "OWNER_ID", strconv.FormatInt(ownerID, 10))
 	setRuntimeVar(vars, "CONTAINER_NAME", name)
+
 	if baseDir != "" {
 		packageDir := fmt.Sprintf("%s/package", baseDir)
 		profilePath := fmt.Sprintf("%s/Rprofile", packageDir)
 		ensureEmptyFileIfNotExists(ctx, profilePath)
 		setRuntimeVar(vars, "R_PROFILE", profilePath)
+		setRuntimeVar(vars, "PACKAGE_DIR", packageDir)
 
 		rPackageDir := fmt.Sprintf("%s/package/R/%s", baseDir, img.LibraryVersion)
 		setRuntimeVar(vars, "R_PACKAGE_DIR", rPackageDir)
