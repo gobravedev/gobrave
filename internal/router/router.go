@@ -78,7 +78,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	handler.RegisterOnlyOfficeRoutes(r, params.ProxyHandler)
 
 	r.Use(middleware.Auth(params.UserService, params.Config))
-	serveImageStatic(r, params.Config)
+	handler.RegisterProjectDocsRoute(r, params.Config)
+
+	serveStatic(r, params.Config)
 	v1 := r.Group("/api/v1")
 	{
 		RegisterAuthRoutes(v1, params.AuthHandler)
@@ -244,8 +246,8 @@ func RegisterRealtimeRoutes(r *gin.RouterGroup, handler *handler.RealtimeHandler
 	r.GET("/realtime/stats", handler.Stats)
 }
 
-// serveImageStatic maps local image resources under /images.
-func serveImageStatic(r *gin.Engine, cfg *config.Config) {
+// serveStatic maps local image resources under /images.
+func serveStatic(r *gin.Engine, cfg *config.Config) {
 	configuredDir := ""
 	baseDir := ""
 	if cfg != nil && cfg.Storage != nil {
@@ -323,6 +325,8 @@ func serveFrontendStatic(r *gin.Engine, cfg *config.Config) {
 			strings.HasPrefix(path, "/health/") ||
 			path == "/swagger" ||
 			strings.HasPrefix(path, "/swagger/") ||
+			path == "/docs" ||
+			strings.HasPrefix(path, "/docs/") ||
 			path == "/audio" ||
 			strings.HasPrefix(path, "/audio/") ||
 			path == "/images" ||
