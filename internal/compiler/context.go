@@ -148,15 +148,17 @@ func scriptID(node map[string]any) string {
 }
 
 func sampleLabel(sample map[string]any, index int) string {
-	nodeNameVal := strings.TrimSpace(fmt.Sprintf("%v", firstNonNil(sample["node_name"], "")))
-	fileNameVal := strings.TrimSpace(fmt.Sprintf("%v", firstNonNil(sample["file_name"], "")))
-	if nodeNameVal != "" && fileNameVal != "" {
+	// nodeNameVal := strings.TrimSpace(fmt.Sprintf("%v", firstNonNil(sample["node_name"], "")))
+	// fileNameVal := strings.TrimSpace(fmt.Sprintf("%v", firstNonNil(sample["file_name"], "")))
+	nodeNameVal := sample["node_name"]
+	fileNameVal := sample["file_name"]
+	if nodeNameVal != nil && nodeNameVal != "" && fileNameVal != nil && fileNameVal != "" {
 		return fmt.Sprintf("%s (%s) (%d)", nodeNameVal, fileNameVal, index+1)
 	}
-	if fileNameVal != "" {
+	if fileNameVal != "" && fileNameVal != nil {
 		return fmt.Sprintf("%s (%d)", fileNameVal, index+1)
 	}
-	if nodeNameVal != "" {
+	if nodeNameVal != "" && nodeNameVal != nil {
 		return fmt.Sprintf("%s (%d)", nodeNameVal, index+1)
 	}
 	analysisResultID := fmt.Sprintf("%v", firstNonNil(sample["analysis_result_id"], ""))
