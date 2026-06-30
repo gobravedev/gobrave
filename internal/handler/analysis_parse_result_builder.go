@@ -215,9 +215,18 @@ func buildAnalysisDictFromDB(
 		}
 
 		list := make([]interface{}, 0, len(items))
+		itemByID := make(map[string]map[string]interface{}, len(items))
 		for _, item := range items {
+			itemByID[anyToString(item["id"])] = item
+		}
+		list = make([]interface{}, 0, len(ids))
+		for _, id := range ids {
+			item, ok := itemByID[anyToString(id)]
+			if !ok {
+				continue
+			}
 			e := copyAnyMap(item)
-			mergeMissingMapFields(e, extraByID[anyToString(e["id"])])
+			mergeMissingMapFields(e, extraByID[anyToString(id)])
 			e["form_type"] = formType
 			e["selcted_group_name"] = selectedGroupName
 			e["re_groups_name"] = reGroupName
