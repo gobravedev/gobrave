@@ -98,7 +98,9 @@ func (s *SampleExpandStrategy) Expand(ctx *CompileContext, nid string, node map[
 						continue
 					}
 					if payload, ok := srcSamples[label]; ok {
-						samplePayload = cloneMap(payload)
+						for k, v := range payload {
+							samplePayload[k] = v
+						}
 						break
 					}
 				}
