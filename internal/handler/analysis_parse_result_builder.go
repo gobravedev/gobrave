@@ -114,6 +114,16 @@ func buildAnalysisDictFromDB(
 			continue
 		}
 
+		formType := anyToString(formItem["type"])
+		if formType == "NestSelectSampleV2" {
+			resolved, err := resolveNestSelectSampleV2Value(ctx, dataService, formItem, rawValue)
+			if err != nil {
+				return nil, fmt.Errorf("resolve nest select db fields for %s failed: %w", key, err)
+			}
+			result[key] = resolved
+			continue
+		}
+
 		ids, isSingle := extractIDs(rawValue)
 		if len(ids) == 0 {
 			continue
@@ -124,7 +134,6 @@ func buildAnalysisDictFromDB(
 			return nil, fmt.Errorf("resolve %s ids failed: %w", key, err)
 		}
 
-		formType := anyToString(formItem["type"])
 		selectedGroupName := getGroupName(rawValue)
 		reGroupName := getReGroupName(rawValue)
 		extraByID := extractRequestExtrasByID(rawValue)
@@ -752,4 +761,133 @@ func anyToString(v interface{}) string {
 		}
 		return fmt.Sprint(v)
 	}
+}
+
+func resolveNestSelectSampleV2Value(
+	ctx context.Context,
+	dataService interfaces.DataService,
+	formItem map[string]interface{},
+	rawValue interface{},
+) (interface{}, error) {
+	appendDBFields := getNestSelectSampleV2AppendDBFileFields(formItem)
+	if len(appendDBFields) == 0 {
+		return rawValue, nil
+	}
+
+	fileCache := make(map[string]map[string]interface{})
+	convert := func(item interface{}) (interface{}, error) {
+		row, ok := item.(map[string]interface{})
+		if !ok {
+			return item, nil
+		}
+
+		copied := copyAnyMap(row)
+		for _, fieldName := range appendDBFields {
+			resolvedField, err := resolveNestedDBFileValue(ctx, dataService, copied[fieldName], fileCache)
+			if err != nil {
+				return nil, err
+			}
+			copied[fieldName] = resolvedField
+		}
+		return copied, nil
+	}
+
+	switch value := rawValue.(type) {
+	case []interface{}:
+		result := make([]interface{}, 0, len(value))
+		for _, one := range value {
+			converted, err := convert(one)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, converted)
+		}
+		return result, nil
+	default:
+		return convert(value)
+	}
+}
+
+func getNestSelectSampleV2AppendDBFileFields(formItem map[string]interface{}) []string {
+	appendItems := toInterfaceSlice(formItem["append"])
+	result := make([]string, 0, len(appendItems))
+
+	for _, one := range appendItems {
+		appendItem, ok := one.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(anyToString(appendItem["input_type"])) != "file" {
+			continue
+		}
+		dbFlag, _ := appendItem["db"].(bool)
+		if !dbFlag {
+			continue
+		}
+		name := strings.TrimSpace(anyToString(appendItem["name"]))
+		if name == "" {
+			continue
+		}
+		result = append(result, name)
+	}
+
+	return result
+}
+
+func resolveNestedDBFileValue(
+	ctx context.Context,
+	dataService interfaces.DataService,
+	value interface{},
+	fileCache map[string]map[string]interface{},
+) (interface{}, error) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		copied := copyAnyMap(v)
+		fileID := strings.TrimSpace(anyToString(copied["file"]))
+		if fileID == "" {
+			return copied, nil
+		}
+		fileObj, err := loadCompatFileObjectByID(ctx, dataService, fileID, fileCache)
+		if err != nil {
+			return nil, err
+		}
+		merged := copyAnyMap(fileObj)
+		mergeMissingMapFields(merged, copied)
+		return merged, nil
+	default:
+		fileID := strings.TrimSpace(anyToString(value))
+		if fileID == "" {
+			return value, nil
+		}
+		fileObj, err := loadCompatFileObjectByID(ctx, dataService, fileID, fileCache)
+		if err != nil {
+			return nil, err
+		}
+		merged := copyAnyMap(fileObj)
+		merged["file"] = fileID
+		return merged, nil
+	}
+}
+
+func loadCompatFileObjectByID(
+	ctx context.Context,
+	dataService interfaces.DataService,
+	fileID string,
+	fileCache map[string]map[string]interface{},
+) (map[string]interface{}, error) {
+	if cached, ok := fileCache[fileID]; ok {
+		return copyAnyMap(cached), nil
+	}
+
+	file, err := findFileByIDOrFileID(ctx, dataService, fileID)
+	if err != nil {
+		return nil, err
+	}
+	if file == nil {
+		return nil, fmt.Errorf("data inconsistency: file id %s not found", fileID)
+	}
+
+	item := buildCompatAnalysisResultItem(file)
+	fileCache[fileID] = item
+	return copyAnyMap(item), nil
 }
