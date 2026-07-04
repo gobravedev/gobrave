@@ -206,7 +206,9 @@ type AnalysisNode struct {
 	WorkspaceDir           string     `json:"workspace_dir" gorm:"column:workspace_dir;type:varchar(255)"`
 	OutputDir              string     `json:"output_dir" gorm:"column:output_dir;type:varchar(255)"`
 	CommandPath            string     `json:"command_path" gorm:"column:command_path;type:varchar(255)"`
+	CommandMD5             string     `json:"command_md5" gorm:"column:command_md5;type:varchar(64)"`
 	ParamsPath             string     `json:"params_path" gorm:"column:params_path;type:varchar(255)"`
+	ParamsMD5              string     `json:"params_md5" gorm:"column:params_md5;type:varchar(64)"`
 	StartedAt              *time.Time `json:"started_at" gorm:"column:started_at"`
 	FinishedAt             *time.Time `json:"finished_at" gorm:"column:finished_at"`
 	CreatedAt              time.Time  `json:"created_at" gorm:"column:created_at"`

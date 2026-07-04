@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -410,7 +413,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 		o.bus.Subscribe(&dynamicRuntimeEventHandler{analysisID: analysisID, events: runtimeEvents})
 	}
 
-	if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep); err != nil {
+	if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep, preparer); err != nil {
 		return err
 	}
 	if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
@@ -440,7 +443,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 				return nil
 			}
 		case <-watchdogTicker.C:
-			if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep); err != nil {
+			if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep, preparer); err != nil {
 				return err
 			}
 			if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
@@ -457,7 +460,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 				candidates = nil
 			}
 			if len(candidates) > 0 {
-				if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, candidates, dep); err != nil {
+				if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, candidates, dep, preparer); err != nil {
 					return err
 				}
 			}
@@ -526,6 +529,7 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 	incoming map[string][]*types.AnalysisEdge,
 	candidates []string,
 	dep *dynamicDependencyManager,
+	preparer dagruntime.NodeRuntimePreparer,
 ) error {
 	if len(candidates) == 0 {
 		return nil
@@ -577,6 +581,9 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		if buildErr != nil {
 			return buildErr
 		}
+		if prepErr := prepareNodeArtifactsAndFillMD5(ctx, preparer, node); prepErr != nil {
+			return prepErr
+		}
 		newItems = append(newItems, node)
 		existingByNodeID[nodeID] = node
 
@@ -589,6 +596,45 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		return nil
 	}
 	return o.repo.CreateAnalysisNodes(ctx, newItems)
+}
+
+func prepareNodeArtifactsAndFillMD5(ctx context.Context, preparer dagruntime.NodeRuntimePreparer, node *types.AnalysisNode) error {
+	if node == nil {
+		return fmt.Errorf("analysis node is nil")
+	}
+	if preparer == nil {
+		return fmt.Errorf("node runtime preparer is nil")
+	}
+	if err := preparer.Prepare(ctx, node); err != nil {
+		return fmt.Errorf("prepare dynamic node runtime artifacts failed: %w", err)
+	}
+
+	commandMD5, err := fileMD5Hex(node.CommandPath)
+	if err != nil {
+		return fmt.Errorf("compute run.sh md5 failed: %w", err)
+	}
+	paramsMD5, err := fileMD5Hex(node.ParamsPath)
+	if err != nil {
+		return fmt.Errorf("compute params.json md5 failed: %w", err)
+	}
+
+	node.CommandMD5 = commandMD5
+	node.ParamsMD5 = paramsMD5
+	return nil
+}
+
+func fileMD5Hex(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := md5.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
