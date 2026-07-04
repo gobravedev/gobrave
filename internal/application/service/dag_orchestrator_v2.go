@@ -30,6 +30,12 @@ const (
 	dynamicV2LeaseTTL = 90 * time.Second
 	// dynamicV2Heartbeat is the interval for lease renewal while a run is active.
 	dynamicV2Heartbeat = 15 * time.Second
+	// dynamicV2ReadyQueueSize is the in-memory ready queue capacity before worker dispatch.
+	dynamicV2ReadyQueueSize = 64
+	// dynamicV2StopCheckInterval is a lightweight stop-flag probe cadence.
+	dynamicV2StopCheckInterval = 1 * time.Second
+	// dynamicV2WatchdogInterval is a safety net in case runtime events are dropped.
+	dynamicV2WatchdogInterval = 5 * time.Second
 )
 
 // dynamicDagOrchestratorV2 provides a Nextflow-like dynamic materialization path
@@ -109,6 +115,14 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 		return nil
 	}
 
+	if err := o.prepareAnalysisForCacheRerun(ctx, analysisID); err != nil {
+		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+			"job_status": "failed",
+			"updated_at": time.Now().UTC(),
+		})
+		return fmt.Errorf("prepare cached analysis rerun failed: %w", err)
+	}
+
 	compiled, err := compiler.BuildRuntimeTasks(analysisID, dynamicCloneAnyMap(parseAnalysisResult), dynamicCloneAnyMap(dagDefinition))
 	if err != nil {
 		// Compile failure is terminal for current submission; mark analysis failed.
@@ -160,17 +174,156 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 	return nil
 }
 
-// runDynamicLoop continuously reconciles runnable nodes and dispatches them.
-//
-// Responsibilities:
-// 1) Persist runtime edges for this run (topology view / dependency lookup).
-// 2) Build runtime execution stack (engine + preparer + dispatcher + worker pool).
-// 3) On each tick:
-//   - Stop-check by analysis.job_status
-//   - Materialize eligible nodes
-//   - Refresh ready status
-//   - Claim ready nodes and enqueue
-//   - Evaluate completion condition
+// prepareAnalysisForCacheRerun resets persisted runtime graph for reruns when
+// analysis.IsCache is enabled.
+func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Context, analysisID string) error {
+	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+	if analysis == nil || analysis.IsCache {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	return o.repo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
+		if err := tx.DeleteAnalysisNodesByAnalysisID(ctx, analysisID); err != nil {
+			return err
+		}
+		if err := tx.DeleteAnalysisEdgesByAnalysisID(ctx, analysisID); err != nil {
+			return err
+		}
+		return tx.UpdateAnalysisByAnalysisID(ctx, analysisID, map[string]any{
+			"job_status": "pending",
+			"updated_at": now,
+		})
+	})
+}
+
+type dynamicRuntimeEventHandler struct {
+	analysisID string
+	events     chan<- dagruntime.RuntimeEvent
+}
+
+func (h *dynamicRuntimeEventHandler) Handle(evt event.Event) {
+	runtimeEvt, ok := evt.(dagruntime.RuntimeEvent)
+	if !ok || strings.TrimSpace(runtimeEvt.AnalysisID) != h.analysisID {
+		return
+	}
+	select {
+	case h.events <- runtimeEvt:
+	default:
+	}
+}
+
+type dynamicDependencyManager struct {
+	waiting  map[string]map[string]struct{}
+	blocked  map[string]bool
+	outgoing map[string][]string
+}
+
+func newDynamicDependencyManager(nodeTemplateByID map[string]map[string]any, outgoing map[string][]string) *dynamicDependencyManager {
+	waiting := make(map[string]map[string]struct{}, len(nodeTemplateByID))
+	blocked := make(map[string]bool, len(nodeTemplateByID))
+	for nodeID, row := range nodeTemplateByID {
+		upstream := dynamicToStringSlice(row["upstream_ids"])
+		deps := make(map[string]struct{}, len(upstream))
+		for _, id := range upstream {
+			deps[id] = struct{}{}
+		}
+		waiting[nodeID] = deps
+		blocked[nodeID] = false
+	}
+	return &dynamicDependencyManager{waiting: waiting, blocked: blocked, outgoing: outgoing}
+}
+
+func (m *dynamicDependencyManager) SeedFromExisting(existing map[string]*types.AnalysisNode) {
+	for nodeID, node := range existing {
+		if node == nil {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(node.Status))
+		if status == dagruntime.StatusReady && node.CacheHit {
+			_ = m.OnNodeSuccess(nodeID)
+			continue
+		}
+		if dagruntime.IsSuccessStatus(status) {
+			_ = m.OnNodeSuccess(nodeID)
+			continue
+		}
+		if dagruntime.IsTerminalStatus(status) {
+			_ = m.OnNodeFailure(nodeID)
+		}
+	}
+}
+
+func (m *dynamicDependencyManager) InitialCandidates() []string {
+	out := make([]string, 0)
+	for nodeID := range m.waiting {
+		if m.IsReady(nodeID) || m.IsBlocked(nodeID) {
+			out = append(out, nodeID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (m *dynamicDependencyManager) OnNodeSuccess(nodeID string) []string {
+	touched := map[string]struct{}{}
+	for _, downstream := range m.outgoing[nodeID] {
+		deps, ok := m.waiting[downstream]
+		if !ok {
+			continue
+		}
+		if _, exists := deps[nodeID]; exists {
+			delete(deps, nodeID)
+			touched[downstream] = struct{}{}
+		}
+	}
+	return dynamicSortedKeys(touched)
+}
+
+func (m *dynamicDependencyManager) OnNodeFailure(nodeID string) []string {
+	queue := []string{nodeID}
+	visited := map[string]struct{}{nodeID: {}}
+	touched := map[string]struct{}{}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, downstream := range m.outgoing[current] {
+			touched[downstream] = struct{}{}
+			if !m.blocked[downstream] {
+				m.blocked[downstream] = true
+			}
+			if _, seen := visited[downstream]; seen {
+				continue
+			}
+			visited[downstream] = struct{}{}
+			queue = append(queue, downstream)
+		}
+	}
+	return dynamicSortedKeys(touched)
+}
+
+func (m *dynamicDependencyManager) IsReady(nodeID string) bool {
+	deps, ok := m.waiting[nodeID]
+	if !ok {
+		return false
+	}
+	if m.blocked[nodeID] {
+		return false
+	}
+	return len(deps) == 0
+}
+
+func (m *dynamicDependencyManager) IsBlocked(nodeID string) bool {
+	return m.blocked[nodeID]
+}
+
+// runDynamicLoop uses runtime events as the primary driver:
+// 1) NodeCompleted/NodeFailed events update dependency state.
+// 2) Only affected downstream templates are re-evaluated/materialized.
+// 3) Ready nodes are claimed and pushed into ReadyQueue for worker dispatch.
 func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisID string, nodeTemplates []map[string]any, edgeRows []map[string]any) error {
 	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
 	if err != nil {
@@ -204,11 +357,12 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 		preparer,
 	)
 
-	pool := dagruntime.NewWorkerPool(analysisID, dispatcher, 1, 64)
+	pool := dagruntime.NewWorkerPool(analysisID, dispatcher, 1, dynamicV2ReadyQueueSize)
 	pool.Start(ctx)
 	defer pool.Stop()
 
 	incoming := buildIncomingEdgeMap(edges)
+	outgoing := buildOutgoingNodeMap(edges)
 	nodeTemplateByID := make(map[string]map[string]any, len(nodeTemplates))
 	for _, row := range nodeTemplates {
 		nid := strings.TrimSpace(dynamicToString(row["node_id"]))
@@ -218,56 +372,62 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 		nodeTemplateByID[nid] = row
 	}
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	dep := newDynamicDependencyManager(nodeTemplateByID, outgoing)
+	existing, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+	existingByNodeID := make(map[string]*types.AnalysisNode, len(existing))
+	for _, n := range existing {
+		existingByNodeID[n.NodeID] = n
+	}
+	dep.SeedFromExisting(existingByNodeID)
+
+	readyQueue := make(chan string, dynamicV2ReadyQueueSize)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case analysisNodeID := <-readyQueue:
+				for {
+					if ok := pool.Enqueue(analysisNodeID); ok {
+						break
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(25 * time.Millisecond):
+					}
+				}
+			}
+		}
+	}()
+
+	runtimeEvents := make(chan dagruntime.RuntimeEvent, 256)
+	// Subscribe to runtime events for current analysis_id.
+	if o.bus != nil {
+		o.bus.Subscribe(&dynamicRuntimeEventHandler{analysisID: analysisID, events: runtimeEvents})
+	}
+
+	if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep); err != nil {
+		return err
+	}
+	if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
+		return err
+	}
+
+	stopTicker := time.NewTicker(dynamicV2StopCheckInterval)
+	defer stopTicker.Stop()
+	watchdogTicker := time.NewTicker(dynamicV2WatchdogInterval)
+	defer watchdogTicker.Stop()
 
 	for {
-		// Cooperative stop: external API may set job_status to stopping/stopped.
-		if shouldStop, stopErr := o.shouldStopByJobStatus(ctx, analysisID); stopErr == nil && shouldStop {
-			return nil
+		finished, finishedErr := o.checkDynamicCompletion(ctx, analysisID, len(nodeTemplateByID), runtime, pool, readyQueue)
+		if finishedErr != nil {
+			return finishedErr
 		}
-
-		// Core dynamic behavior: create missing nodes only when upstream succeeded.
-		if err := o.materializeDynamicNodes(ctx, analysis, nodeTemplateByID, incoming); err != nil {
-			return err
-		}
-		// Reuse existing runtime state machine to transition pending -> ready where possible.
-		if err := runtime.RefreshReadyStatus(ctx, analysisID); err != nil {
-			return err
-		}
-
-		queueLen := pool.QueueLen()
-		if queueLen < 64 {
-			// Fill queue up to capacity by claiming ready nodes with DB-level safety.
-			slots := 64 - queueLen
-			for i := 0; i < slots; i++ {
-				node, claimErr := runtime.ClaimNextReadyNode(ctx, analysisID)
-				if claimErr != nil {
-					return claimErr
-				}
-				if node == nil {
-					break
-				}
-				if ok := pool.Enqueue(node.AnalysisNodeID); !ok {
-					break
-				}
-			}
-		}
-
-		snapshot, err := runtime.GetSnapshot(ctx, analysisID)
-		if err != nil {
-			return err
-		}
-
-		allCreated, err := o.allCandidateNodesCreated(ctx, analysisID, len(nodeTemplateByID))
-		if err != nil {
-			return err
-		}
-		// Finish only when all candidate nodes were materialized and all running work drained.
-		if allCreated && snapshot.IsFinished && pool.QueueLen() == 0 {
-			if snapshot.StatusCount[dagruntime.StatusFailed] > 0 {
-				return fmt.Errorf("one or more dynamic dag nodes failed")
-			}
+		if finished {
 			return nil
 		}
 
@@ -275,24 +435,102 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 		case <-ctx.Done():
 			// Context cancellation is treated as graceful exit; caller sets final status.
 			return nil
-		case <-ticker.C:
+		case <-stopTicker.C:
+			if shouldStop, stopErr := o.shouldStopByJobStatus(ctx, analysisID); stopErr == nil && shouldStop {
+				return nil
+			}
+		case <-watchdogTicker.C:
+			if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, dep.InitialCandidates(), dep); err != nil {
+				return err
+			}
+			if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
+				return err
+			}
+		case evt := <-runtimeEvents:
+			var candidates []string
+			switch strings.TrimSpace(evt.Name) {
+			case dagruntime.EventNodeCompleted:
+				candidates = dep.OnNodeSuccess(strings.TrimSpace(evt.NodeID))
+			case dagruntime.EventNodeFailed:
+				candidates = dep.OnNodeFailure(strings.TrimSpace(evt.NodeID))
+			default:
+				candidates = nil
+			}
+			if len(candidates) > 0 {
+				if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, candidates, dep); err != nil {
+					return err
+				}
+			}
+			if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
+				return err
+			}
 		}
 	}
 }
 
-// materializeDynamicNodes lazily creates analysis_node rows from compiled templates.
-//
-// A node is created only when:
-// 1) It does not already exist (idempotency by node_id lookup).
-// 2) All upstream nodes listed in upstream_ids are in success state.
-//
-// During creation, it also pre-merges upstream resolved_outputs into target inputs.
-func (o *dynamicDagOrchestratorV2) materializeDynamicNodes(
+func (o *dynamicDagOrchestratorV2) checkDynamicCompletion(
+	ctx context.Context,
+	analysisID string,
+	templateCount int,
+	runtime *dagruntime.RuntimeEngine,
+	pool *dagruntime.WorkerPool,
+	readyQueue chan string,
+) (bool, error) {
+	snapshot, err := runtime.GetSnapshot(ctx, analysisID)
+	if err != nil {
+		return false, err
+	}
+	allCreated, err := o.allCandidateNodesCreated(ctx, analysisID, templateCount)
+	if err != nil {
+		return false, err
+	}
+	if allCreated && snapshot.IsFinished && pool.QueueLen() == 0 && len(readyQueue) == 0 {
+		if snapshot.StatusCount[dagruntime.StatusFailed] > 0 {
+			return true, fmt.Errorf("one or more dynamic dag nodes failed")
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *dagruntime.RuntimeEngine, analysisID string, readyQueue chan<- string) error {
+	for len(readyQueue) < cap(readyQueue) {
+		node, err := runtime.ClaimNextReadyNode(ctx, analysisID)
+		if err != nil {
+			return err
+		}
+		if node == nil {
+			return nil
+		}
+		if o.bus != nil {
+			o.bus.Publish(dagruntime.RuntimeEvent{
+				Name:       dagruntime.EventNodeSubmitted,
+				AnalysisID: analysisID,
+				NodeID:     node.NodeID,
+				OccurredAt: time.Now().UTC(),
+			})
+		}
+		select {
+		case readyQueue <- node.AnalysisNodeID:
+		case <-ctx.Done():
+			return nil
+		}
+	}
+	return nil
+}
+
+func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 	ctx context.Context,
 	analysis *types.Analysis,
 	nodeTemplateByID map[string]map[string]any,
 	incoming map[string][]*types.AnalysisEdge,
+	candidates []string,
+	dep *dynamicDependencyManager,
 ) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+
 	existingNodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID)
 	if err != nil {
 		return err
@@ -302,79 +540,120 @@ func (o *dynamicDagOrchestratorV2) materializeDynamicNodes(
 		existingByNodeID[n.NodeID] = n
 	}
 
-	keys := make([]string, 0, len(nodeTemplateByID))
-	for nodeID := range nodeTemplateByID {
-		keys = append(keys, nodeID)
-	}
-	sort.Strings(keys)
-
+	queue := append([]string(nil), candidates...)
+	processed := map[string]struct{}{}
 	newItems := make([]*types.AnalysisNode, 0)
-	for _, nodeID := range keys {
+	for len(queue) > 0 {
+		nodeID := strings.TrimSpace(queue[0])
+		queue = queue[1:]
+		if nodeID == "" {
+			continue
+		}
+		if _, seen := processed[nodeID]; seen {
+			continue
+		}
+		processed[nodeID] = struct{}{}
+
 		if _, exists := existingByNodeID[nodeID]; exists {
-			// Already materialized in previous rounds.
+			continue
+		}
+		row, ok := nodeTemplateByID[nodeID]
+		if !ok {
 			continue
 		}
 
-		row := nodeTemplateByID[nodeID]
-		upstreamIDs := dynamicToStringSlice(row["upstream_ids"])
-		if !allUpstreamSuccess(upstreamIDs, existingByNodeID) {
-			// Not yet eligible.
+		status := ""
+		errorMessage := ""
+		if dep.IsBlocked(nodeID) {
+			status = dagruntime.StatusSkipped
+			errorMessage = "blocked by failed upstream dependency"
+		} else if dep.IsReady(nodeID) {
+			status = dagruntime.StatusReady
+		} else {
 			continue
 		}
 
-		mergedParams := dynamicToJSONMap(row["params"])
-		mergedInputs := dynamicToJSONMap(row["resolved_inputs"])
-		bootstrapInputsFromUpstream(row, mergedParams, mergedInputs, incoming[nodeID], existingByNodeID)
-
-		analysisNodeID := strings.TrimSpace(dynamicToString(row["analysis_node_id"]))
-		if analysisNodeID == "" {
-			// Stable fallback ID for row identity if compiler omitted analysis_node_id.
-			analysisNodeID = "node-" + uuid.NewString()
+		node, buildErr := o.buildDynamicAnalysisNode(analysis, nodeID, row, incoming[nodeID], existingByNodeID, status, errorMessage)
+		if buildErr != nil {
+			return buildErr
 		}
-		workspaceDir := filepath.Join(analysis.OutputDir, analysisNodeID)
-		outputDir := filepath.Join(workspaceDir, "output")
-		paramsPath := filepath.Join(workspaceDir, "params.json")
-		commandPath := filepath.Join(workspaceDir, "run.sh")
-		logPath := filepath.Join(workspaceDir, "command.log")
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			return err
-		}
+		newItems = append(newItems, node)
+		existingByNodeID[nodeID] = node
 
-		newItems = append(newItems, &types.AnalysisNode{
-			ID:                     utils.GenerateID(),
-			AnalysisNodeID:         analysisNodeID,
-			AnalysisID:             analysis.AnalysisID,
-			NodeID:                 nodeID,
-			NodeName:               dynamicToString(row["node_name"]),
-			SampleID:               dynamicToString(row["sample_id"]),
-			ScriptID:               dynamicToString(row["script_id"]),
-			InputsPatterns:         dynamicToJSONMap(row["inputs_patterns"]),
-			ResolvedInputs:         mergedInputs,
-			OutputPatterns:         dynamicToJSONMap(row["output_patterns"]),
-			ResolvedOutputs:        dynamicToJSONMap(row["resolved_outputs"]),
-			Params:                 mergedParams,
-			Status:                 dagruntime.StatusPending,
-			Executor:               dynamicToString(row["executor"]),
-			Retry:                  dynamicIntFromAny(row["retry"], 0),
-			MaxRetry:               dynamicIntFromAny(row["max_retry"], 3),
-			CacheHit:               false,
-			UpstreamIDs:            types.JSONSlice(dynamicStringSliceToAny(upstreamIDs)),
-			DownstreamIDs:          dynamicToJSONSlice(row["downstream_ids"]),
-			InputValidationErrors:  dynamicToJSONSlice(row["input_validation_errors"]),
-			OutputValidationErrors: types.JSONSlice{},
-			LogPath:                logPath,
-			WorkspaceDir:           workspaceDir,
-			OutputDir:              outputDir,
-			CommandPath:            commandPath,
-			ParamsPath:             paramsPath,
-		})
+		if status == dagruntime.StatusSkipped {
+			queue = append(queue, dep.OnNodeFailure(nodeID)...)
+		}
 	}
 
 	if len(newItems) == 0 {
 		return nil
 	}
-	// Batch insert improves throughput and keeps materialization atomic per round.
 	return o.repo.CreateAnalysisNodes(ctx, newItems)
+}
+
+func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
+	analysis *types.Analysis,
+	nodeID string,
+	row map[string]any,
+	incomingEdges []*types.AnalysisEdge,
+	existingByNodeID map[string]*types.AnalysisNode,
+	status string,
+	errorMessage string,
+) (*types.AnalysisNode, error) {
+	upstreamIDs := dynamicToStringSlice(row["upstream_ids"])
+	mergedParams := dynamicToJSONMap(row["params"])
+	mergedInputs := dynamicToJSONMap(row["resolved_inputs"])
+	bootstrapInputsFromUpstream(row, mergedParams, mergedInputs, incomingEdges, existingByNodeID)
+
+	analysisNodeID := strings.TrimSpace(dynamicToString(row["analysis_node_id"]))
+	if analysisNodeID == "" {
+		analysisNodeID = "node-" + uuid.NewString()
+	}
+	workspaceDir := filepath.Join(analysis.OutputDir, analysisNodeID)
+	outputDir := filepath.Join(workspaceDir, "output")
+	paramsPath := filepath.Join(workspaceDir, "params.json")
+	commandPath := filepath.Join(workspaceDir, "run.sh")
+	logPath := filepath.Join(workspaceDir, "command.log")
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	var finishedAt *time.Time
+	if status == dagruntime.StatusSkipped {
+		now := time.Now().UTC()
+		finishedAt = &now
+	}
+
+	return &types.AnalysisNode{
+		ID:                     utils.GenerateID(),
+		AnalysisNodeID:         analysisNodeID,
+		AnalysisID:             analysis.AnalysisID,
+		NodeID:                 nodeID,
+		NodeName:               dynamicToString(row["node_name"]),
+		SampleID:               dynamicToString(row["sample_id"]),
+		ScriptID:               dynamicToString(row["script_id"]),
+		InputsPatterns:         dynamicToJSONMap(row["inputs_patterns"]),
+		ResolvedInputs:         mergedInputs,
+		OutputPatterns:         dynamicToJSONMap(row["output_patterns"]),
+		ResolvedOutputs:        dynamicToJSONMap(row["resolved_outputs"]),
+		Params:                 mergedParams,
+		Status:                 status,
+		Executor:               dynamicToString(row["executor"]),
+		Retry:                  dynamicIntFromAny(row["retry"], 0),
+		MaxRetry:               dynamicIntFromAny(row["max_retry"], 3),
+		CacheHit:               false,
+		UpstreamIDs:            types.JSONSlice(dynamicStringSliceToAny(upstreamIDs)),
+		DownstreamIDs:          dynamicToJSONSlice(row["downstream_ids"]),
+		InputValidationErrors:  dynamicToJSONSlice(row["input_validation_errors"]),
+		OutputValidationErrors: types.JSONSlice{},
+		LogPath:                logPath,
+		WorkspaceDir:           workspaceDir,
+		OutputDir:              outputDir,
+		CommandPath:            commandPath,
+		ParamsPath:             paramsPath,
+		ErrorMessage:           errorMessage,
+		FinishedAt:             finishedAt,
+	}, nil
 }
 
 // allCandidateNodesCreated compares persisted nodes with compiled template count.
@@ -440,6 +719,35 @@ func buildIncomingEdgeMap(edges []*types.AnalysisEdge) map[string][]*types.Analy
 		incoming[edge.TargetNode] = append(incoming[edge.TargetNode], edge)
 	}
 	return incoming
+}
+
+// buildOutgoingNodeMap indexes source node -> direct downstream node ids.
+func buildOutgoingNodeMap(edges []*types.AnalysisEdge) map[string][]string {
+	outgoing := make(map[string][]string)
+	for _, edge := range edges {
+		if edge == nil {
+			continue
+		}
+		source := strings.TrimSpace(edge.SourceNode)
+		target := strings.TrimSpace(edge.TargetNode)
+		if source == "" || target == "" {
+			continue
+		}
+		outgoing[source] = append(outgoing[source], target)
+	}
+	return outgoing
+}
+
+func dynamicSortedKeys(items map[string]struct{}) []string {
+	out := make([]string, 0, len(items))
+	for key := range items {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // bootstrapInputsFromUpstream merges upstream outputs into target params/resolved_inputs.
