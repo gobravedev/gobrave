@@ -148,13 +148,20 @@ type Analysis struct {
 	ServerStatus        string    `json:"server_status" gorm:"column:server_status;type:varchar(255)"`
 	CommandLogPath      string    `json:"command_log_path" gorm:"column:command_log_path;type:varchar(255)"`
 	IsReport            bool      `json:"is_report" gorm:"column:is_report;default:false"`
-	IsCache             bool      `json:"is_cache" gorm:"column:is_cache;default:false"`
+	CacheType           int       `json:"cache_type" gorm:"column:cache_type;default:1"`
 	Used                bool      `json:"used" gorm:"column:used;default:true"`
 	DataComponentIDs    string    `json:"data_component_ids" gorm:"column:data_component_ids;type:text"`
 	ExtraProjectIDs     string    `json:"extra_project_ids" gorm:"column:extra_project_ids;type:longtext"`
 	CreatedAt           time.Time `json:"created_at" gorm:"column:created_at"`
 	UpdatedAt           time.Time `json:"updated_at" gorm:"column:updated_at"`
 }
+
+const (
+	CacheTypeRerunAll                          = 1
+	CacheTypeReuseExistingNode                 = 2
+	CacheTypeReuseWhenScriptUnchanged          = 3
+	CacheTypeReuseWhenScriptAndParamsUnchanged = 4
+)
 
 func (Analysis) TableName() string {
 	return "nextflow"

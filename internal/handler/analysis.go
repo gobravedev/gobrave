@@ -38,7 +38,7 @@ type AnalysisHandler struct {
 type EditParamsV2Response struct {
 	AnalysisName   string                 `json:"analysis_name"`
 	IsReport       bool                   `json:"is_report"`
-	IsCache        bool                   `json:"is_cache"`
+	CacheType      int                    `json:"cache_type"`
 	AnalysisID     string                 `json:"analysis_id"`
 	Status         string                 `json:"status"`
 	ServerStatus   string                 `json:"server_status"`
@@ -50,7 +50,7 @@ type EditParamsV2Response struct {
 type EditNodeParamsResponse struct {
 	AnalysisName string                 `json:"analysis_name"`
 	IsReport     bool                   `json:"is_report"`
-	IsCache      bool                   `json:"is_cache"`
+	CacheType    int                    `json:"cache_type"`
 	AnalysisID   string                 `json:"analysis_id"`
 	Status       string                 `json:"status"`
 	ServerStatus string                 `json:"server_status"`
@@ -493,7 +493,7 @@ func (h *AnalysisHandler) EditParamsV2(c *gin.Context) {
 	c.JSON(http.StatusOK, EditParamsV2Response{
 		AnalysisName:   analysisItem.AnalysisName,
 		IsReport:       analysisItem.IsReport,
-		IsCache:        analysisItem.IsCache,
+		CacheType:      analysisItem.CacheType,
 		AnalysisID:     analysisItem.AnalysisID,
 		Status:         analysisItem.JobStatus,
 		ServerStatus:   analysisItem.ServerStatus,
@@ -584,7 +584,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 	c.JSON(http.StatusOK, EditNodeParamsResponse{
 		AnalysisName: analysisItem.AnalysisName,
 		IsReport:     analysisItem.IsReport,
-		IsCache:      analysisItem.IsCache,
+		CacheType:    analysisItem.CacheType,
 		AnalysisID:   analysisItem.AnalysisID,
 		Status:       analysisNode.Status,
 		ServerStatus: analysisItem.ServerStatus,

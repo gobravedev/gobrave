@@ -175,13 +175,13 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 }
 
 // prepareAnalysisForCacheRerun resets persisted runtime graph for reruns when
-// analysis.IsCache is enabled.
+// cache_type requires full rerun.
 func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Context, analysisID string) error {
 	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
 	if err != nil {
 		return err
 	}
-	if analysis == nil || analysis.IsCache {
+	if analysis == nil || analysis.CacheType != types.CacheTypeRerunAll {
 		return nil
 	}
 

@@ -65,7 +65,16 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	}
 
 	analysisID := strings.TrimSpace(toString(input.RequestParam["analysis_id"]))
-	isCache := toBool(input.RequestParam["is_cache"])
+	cacheType := intFromAny(input.RequestParam["cache_type"], types.CacheTypeRerunAll)
+	if _, ok := input.RequestParam["cache_type"]; !ok {
+		if toBool(input.RequestParam["is_cache"]) {
+			cacheType = types.CacheTypeReuseExistingNode
+		}
+	}
+	if cacheType < types.CacheTypeRerunAll || cacheType > types.CacheTypeReuseWhenScriptAndParamsUnchanged {
+		cacheType = types.CacheTypeRerunAll
+	}
+	input.RequestParam["cache_type"] = cacheType
 	dataComponentIDs := toString(input.RequestParam["data_component_ids"])
 
 	var saved *types.Analysis
@@ -129,7 +138,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 				"project":       projectID,
 				"analysis_name": analysisName,
 				"request_param": string(requestParamJSON),
-				"is_cache":      isCache,
+				"cache_type":    cacheType,
 				"relation_id":   workflowID,
 				// "is_report":          input.IsReport,
 				"data_component_ids": dataComponentIDs,
@@ -164,7 +173,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 				ServerStatus:    "",
 				CommandLogPath:  commandLogPath,
 				// IsReport:         input.IsReport,
-				IsCache:          isCache,
+				CacheType:        cacheType,
 				DataComponentIDs: dataComponentIDs,
 				Used:             true,
 			}
@@ -197,7 +206,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces.AnalysisRepository, analysis *types.Analysis, dagRuntime map[string]any) error {
 	nodeRows := toMapSlice(dagRuntime["analysis_nodes"])
 	edgeRows := toMapSlice(dagRuntime["analysis_edges"])
-	useCache := analysis != nil && analysis.IsCache
+	useCache := analysis != nil && analysis.CacheType != types.CacheTypeRerunAll
 
 	existingNodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID)
 	if err != nil {
