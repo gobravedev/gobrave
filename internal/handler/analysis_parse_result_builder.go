@@ -6,6 +6,7 @@ import (
 	stderrs "errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -105,7 +106,22 @@ func buildAnalysisDictFromDB(
 
 	for _, key := range queryNames {
 		formItem := queryNameDict[key]
-		if strings.TrimSpace(anyToString(formItem["input_type"])) != "file" {
+		inputType := strings.TrimSpace(anyToString(formItem["input_type"]))
+		if inputType == "sample" {
+			rawValue, exists := requestParam[key]
+			if !exists {
+				continue
+			}
+
+			resolved, err := resolveSampleInputValue(ctx, dataService, formItem, rawValue)
+			if err != nil {
+				return nil, fmt.Errorf("resolve sample db fields for %s failed: %w", key, err)
+			}
+			result[key] = resolved
+			continue
+		}
+
+		if inputType != "file" {
 			continue
 		}
 
@@ -890,4 +906,166 @@ func loadCompatFileObjectByID(
 	item := buildCompatAnalysisResultItem(file)
 	fileCache[fileID] = item
 	return copyAnyMap(item), nil
+}
+
+func resolveSampleInputValue(
+	ctx context.Context,
+	dataService interfaces.DataService,
+	formItem map[string]interface{},
+	rawValue interface{},
+) (interface{}, error) {
+	sampleIDs := extractSampleIDsFromValue(rawValue)
+	if len(sampleIDs) == 0 {
+		return []interface{}{}, nil
+	}
+
+	acceptFormats := getSampleAcceptFormats(formItem)
+	acceptFormatByLower := make(map[string]string, len(acceptFormats))
+	for _, format := range acceptFormats {
+		acceptFormatByLower[strings.ToLower(strings.TrimSpace(format))] = format
+	}
+
+	selected := make(map[int64]struct{}, len(sampleIDs))
+	for _, id := range sampleIDs {
+		if idNum, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64); err == nil {
+			selected[idNum] = struct{}{}
+		}
+	}
+	if len(selected) == 0 {
+		return []interface{}{}, nil
+	}
+
+	sampleFiles, err := dataService.ListSampleFile(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	fileCache := make(map[int64]*types.File)
+	sampleRoleToPath := make(map[int64]map[string]string)
+
+	for _, sampleFile := range sampleFiles {
+		if sampleFile == nil {
+			continue
+		}
+		if _, ok := selected[sampleFile.SampleID]; !ok {
+			continue
+		}
+
+		role := strings.TrimSpace(sampleFile.Role)
+		if len(acceptFormatByLower) > 0 {
+			mapped, ok := acceptFormatByLower[strings.ToLower(role)]
+			if !ok {
+				continue
+			}
+			role = mapped
+		}
+		if role == "" {
+			continue
+		}
+
+		if _, ok := sampleRoleToPath[sampleFile.SampleID]; !ok {
+			sampleRoleToPath[sampleFile.SampleID] = make(map[string]string)
+		}
+		if existing := strings.TrimSpace(sampleRoleToPath[sampleFile.SampleID][role]); existing != "" {
+			continue
+		}
+
+		file, ok := fileCache[sampleFile.FileID]
+		if !ok {
+			file, err = dataService.GetFileByID(ctx, sampleFile.FileID)
+			if err != nil {
+				if stderrs.Is(err, gorm.ErrRecordNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			fileCache[sampleFile.FileID] = file
+		}
+
+		if file == nil {
+			continue
+		}
+
+		path := strings.TrimSpace(file.Path)
+		if path == "" {
+			path = strings.TrimSpace(file.FileID)
+		}
+		sampleRoleToPath[sampleFile.SampleID][role] = path
+	}
+
+	result := make([]interface{}, 0, len(sampleIDs))
+	for _, sampleID := range sampleIDs {
+		sampleIDNum, err := strconv.ParseInt(strings.TrimSpace(sampleID), 10, 64)
+		if err != nil {
+			continue
+		}
+
+		row := map[string]interface{}{
+			"ID": sampleID,
+		}
+
+		if len(acceptFormats) > 0 {
+			for _, format := range acceptFormats {
+				row[format] = ""
+			}
+		}
+
+		roleMap := sampleRoleToPath[sampleIDNum]
+		if len(roleMap) > 0 {
+			if len(acceptFormats) == 0 {
+				roleKeys := make([]string, 0, len(roleMap))
+				for role := range roleMap {
+					roleKeys = append(roleKeys, role)
+				}
+				sort.Strings(roleKeys)
+				for _, role := range roleKeys {
+					row[role] = roleMap[role]
+				}
+			} else {
+				for _, format := range acceptFormats {
+					if path, ok := roleMap[format]; ok {
+						row[format] = path
+					}
+				}
+			}
+		}
+
+		result = append(result, row)
+	}
+
+	return result, nil
+}
+
+func extractSampleIDsFromValue(value interface{}) []string {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		if sample, ok := v["sample"]; ok {
+			return extractIDList(sample)
+		}
+		return nil
+	default:
+		return extractIDList(v)
+	}
+}
+
+func getSampleAcceptFormats(formItem map[string]interface{}) []string {
+	resolver, _ := formItem["resolver"].(map[string]interface{})
+	if resolver == nil {
+		return nil
+	}
+
+	raw := resolver["accept_formats"]
+	formats := make([]string, 0)
+	for _, one := range toInterfaceSlice(raw) {
+		format := strings.TrimSpace(anyToString(one))
+		if format == "" {
+			continue
+		}
+		formats = append(formats, format)
+	}
+
+	if len(formats) == 0 {
+		return nil
+	}
+	return formats
 }
