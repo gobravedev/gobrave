@@ -455,11 +455,22 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 			default:
 				candidates = nil
 			}
+			// 算出并落库哪些节点现在可以/不可以跑
+			// 作用：对本次事件影响到的候选节点做“对账/物化”。
+			// 具体会做的事：
+			// 看节点是否已存在于 analysis_node；
+			// 若不存在且依赖满足，创建新节点（ready）；
+			// 若被失败上游阻断，创建/标记为 skipped；
+			// 若已存在，会按 cache 策略判断是否需要重新置为 ready 重跑。
+
 			if len(candidates) > 0 {
 				if err := o.reconcileDynamicCandidates(ctx, analysis, nodeTemplateByID, incoming, candidates, dep, preparer); err != nil {
 					return err
 				}
 			}
+			// 第二段负责“把可以跑的节点真正送去执行”。
+			// 作用：把数据库里当前可执行的 ready 节点“领取（claim）并推入内存 readyQueue”，交给 worker pool 实际执行。
+			// 特点：这一步每次事件后都会跑一次（不依赖 candidates 是否为空），确保新变成 ready 的节点尽快被派发，减少调度延迟。
 			if err := o.pumpReadyQueue(ctx, runtime, analysisID, readyQueue); err != nil {
 				return err
 			}
