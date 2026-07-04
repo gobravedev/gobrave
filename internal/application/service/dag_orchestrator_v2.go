@@ -188,7 +188,6 @@ func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Cont
 		return nil
 	}
 
-	now := time.Now().UTC()
 	return o.repo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
 		if err := tx.DeleteAnalysisNodesByAnalysisID(ctx, analysisID); err != nil {
 			return err
@@ -196,10 +195,7 @@ func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Cont
 		if err := tx.DeleteAnalysisEdgesByAnalysisID(ctx, analysisID); err != nil {
 			return err
 		}
-		return tx.UpdateAnalysisByAnalysisID(ctx, analysisID, map[string]any{
-			"job_status": "pending",
-			"updated_at": now,
-		})
+		return nil
 	})
 }
 
@@ -558,7 +554,11 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		}
 		processed[nodeID] = struct{}{}
 
-		if _, exists := existingByNodeID[nodeID]; exists {
+		if existingNode, exists := existingByNodeID[nodeID]; exists {
+			row, _ := nodeTemplateByID[nodeID]
+			if existingErr := o.reconcileExistingNodeByCacheType(ctx, analysis, existingNode, row, incoming[nodeID], existingByNodeID, dep, preparer); existingErr != nil {
+				return existingErr
+			}
 			continue
 		}
 		row, ok := nodeTemplateByID[nodeID]
@@ -596,6 +596,145 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		return nil
 	}
 	return o.repo.CreateAnalysisNodes(ctx, newItems)
+}
+
+// reconcileExistingNodeByCacheType is a skeleton entrypoint for existing-node
+// cache policy handling. MD5-based decisions are added in a follow-up step.
+func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByCacheType(
+	ctx context.Context,
+	analysis *types.Analysis,
+	existingNode *types.AnalysisNode,
+	row map[string]any,
+	incomingEdges []*types.AnalysisEdge,
+	existingByNodeID map[string]*types.AnalysisNode,
+	dep *dynamicDependencyManager,
+	preparer dagruntime.NodeRuntimePreparer,
+) error {
+	if analysis == nil || existingNode == nil {
+		return nil
+	}
+
+	nodeID := strings.TrimSpace(existingNode.NodeID)
+	if nodeID == "" {
+		return nil
+	}
+
+	if dep != nil && dep.IsBlocked(nodeID) {
+		return nil
+	}
+
+	switch analysis.CacheType {
+	case types.CacheTypeReuseExistingNode:
+		return nil
+	case types.CacheTypeReuseWhenScriptUnchanged:
+		return o.reconcileExistingNodeByMD5Policy(ctx, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, false)
+	case types.CacheTypeReuseWhenScriptAndParamsUnchanged:
+		return o.reconcileExistingNodeByMD5Policy(ctx, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, true)
+	default:
+		return nil
+	}
+}
+
+func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByMD5Policy(
+	ctx context.Context,
+	existingNode *types.AnalysisNode,
+	row map[string]any,
+	incomingEdges []*types.AnalysisEdge,
+	existingByNodeID map[string]*types.AnalysisNode,
+	dep *dynamicDependencyManager,
+	preparer dagruntime.NodeRuntimePreparer,
+	requireParamsMD5 bool,
+) error {
+	if existingNode == nil || row == nil {
+		return nil
+	}
+
+	nodeID := strings.TrimSpace(existingNode.NodeID)
+	if nodeID == "" {
+		return nil
+	}
+	if dep != nil && !dep.IsReady(nodeID) {
+		return nil
+	}
+
+	status := strings.ToLower(strings.TrimSpace(existingNode.Status))
+	if status == dagruntime.StatusRunning || status == dagruntime.StatusSubmitted {
+		return nil
+	}
+	if status == dagruntime.StatusReady && !existingNode.CacheHit {
+		return nil
+	}
+
+	probe := *existingNode
+	probe.NodeName = dynamicToString(row["node_name"])
+	probe.SampleID = dynamicToString(row["sample_id"])
+	probe.Executor = dynamicToString(row["executor"])
+	if scriptID := strings.TrimSpace(dynamicToString(row["script_id"])); scriptID != "" {
+		probe.ScriptID = scriptID
+	}
+	probe.InputsPatterns = dynamicToJSONMap(row["inputs_patterns"])
+	probe.OutputPatterns = dynamicToJSONMap(row["output_patterns"])
+	probe.Params = dynamicToJSONMap(row["params"])
+	probe.ResolvedInputs = dynamicToJSONMap(row["resolved_inputs"])
+	probe.ResolvedOutputs = dynamicToJSONMap(row["resolved_outputs"])
+	bootstrapInputsFromUpstream(row, probe.Params, probe.ResolvedInputs, incomingEdges, existingByNodeID)
+
+	if err := prepareNodeArtifactsAndFillMD5(ctx, preparer, &probe); err != nil {
+		return err
+	}
+
+	commandMatched := strings.TrimSpace(probe.CommandMD5) == strings.TrimSpace(existingNode.CommandMD5)
+	paramsMatched := strings.TrimSpace(probe.ParamsMD5) == strings.TrimSpace(existingNode.ParamsMD5)
+	if commandMatched && (!requireParamsMD5 || paramsMatched) {
+		return nil
+	}
+
+	rerunReason := buildNodeRerunReason(commandMatched, paramsMatched, requireParamsMD5)
+	return o.markExistingNodeReadyForRerun(ctx, existingNode.AnalysisNodeID, &probe, rerunReason)
+}
+
+func buildNodeRerunReason(commandMatched bool, paramsMatched bool, requireParamsMD5 bool) string {
+	if !commandMatched && requireParamsMD5 && !paramsMatched {
+		return "command and params changed"
+	}
+	if !commandMatched {
+		return "command changed"
+	}
+	if requireParamsMD5 && !paramsMatched {
+		return "params changed"
+	}
+	return "node cache invalidated"
+}
+
+func (o *dynamicDagOrchestratorV2) markExistingNodeReadyForRerun(ctx context.Context, analysisNodeID string, probe *types.AnalysisNode, rerunReason string) error {
+	if strings.TrimSpace(analysisNodeID) == "" || probe == nil {
+		return nil
+	}
+	rerunReason = strings.TrimSpace(rerunReason)
+	if rerunReason == "" {
+		rerunReason = "node cache invalidated"
+	}
+	return o.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID, map[string]any{
+		"node_name":                probe.NodeName,
+		"sample_id":                probe.SampleID,
+		"script_id":                probe.ScriptID,
+		"inputs_patterns":          probe.InputsPatterns,
+		"resolved_inputs":          probe.ResolvedInputs,
+		"output_patterns":          probe.OutputPatterns,
+		"resolved_outputs":         types.JSONMap{},
+		"params":                   probe.Params,
+		"status":                   dagruntime.StatusReady,
+		"executor":                 probe.Executor,
+		"cache_hit":                false,
+		"command_md5":              probe.CommandMD5,
+		"params_md5":               probe.ParamsMD5,
+		"rerun_reason":             rerunReason,
+		"error_message":            "",
+		"exit_code":                0,
+		"started_at":               nil,
+		"finished_at":              nil,
+		"output_validation_errors": types.JSONSlice{},
+	})
 }
 
 func prepareNodeArtifactsAndFillMD5(ctx context.Context, preparer dagruntime.NodeRuntimePreparer, node *types.AnalysisNode) error {
@@ -698,6 +837,7 @@ func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
 		CommandPath:            commandPath,
 		ParamsPath:             paramsPath,
 		ErrorMessage:           errorMessage,
+		RerunReason:            dynamicToString(row["rerun_reason"]),
 		FinishedAt:             finishedAt,
 	}, nil
 }

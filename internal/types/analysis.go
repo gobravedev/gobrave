@@ -196,6 +196,7 @@ type AnalysisNode struct {
 	MaxRetry               int        `json:"max_retry" gorm:"column:max_retry;default:3"`
 	ExitCode               int        `json:"exit_code" gorm:"column:exit_code"`
 	ErrorMessage           string     `json:"error_message" gorm:"column:error_message;type:text"`
+	RerunReason            string     `json:"rerun_reason" gorm:"column:rerun_reason;type:text"`
 	InputHash              string     `json:"input_hash" gorm:"column:input_hash;type:varchar(255)"`
 	CacheHit               bool       `json:"cache_hit" gorm:"column:cache_hit"`
 	UpstreamIDs            JSONSlice  `json:"upstream_ids" gorm:"column:upstream_ids;type:json"`

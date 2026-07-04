@@ -99,3 +99,51 @@ func TestCleanupDagNodeContainersBeforeStartEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildNodeRerunReason(t *testing.T) {
+	tests := []struct {
+		name             string
+		commandMatched   bool
+		paramsMatched    bool
+		requireParamsMD5 bool
+		want             string
+	}{
+		{
+			name:             "command and params both changed",
+			commandMatched:   false,
+			paramsMatched:    false,
+			requireParamsMD5: true,
+			want:             "command and params changed",
+		},
+		{
+			name:             "only command changed",
+			commandMatched:   false,
+			paramsMatched:    true,
+			requireParamsMD5: true,
+			want:             "command changed",
+		},
+		{
+			name:             "only params changed when params required",
+			commandMatched:   true,
+			paramsMatched:    false,
+			requireParamsMD5: true,
+			want:             "params changed",
+		},
+		{
+			name:             "fallback reason when params are not required",
+			commandMatched:   true,
+			paramsMatched:    false,
+			requireParamsMD5: false,
+			want:             "node cache invalidated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildNodeRerunReason(tt.commandMatched, tt.paramsMatched, tt.requireParamsMD5)
+			if got != tt.want {
+				t.Fatalf("rerun reason mismatch: got=%q want=%q", got, tt.want)
+			}
+		})
+	}
+}
