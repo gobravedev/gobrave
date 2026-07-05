@@ -58,7 +58,7 @@ func TestInputOperator(t *testing.T) {
 	op := newInputOperator("analysis-1", "node-input", map[string]string{
 		"ch-fastq1": "fastq1",
 		"ch-fastq2": "fastq2",
-	}, runtime)
+	}, map[string]*DataflowChannel{}, runtime)
 
 	if err := op.Notify(ctx, DataflowSignal{ChannelID: "ch-fastq1", Value: "r1_a"}); err != nil {
 		t.Fatalf("notify fastq1 #1 failed: %v", err)
@@ -105,6 +105,7 @@ func TestScatterOperator(t *testing.T) {
 			"analysis-1",
 			"node-scatter-each",
 			map[string]string{"ch-reads": "reads"},
+			map[string]*DataflowChannel{},
 			"reads",
 			"each",
 			runtime,
@@ -133,6 +134,7 @@ func TestScatterOperator(t *testing.T) {
 			"analysis-1",
 			"node-scatter-list",
 			map[string]string{"ch-reads": "reads"},
+			map[string]*DataflowChannel{},
 			"reads",
 			"list",
 			runtime,
@@ -169,6 +171,7 @@ func TestGatherOperator(t *testing.T) {
 			"ch-bam":   "bam",
 			"ch-index": "index",
 		},
+		map[string]*DataflowChannel{},
 		"bam",
 		"list",
 		runtime,

@@ -159,19 +159,6 @@ const (
 	dataflowOperatorTypeScatter dataflowOperatorType = "scatter"
 )
 
-// DataflowSignal is the message exchanged through channels/operators.
-type DataflowSignal struct {
-	ChannelID string
-	Value     any
-	Closed    bool
-}
-
-// DataflowOperator receives channel signals and decides whether a process instance
-// should be materialized.
-type DataflowOperator interface {
-	Notify(ctx context.Context, signal DataflowSignal) error
-}
-
 // DataflowChannel models a Nextflow-like channel lifecycle:
 // open -> emit* -> close.
 type DataflowChannel struct {
@@ -240,6 +227,12 @@ func (ch *DataflowChannel) Close(ctx context.Context) error {
 	return nil
 }
 
+func (ch *DataflowChannel) IsClosed() bool {
+	ch.mu.RLock()
+	defer ch.mu.RUnlock()
+	return ch.state == dataflowChannelStateClosed
+}
+
 // DataflowProcessRuntime is the bridge from operator decisions to concrete process launch.
 type DataflowProcessRuntime interface {
 	SubmitProcessInstance(ctx context.Context, req DataflowProcessRunRequest) error
@@ -276,6 +269,7 @@ type persistentDataflowRuntime struct {
 	buildPersistParams func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool)
 	mu                 sync.Mutex
 	inflightDispatches int
+	inflightNodeIDs    map[int64]struct{}
 }
 
 func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, req DataflowProcessRunRequest) error {
@@ -298,9 +292,9 @@ func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, r
 				if err := r.markNodeSubmitted(ctx, node); err != nil {
 					return err
 				}
-				r.incrementInflight()
-				defer r.decrementInflight()
+				r.incrementInflight(node.ID)
 				if err := r.dispatcher.Dispatch(ctx, node.ID); err != nil {
+					r.decrementInflight(node.ID)
 					if rollbackErr := r.rollbackSubmittedNodeOnDispatchError(ctx, node.ID); rollbackErr != nil {
 						logger.Warnf(ctx,
 							"[DataflowDagOrchestratorV3] rollback submitted node failed, analysis_id=%s node_id=%s analysis_node_id=%s err=%v",
@@ -479,18 +473,44 @@ func buildDataflowInstanceInputHash(nodeID string, resolvedInputs map[string]any
 	return hex.EncodeToString(sum[:])
 }
 
-func (r *persistentDataflowRuntime) incrementInflight() {
+func (r *persistentDataflowRuntime) incrementInflight(analysisNodeID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if analysisNodeID > 0 {
+		if r.inflightNodeIDs == nil {
+			r.inflightNodeIDs = make(map[int64]struct{})
+		}
+		if _, exists := r.inflightNodeIDs[analysisNodeID]; exists {
+			return
+		}
+		r.inflightNodeIDs[analysisNodeID] = struct{}{}
+	}
 	r.inflightDispatches++
 }
 
-func (r *persistentDataflowRuntime) decrementInflight() {
+func (r *persistentDataflowRuntime) decrementInflight(analysisNodeID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if analysisNodeID > 0 {
+		if _, exists := r.inflightNodeIDs[analysisNodeID]; !exists {
+			return
+		}
+		delete(r.inflightNodeIDs, analysisNodeID)
+	}
 	if r.inflightDispatches > 0 {
 		r.inflightDispatches--
 	}
+}
+
+func (r *persistentDataflowRuntime) onRuntimeEvent(evt dagruntime.RuntimeEvent) {
+	name := strings.TrimSpace(evt.Name)
+	if name != dagruntime.EventNodeCompleted && name != dagruntime.EventNodeFailed {
+		return
+	}
+	if evt.AnalysisNodeID <= 0 {
+		return
+	}
+	r.decrementInflight(evt.AnalysisNodeID)
 }
 
 func (r *persistentDataflowRuntime) InflightDispatches() int {
@@ -537,344 +557,6 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 	}
 }
 
-// InputOperator is the default operator for regular inputs.
-// It collects values from one or more upstream channels and materializes
-// a process instance when all required inputs have at least one value.
-//
-// This is the V3 equivalent of:
-// - cache.Add(v)
-// - if Ready() { runtime.SubmitTask(...) }
-type InputOperator struct {
-	analysisID   string
-	nodeID       string
-	inputByChID  map[string]string
-	requiredKeys []string
-	buffers      map[string][]any
-	closedByChID map[string]bool
-	runtime      DataflowProcessRuntime
-	mu           sync.Mutex
-}
-
-func newInputOperator(
-	analysisID string,
-	nodeID string,
-	inputByChannelID map[string]string,
-	runtime DataflowProcessRuntime,
-) *InputOperator {
-	required := make([]string, 0, len(inputByChannelID))
-	for _, inputKey := range inputByChannelID {
-		required = appendUniqueString(required, inputKey)
-	}
-	sort.Strings(required)
-
-	return &InputOperator{
-		analysisID:   strings.TrimSpace(analysisID),
-		nodeID:       strings.TrimSpace(nodeID),
-		inputByChID:  inputByChannelID,
-		requiredKeys: required,
-		buffers:      make(map[string][]any, len(required)),
-		closedByChID: make(map[string]bool, len(inputByChannelID)),
-		runtime:      runtime,
-	}
-}
-
-func (o *InputOperator) Notify(ctx context.Context, signal DataflowSignal) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	inputKey, ok := o.inputByChID[strings.TrimSpace(signal.ChannelID)]
-	if !ok {
-		return nil
-	}
-
-	if signal.Closed {
-		o.closedByChID[signal.ChannelID] = true
-		return nil
-	}
-
-	o.buffers[inputKey] = append(o.buffers[inputKey], signal.Value)
-	for o.ready() {
-		inputs := make(map[string]any, len(o.requiredKeys))
-		for _, key := range o.requiredKeys {
-			queue := o.buffers[key]
-			inputs[key] = queue[0]
-			o.buffers[key] = queue[1:]
-		}
-		if o.runtime != nil {
-			if err := o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-				AnalysisID: o.analysisID,
-				NodeID:     o.nodeID,
-				Inputs:     inputs,
-				Reason:     "input-ready",
-			}); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (o *InputOperator) ready() bool {
-	if len(o.requiredKeys) == 0 {
-		return false
-	}
-	for _, key := range o.requiredKeys {
-		if len(o.buffers[key]) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// ScatterOperator expands one input field according to scatter mode.
-// Supported modes: each, list.
-type ScatterOperator struct {
-	analysisID   string
-	nodeID       string
-	inputByChID  map[string]string
-	requiredKeys []string
-	buffers      map[string][]any
-	scatterField string
-	scatterMode  string
-	runtime      DataflowProcessRuntime
-	mu           sync.Mutex
-}
-
-func newScatterOperator(
-	analysisID string,
-	nodeID string,
-	inputByChannelID map[string]string,
-	scatterField string,
-	scatterMode string,
-	runtime DataflowProcessRuntime,
-) *ScatterOperator {
-	required := make([]string, 0, len(inputByChannelID))
-	for _, inputKey := range inputByChannelID {
-		required = appendUniqueString(required, inputKey)
-	}
-	sort.Strings(required)
-
-	return &ScatterOperator{
-		analysisID:   strings.TrimSpace(analysisID),
-		nodeID:       strings.TrimSpace(nodeID),
-		inputByChID:  inputByChannelID,
-		requiredKeys: required,
-		buffers:      make(map[string][]any, len(required)),
-		scatterField: strings.TrimSpace(scatterField),
-		scatterMode:  strings.ToLower(strings.TrimSpace(scatterMode)),
-		runtime:      runtime,
-	}
-}
-
-func (o *ScatterOperator) Notify(ctx context.Context, signal DataflowSignal) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	inputKey, ok := o.inputByChID[strings.TrimSpace(signal.ChannelID)]
-	if !ok {
-		return nil
-	}
-	if signal.Closed {
-		return nil
-	}
-
-	o.buffers[inputKey] = append(o.buffers[inputKey], signal.Value)
-	for o.ready() {
-		inputs := make(map[string]any, len(o.requiredKeys))
-		for _, key := range o.requiredKeys {
-			queue := o.buffers[key]
-			inputs[key] = queue[0]
-			o.buffers[key] = queue[1:]
-		}
-		if err := o.submitScatter(ctx, inputs); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (o *ScatterOperator) ready() bool {
-	if len(o.requiredKeys) == 0 {
-		return false
-	}
-	for _, key := range o.requiredKeys {
-		if len(o.buffers[key]) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func (o *ScatterOperator) submitScatter(ctx context.Context, inputs map[string]any) error {
-	if o.runtime == nil {
-		return nil
-	}
-	raw, exists := inputs[o.scatterField]
-	if !exists || o.scatterField == "" {
-		return o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-			AnalysisID: o.analysisID,
-			NodeID:     o.nodeID,
-			Inputs:     inputs,
-			Reason:     "scatter-ready",
-		})
-	}
-
-	values, isSlice := toAnySlice(raw)
-	switch o.scatterMode {
-	case "each":
-		if !isSlice {
-			return o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-				AnalysisID: o.analysisID,
-				NodeID:     o.nodeID,
-				Inputs:     inputs,
-				Reason:     "scatter-each-ready",
-			})
-		}
-		for _, item := range values {
-			expanded := cloneInputs(inputs)
-			expanded[o.scatterField] = item
-			if err := o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-				AnalysisID: o.analysisID,
-				NodeID:     o.nodeID,
-				Inputs:     expanded,
-				Reason:     "scatter-each-ready",
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	case "list":
-		expanded := cloneInputs(inputs)
-		if !isSlice {
-			expanded[o.scatterField] = []any{raw}
-		} else {
-			expanded[o.scatterField] = values
-		}
-		return o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-			AnalysisID: o.analysisID,
-			NodeID:     o.nodeID,
-			Inputs:     expanded,
-			Reason:     "scatter-list-ready",
-		})
-	default:
-		return o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-			AnalysisID: o.analysisID,
-			NodeID:     o.nodeID,
-			Inputs:     inputs,
-			Reason:     "scatter-ready",
-		})
-	}
-}
-
-// GatherOperator aggregates one field according to gather mode and emits once
-// when all upstream channels are closed.
-type GatherOperator struct {
-	analysisID   string
-	nodeID       string
-	inputByChID  map[string]string
-	requiredKeys []string
-	buffers      map[string][]any
-	closedByChID map[string]bool
-	gatherField  string
-	gatherMode   string
-	emitted      bool
-	runtime      DataflowProcessRuntime
-	mu           sync.Mutex
-}
-
-func newGatherOperator(
-	analysisID string,
-	nodeID string,
-	inputByChannelID map[string]string,
-	gatherField string,
-	gatherMode string,
-	runtime DataflowProcessRuntime,
-) *GatherOperator {
-	required := make([]string, 0, len(inputByChannelID))
-	for _, inputKey := range inputByChannelID {
-		required = appendUniqueString(required, inputKey)
-	}
-	sort.Strings(required)
-
-	return &GatherOperator{
-		analysisID:   strings.TrimSpace(analysisID),
-		nodeID:       strings.TrimSpace(nodeID),
-		inputByChID:  inputByChannelID,
-		requiredKeys: required,
-		buffers:      make(map[string][]any, len(required)),
-		closedByChID: make(map[string]bool, len(inputByChannelID)),
-		gatherField:  strings.TrimSpace(gatherField),
-		gatherMode:   strings.ToLower(strings.TrimSpace(gatherMode)),
-		runtime:      runtime,
-	}
-}
-
-func (o *GatherOperator) Notify(ctx context.Context, signal DataflowSignal) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	channelID := strings.TrimSpace(signal.ChannelID)
-	_, ok := o.inputByChID[channelID]
-	if !ok {
-		return nil
-	}
-
-	if signal.Closed {
-		o.closedByChID[channelID] = true
-		if o.allClosed() {
-			return o.flushLocked(ctx)
-		}
-		return nil
-	}
-
-	inputKey := o.inputByChID[channelID]
-	o.buffers[inputKey] = append(o.buffers[inputKey], signal.Value)
-	return nil
-}
-
-func (o *GatherOperator) allClosed() bool {
-	if len(o.inputByChID) == 0 {
-		return false
-	}
-	for channelID := range o.inputByChID {
-		if !o.closedByChID[channelID] {
-			return false
-		}
-	}
-	return true
-}
-
-func (o *GatherOperator) flushLocked(ctx context.Context) error {
-	if o.emitted {
-		return nil
-	}
-	inputs := make(map[string]any, len(o.requiredKeys))
-	for _, key := range o.requiredKeys {
-		queue := o.buffers[key]
-		if key == o.gatherField && o.gatherMode == "list" {
-			inputs[key] = append([]any(nil), queue...)
-			continue
-		}
-		if len(queue) == 0 {
-			return nil
-		}
-		inputs[key] = queue[0]
-	}
-
-	if o.runtime != nil {
-		if err := o.runtime.SubmitProcessInstance(ctx, DataflowProcessRunRequest{
-			AnalysisID: o.analysisID,
-			NodeID:     o.nodeID,
-			Inputs:     inputs,
-			Reason:     "gather-list-ready",
-		}); err != nil {
-			return err
-		}
-	}
-	o.emitted = true
-	return nil
-}
-
 type dataflowKernel struct {
 	analysisID      string
 	repo            interfaces.AnalysisRepository
@@ -886,6 +568,72 @@ type dataflowKernel struct {
 	sourceNodes     []DataflowProcessSpec
 	params          map[string]any
 	runtime         DataflowProcessRuntime
+}
+
+type finishAwareDataflowOperator interface {
+	IsFinished() bool
+}
+
+func (k *dataflowKernel) checkFinished(runtimeTasks int) bool {
+	if runtimeTasks > 0 {
+		return false
+	}
+	if !k.allChannelsClosed() {
+		return false
+	}
+	if !k.allOperatorsFinished() {
+		return false
+	}
+	return true
+}
+
+func (k *dataflowKernel) allChannelsClosed() bool {
+	for _, ch := range k.channels {
+		if ch == nil {
+			continue
+		}
+		if !ch.IsClosed() {
+			return false
+		}
+	}
+	return true
+}
+
+func (k *dataflowKernel) allOperatorsFinished() bool {
+	for _, op := range k.operators {
+		if !isDataflowOperatorFinished(op) {
+			return false
+		}
+	}
+	return true
+}
+
+func isDataflowOperatorFinished(op DataflowOperator) bool {
+	aware, ok := op.(finishAwareDataflowOperator)
+	if !ok || aware == nil {
+		return false
+	}
+	return aware.IsFinished()
+}
+
+func (k *dataflowKernel) outputChannelsForNode(nodeID string) map[string]*DataflowChannel {
+	result := map[string]*DataflowChannel{}
+	normalizedNodeID := strings.TrimSpace(nodeID)
+	if normalizedNodeID == "" {
+		return result
+	}
+
+	channelIDs := k.outgoingByNode[normalizedNodeID]
+	for _, channelID := range channelIDs {
+		normalizedChannelID := strings.TrimSpace(channelID)
+		if normalizedChannelID == "" {
+			continue
+		}
+		if ch, exists := k.channels[normalizedChannelID]; exists && ch != nil {
+			result[normalizedChannelID] = ch
+		}
+	}
+	return result
 }
 
 func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, params map[string]any) *dataflowKernel {
@@ -951,7 +699,8 @@ func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, p
 			inputByChannelID[channelID] = inputKey
 		}
 
-		op := newDataflowOperator(spec.AnalysisID, proc, inputByChannelID, runtime)
+		outputChannels := k.outputChannelsForNode(nodeID)
+		op := newDataflowOperator(spec.AnalysisID, proc, inputByChannelID, outputChannels, runtime)
 		if op == nil {
 			continue
 		}
@@ -1075,39 +824,6 @@ func (k *dataflowKernel) onNodeCompleted(ctx context.Context, analysisNodeID int
 	return k.emitToDownstream(ctx, nodeID, outputs)
 }
 
-func newDataflowOperator(
-	analysisID string,
-	proc DataflowProcessSpec,
-	inputByChannelID map[string]string,
-	runtime DataflowProcessRuntime,
-) DataflowOperator {
-	nodeID := strings.TrimSpace(proc.NodeID)
-	operatorType := strings.ToLower(strings.TrimSpace(proc.OperatorType))
-
-	switch operatorType {
-	case string(dataflowOperatorTypeGather):
-		return newGatherOperator(
-			analysisID,
-			nodeID,
-			inputByChannelID,
-			proc.GatherField,
-			proc.GatherMode,
-			runtime,
-		)
-	case string(dataflowOperatorTypeScatter):
-		return newScatterOperator(
-			analysisID,
-			nodeID,
-			inputByChannelID,
-			proc.ScatterField,
-			proc.ScatterMode,
-			runtime,
-		)
-	default:
-		return newInputOperator(analysisID, nodeID, inputByChannelID, runtime)
-	}
-}
-
 func (k *dataflowKernel) closeAll(ctx context.Context) error {
 	for _, ch := range k.channels {
 		if err := ch.Close(ctx); err != nil {
@@ -1194,7 +910,8 @@ func (k *dataflowKernel) emitSourceValuesToOperator(
 	}
 	sort.Strings(channelIDs)
 
-	op := newDataflowOperator(k.analysisID, proc, inputByChannelID, k.runtime)
+	outputChannels := k.outputChannelsForNode(nodeID)
+	op := newDataflowOperator(k.analysisID, proc, inputByChannelID, outputChannels, k.runtime)
 	if op == nil {
 		return nil
 	}
@@ -1324,6 +1041,7 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 		case <-ctx.Done():
 			return nil
 		case evt := <-runtimeEvents:
+			runtime.onRuntimeEvent(evt)
 			if strings.TrimSpace(evt.Name) != dagruntime.EventNodeCompleted {
 				continue
 			}
@@ -1338,9 +1056,11 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 			}
 			idleTimer.Reset(idleWindow)
 		case <-idleTimer.C:
-			if runtime.InflightDispatches() == 0 {
+			inflight := runtime.InflightDispatches()
+			if inflight == 0 {
 				select {
 				case evt := <-runtimeEvents:
+					runtime.onRuntimeEvent(evt)
 					if strings.TrimSpace(evt.Name) == dagruntime.EventNodeCompleted {
 						if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
 							return err
@@ -1348,7 +1068,10 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 					}
 					idleTimer.Reset(idleWindow)
 				default:
-					// return nil
+					if kernel.checkFinished(inflight) {
+						return nil
+					}
+					idleTimer.Reset(idleWindow)
 				}
 				continue
 			}
