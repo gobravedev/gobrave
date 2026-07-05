@@ -181,7 +181,7 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 		}
 		errorMessage = fmt.Sprintf("output validation failed: %s", strings.Join(outputErrors, "; "))
 	}
-	if _, err := c.runtime.CompleteNode(ctx, node.AnalysisID, node.NodeID, finalStatus, outputs, exitCode, errorMessage); err != nil {
+	if _, err := c.runtime.CompleteNode(ctx, node.ID, finalStatus, outputs, exitCode, errorMessage); err != nil {
 		latest, latestErr := c.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID)
 		if latestErr == nil && latest != nil && IsTerminalStatus(latest.Status) {
 			return
@@ -537,11 +537,12 @@ func (c *NodeCompletionCoordinator) publishNodeResult(node *types.AnalysisNode, 
 	}
 	if c.bus != nil {
 		c.bus.Publish(RuntimeEvent{
-			Name:       eventName,
-			AnalysisID: node.AnalysisID,
-			NodeID:     node.NodeID,
-			OccurredAt: time.Now().UTC(),
-			Payload:    payload,
+			Name:           eventName,
+			AnalysisID:     node.AnalysisID,
+			AnalysisNodeID: node.ID,
+			NodeID:         node.NodeID,
+			OccurredAt:     time.Now().UTC(),
+			Payload:        payload,
 		})
 	}
 }

@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/gobravedev/gobrave/internal/dag"
@@ -127,7 +128,7 @@ func (n *DagRuntimeEventNotifier) buildRealtimeMessage(ctx context.Context, runt
 		payload["args"] = map[string]any{"status": "failed", "id": runtimeEvent.AnalysisID}
 		return message, true
 	case dag.EventNodeSubmitted, dag.EventNodeRunning, dag.EventNodeCompleted, dag.EventNodeFailed:
-		analysisNodeID, err := n.resolveAnalysisNodeID(ctx, runtimeEvent.AnalysisID, runtimeEvent.NodeID)
+		analysisNodeID, err := n.resolveAnalysisNodeID(ctx, runtimeEvent)
 		if err != nil {
 			logger.Warnf(ctx, "[Realtime] resolve analysis node id failed analysis_id=%s node_id=%s event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.NodeID, runtimeEvent.Name, err)
 			return nil, false
@@ -160,7 +161,12 @@ func (n *DagRuntimeEventNotifier) buildRealtimeMessage(ctx context.Context, runt
 	}
 }
 
-func (n *DagRuntimeEventNotifier) resolveAnalysisNodeID(ctx context.Context, analysisID, nodeID string) (string, error) {
+func (n *DagRuntimeEventNotifier) resolveAnalysisNodeID(ctx context.Context, runtimeEvent dag.RuntimeEvent) (string, error) {
+	if runtimeEvent.AnalysisNodeID > 0 {
+		return strconv.FormatInt(runtimeEvent.AnalysisNodeID, 10), nil
+	}
+	analysisID := runtimeEvent.AnalysisID
+	nodeID := runtimeEvent.NodeID
 	if strings.TrimSpace(analysisID) == "" || strings.TrimSpace(nodeID) == "" {
 		return "", errors.New("analysis_id and node_id are required")
 	}
@@ -168,8 +174,8 @@ func (n *DagRuntimeEventNotifier) resolveAnalysisNodeID(ctx context.Context, ana
 	if err != nil {
 		return "", err
 	}
-	if node == nil || strings.TrimSpace(node.AnalysisNodeID) == "" {
-		return "", errors.New("analysis_node_id not found")
+	if node == nil || node.ID <= 0 {
+		return "", errors.New("analysis node id not found")
 	}
-	return node.AnalysisNodeID, nil
+	return strconv.FormatInt(node.ID, 10), nil
 }

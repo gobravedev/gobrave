@@ -150,8 +150,8 @@ func (e *RuntimeEngine) ClaimNextReadyNode(ctx context.Context, analysisID strin
 	return node, nil
 }
 
-func (e *RuntimeEngine) MarkNodeRunning(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
-	node, err := e.repo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+func (e *RuntimeEngine) MarkNodeRunning(ctx context.Context, analysisNodeID int64) (*types.AnalysisNode, error) {
+	node, err := e.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func (e *RuntimeEngine) MarkNodeRunning(ctx context.Context, analysisNodeID stri
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if err := e.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID, map[string]any{
+	if err := e.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
 		"status":     StatusRunning,
 		"started_at": &now,
 	}); err != nil {
@@ -172,14 +172,13 @@ func (e *RuntimeEngine) MarkNodeRunning(ctx context.Context, analysisNodeID stri
 
 func (e *RuntimeEngine) CompleteNode(
 	ctx context.Context,
-	analysisID string,
-	nodeID string,
+	analysisNodeID int64,
 	status string,
 	resolvedOutputs map[string]any,
 	exitCode int,
 	errorMessage string,
 ) (*types.AnalysisNode, error) {
-	node, err := e.repo.GetAnalysisNodeByNodeID(ctx, analysisID, nodeID)
+	node, err := e.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,14 +213,14 @@ func (e *RuntimeEngine) CompleteNode(
 	}
 
 	if IsSuccessStatus(status) {
-		if err := e.propagateOutputs(ctx, analysisID, nodeID, resolvedOutputs); err != nil {
+		if err := e.propagateOutputs(ctx, node.AnalysisID, node.NodeID, resolvedOutputs); err != nil {
 			return nil, err
 		}
 	}
-	if err := e.RefreshReadyStatus(ctx, analysisID); err != nil {
+	if err := e.RefreshReadyStatus(ctx, node.AnalysisID); err != nil {
 		return nil, err
 	}
-	return e.repo.GetAnalysisNodeByNodeID(ctx, analysisID, nodeID)
+	return e.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 }
 
 func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string, sourceNodeID string, outputs map[string]any) error {

@@ -62,7 +62,7 @@ func (s *DagScheduler) Run(ctx context.Context) (*SchedulerResult, error) {
 		defer cancel()
 	}
 
-	pool := NewWorkerPool(s.analysisID, s.dispatcher, s.cfg.MaxConcurrency, s.cfg.QueueSize)
+	pool := NewWorkerPool(s.dispatcher, s.cfg.MaxConcurrency, s.cfg.QueueSize)
 	pool.Start(ctx)
 	defer pool.Stop()
 
@@ -104,17 +104,18 @@ func (s *DagScheduler) Run(ctx context.Context) (*SchedulerResult, error) {
 				if node == nil {
 					break
 				}
-				if ok := pool.Enqueue(node.AnalysisNodeID); !ok {
+				if ok := pool.Enqueue(node.ID); !ok {
 					failedToSubmit++
 					break
 				}
 				submitted++
 				hasProgress = true
 				s.publish(RuntimeEvent{
-					Name:       EventNodeSubmitted,
-					AnalysisID: s.analysisID,
-					NodeID:     node.NodeID,
-					OccurredAt: time.Now().UTC(),
+					Name:           EventNodeSubmitted,
+					AnalysisID:     s.analysisID,
+					AnalysisNodeID: node.ID,
+					NodeID:         node.NodeID,
+					OccurredAt:     time.Now().UTC(),
 				})
 			}
 

@@ -14,9 +14,10 @@ const (
 )
 
 type RuntimeEvent struct {
-	Name       string                 `json:"name"`
-	AnalysisID string                 `json:"analysis_id"`
-	NodeID     string                 `json:"node_id,omitempty"`
-	OccurredAt time.Time              `json:"occurred_at"`
-	Payload    map[string]interface{} `json:"payload,omitempty"`
+	Name           string                 `json:"name"`
+	AnalysisID     string                 `json:"analysis_id"`
+	AnalysisNodeID int64                  `json:"analysis_node_id,string,omitempty"`
+	NodeID         string                 `json:"node_id,omitempty"`
+	OccurredAt     time.Time              `json:"occurred_at"`
+	Payload        map[string]interface{} `json:"payload,omitempty"`
 }

@@ -36,19 +36,21 @@ func NewNodeDispatcher(
 	return &NodeDispatcher{runtime: runtime, repo: repo, bus: bus, factory: factory, cleanup: cleanup, preparer: preparer}
 }
 
-func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analysisNodeID string) error {
-	node, err := d.repo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisNodeID int64) error {
+	node, err := d.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return err
 	}
+	analysisID := node.AnalysisID
 	if err := d.preparer.Prepare(ctx, node); err != nil {
-		_, _ = d.runtime.CompleteNode(ctx, analysisID, node.NodeID, StatusFailed, nil, 1, fmt.Sprintf("prepare runtime failed: %v", err))
+		_, _ = d.runtime.CompleteNode(ctx, node.ID, StatusFailed, nil, 1, fmt.Sprintf("prepare runtime failed: %v", err))
 		d.runCleanup(ctx, node)
 		d.publish(RuntimeEvent{
-			Name:       EventNodeFailed,
-			AnalysisID: analysisID,
-			NodeID:     node.NodeID,
-			OccurredAt: time.Now().UTC(),
+			Name:           EventNodeFailed,
+			AnalysisID:     analysisID,
+			AnalysisNodeID: node.ID,
+			NodeID:         node.NodeID,
+			OccurredAt:     time.Now().UTC(),
 			Payload: map[string]any{
 				"error": fmt.Sprintf("prepare runtime failed: %v", err),
 			},
@@ -56,27 +58,29 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analys
 		return err
 	}
 
-	node, err = d.runtime.MarkNodeRunning(ctx, analysisNodeID)
+	node, err = d.runtime.MarkNodeRunning(ctx, node.ID)
 	if err != nil {
 		return err
 	}
 	d.publish(RuntimeEvent{
-		Name:       EventNodeRunning,
-		AnalysisID: analysisID,
-		NodeID:     node.NodeID,
-		OccurredAt: time.Now().UTC(),
+		Name:           EventNodeRunning,
+		AnalysisID:     analysisID,
+		AnalysisNodeID: node.ID,
+		NodeID:         node.NodeID,
+		OccurredAt:     time.Now().UTC(),
 	})
 
 	ex := d.factory.Resolve(node.Executor)
 	result, execErr := ex.Execute(ctx, node)
 	if execErr != nil {
-		_, _ = d.runtime.CompleteNode(ctx, analysisID, node.NodeID, StatusFailed, nil, 1, execErr.Error())
+		_, _ = d.runtime.CompleteNode(ctx, node.ID, StatusFailed, nil, 1, execErr.Error())
 		d.runCleanup(ctx, node)
 		d.publish(RuntimeEvent{
-			Name:       EventNodeFailed,
-			AnalysisID: analysisID,
-			NodeID:     node.NodeID,
-			OccurredAt: time.Now().UTC(),
+			Name:           EventNodeFailed,
+			AnalysisID:     analysisID,
+			AnalysisNodeID: node.ID,
+			NodeID:         node.NodeID,
+			OccurredAt:     time.Now().UTC(),
 			Payload: map[string]any{
 				"error": execErr.Error(),
 			},
@@ -89,10 +93,11 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analys
 	}
 	if result.Deferred {
 		d.publish(RuntimeEvent{
-			Name:       EventNodeStateChange,
-			AnalysisID: analysisID,
-			NodeID:     node.NodeID,
-			OccurredAt: time.Now().UTC(),
+			Name:           EventNodeStateChange,
+			AnalysisID:     analysisID,
+			AnalysisNodeID: node.ID,
+			NodeID:         node.NodeID,
+			OccurredAt:     time.Now().UTC(),
 			Payload: map[string]any{
 				"status":   StatusRunning,
 				"deferred": true,
@@ -106,8 +111,7 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analys
 	}
 	_, err = d.runtime.CompleteNode(
 		ctx,
-		analysisID,
-		node.NodeID,
+		node.ID,
 		status,
 		result.ResolvedOutputs,
 		result.ExitCode,
@@ -123,10 +127,11 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisID string, analys
 		d.runCleanup(ctx, node)
 	}
 	d.publish(RuntimeEvent{
-		Name:       eventName,
-		AnalysisID: analysisID,
-		NodeID:     node.NodeID,
-		OccurredAt: time.Now().UTC(),
+		Name:           eventName,
+		AnalysisID:     analysisID,
+		AnalysisNodeID: node.ID,
+		NodeID:         node.NodeID,
+		OccurredAt:     time.Now().UTC(),
 		Payload: map[string]any{
 			"status": status,
 		},

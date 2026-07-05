@@ -289,15 +289,59 @@ func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, r
 				return err
 			}
 			if created && node != nil && r.dispatcher != nil {
+				if err := r.markNodeSubmitted(ctx, node); err != nil {
+					return err
+				}
 				r.incrementInflight()
 				defer r.decrementInflight()
-				if err := r.dispatcher.Dispatch(ctx, node.AnalysisID, node.AnalysisNodeID); err != nil {
+				if err := r.dispatcher.Dispatch(ctx, node.ID); err != nil {
+					if rollbackErr := r.rollbackSubmittedNodeOnDispatchError(ctx, node.ID); rollbackErr != nil {
+						logger.Warnf(ctx,
+							"[DataflowDagOrchestratorV3] rollback submitted node failed, analysis_id=%s node_id=%s analysis_node_id=%s err=%v",
+							req.AnalysisID,
+							req.NodeID,
+							node.AnalysisNodeID,
+							rollbackErr,
+						)
+					}
 					return err
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func (r *persistentDataflowRuntime) markNodeSubmitted(ctx context.Context, node *types.AnalysisNode) error {
+	if r == nil || r.repo == nil || node == nil {
+		return nil
+	}
+	status := strings.TrimSpace(strings.ToLower(node.Status))
+	if status == "" {
+		status = dagruntime.StatusReady
+	}
+	if err := dagruntime.EnsureTransition(status, dagruntime.StatusSubmitted); err != nil {
+		return err
+	}
+	if err := r.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{"status": dagruntime.StatusSubmitted}); err != nil {
+		return err
+	}
+	node.Status = dagruntime.StatusSubmitted
+	return nil
+}
+
+func (r *persistentDataflowRuntime) rollbackSubmittedNodeOnDispatchError(ctx context.Context, analysisNodeID int64) error {
+	if r == nil || r.repo == nil {
+		return nil
+	}
+	node, err := r.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(strings.ToLower(node.Status)) != dagruntime.StatusSubmitted {
+		return nil
+	}
+	return r.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{"status": dagruntime.StatusReady})
 }
 
 func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, payload *DataflowAnalysisNodePersistParams) (*types.AnalysisNode, bool, error) {
@@ -948,17 +992,23 @@ func (k *dataflowKernel) emitToDownstream(ctx context.Context, fromNodeID string
 	return nil
 }
 
-func (k *dataflowKernel) onNodeCompleted(ctx context.Context, nodeID string) error {
+func (k *dataflowKernel) onNodeCompleted(ctx context.Context, analysisNodeID int64) error {
 	if k.repo == nil {
 		return nil
 	}
-	nodeID = strings.TrimSpace(nodeID)
-	if nodeID == "" {
+	if analysisNodeID <= 0 {
 		return nil
 	}
-	node, err := k.repo.GetAnalysisNodeByNodeID(ctx, k.analysisID, nodeID)
+	node, err := k.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return err
+	}
+	if node == nil || strings.TrimSpace(node.AnalysisID) != k.analysisID {
+		return nil
+	}
+	nodeID := strings.TrimSpace(node.NodeID)
+	if nodeID == "" {
+		return nil
 	}
 	outputs := map[string]any(node.ResolvedOutputs)
 	return k.emitToDownstream(ctx, nodeID, outputs)
@@ -1142,6 +1192,19 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 		return fmt.Errorf("analysis_id is required")
 	}
 
+	bgCtx := context.Background()
+
+	go func() {
+		if err := o.runStartAsyncV3(bgCtx, analysisID, parseAnalysisResult, dagDefinition); err != nil {
+			logger.Errorf(bgCtx, "[DataflowDagOrchestratorV3] async run failed, analysis_id=%s err=%v", analysisID, err)
+		}
+	}()
+
+	return nil
+}
+
+func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+
 	spec := o.buildGraphSpec(analysisID, dagDefinition)
 	o.logFrameworkPhase(ctx, spec)
 
@@ -1200,7 +1263,7 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 			if strings.TrimSpace(evt.Name) != dagruntime.EventNodeCompleted {
 				continue
 			}
-			if err := kernel.onNodeCompleted(ctx, evt.NodeID); err != nil {
+			if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
 				return err
 			}
 			if !idleTimer.Stop() {
@@ -1215,7 +1278,7 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 				select {
 				case evt := <-runtimeEvents:
 					if strings.TrimSpace(evt.Name) == dagruntime.EventNodeCompleted {
-						if err := kernel.onNodeCompleted(ctx, evt.NodeID); err != nil {
+						if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
 							return err
 						}
 					}
@@ -1228,7 +1291,6 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 			idleTimer.Reset(idleWindow)
 		}
 	}
-
 }
 
 func (o *dataflowDagOrchestratorV3) buildGraphSpec(analysisID string, dagDefinition map[string]any) DataflowGraphSpec {

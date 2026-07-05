@@ -356,7 +356,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 		preparer,
 	)
 
-	pool := dagruntime.NewWorkerPool(analysisID, dispatcher, 1, dynamicV2ReadyQueueSize)
+	pool := dagruntime.NewWorkerPool(dispatcher, 1, dynamicV2ReadyQueueSize)
 	pool.Start(ctx)
 	defer pool.Stop()
 
@@ -382,7 +382,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 	}
 	dep.SeedFromExisting(existingByNodeID)
 
-	readyQueue := make(chan string, dynamicV2ReadyQueueSize)
+	readyQueue := make(chan int64, dynamicV2ReadyQueueSize)
 	go func() {
 		for {
 			select {
@@ -484,7 +484,7 @@ func (o *dynamicDagOrchestratorV2) checkDynamicCompletion(
 	templateCount int,
 	runtime *dagruntime.RuntimeEngine,
 	pool *dagruntime.WorkerPool,
-	readyQueue chan string,
+	readyQueue chan int64,
 ) (bool, error) {
 	snapshot, err := runtime.GetSnapshot(ctx, analysisID)
 	if err != nil {
@@ -503,7 +503,7 @@ func (o *dynamicDagOrchestratorV2) checkDynamicCompletion(
 	return false, nil
 }
 
-func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *dagruntime.RuntimeEngine, analysisID string, readyQueue chan<- string) error {
+func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *dagruntime.RuntimeEngine, analysisID string, readyQueue chan<- int64) error {
 	for len(readyQueue) < cap(readyQueue) {
 		node, err := runtime.ClaimNextReadyNode(ctx, analysisID)
 		if err != nil {
@@ -514,14 +514,15 @@ func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *
 		}
 		if o.bus != nil {
 			o.bus.Publish(dagruntime.RuntimeEvent{
-				Name:       dagruntime.EventNodeSubmitted,
-				AnalysisID: analysisID,
-				NodeID:     node.NodeID,
-				OccurredAt: time.Now().UTC(),
+				Name:           dagruntime.EventNodeSubmitted,
+				AnalysisID:     analysisID,
+				AnalysisNodeID: node.ID,
+				NodeID:         node.NodeID,
+				OccurredAt:     time.Now().UTC(),
 			})
 		}
 		select {
-		case readyQueue <- node.AnalysisNodeID:
+		case readyQueue <- node.ID:
 		case <-ctx.Done():
 			return nil
 		}
