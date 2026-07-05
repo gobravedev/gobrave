@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -129,6 +130,11 @@ type DataflowAnalysisNodePersistParams struct {
 	RerunReason     string
 	Status          string
 	SubmitReason    string
+	WorkspaceDir    string
+	OutputDir       string
+	CommandPath     string
+	ParamsPath      string
+	LogPath         string
 }
 
 // DataflowChannelSpec represents a logical edge/channel in the dataflow graph.
@@ -374,6 +380,7 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 	}
 
 	item := buildAnalysisNodeFromPersistPayload(payload)
+	r.populateNodePathDefaults(ctx, item)
 	if err := r.repo.CreateAnalysisNodes(ctx, []*types.AnalysisNode{item}); err != nil {
 		return nil, false, err
 	}
@@ -385,6 +392,55 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 		item.AnalysisNodeID,
 	)
 	return item, true, nil
+}
+
+func (r *persistentDataflowRuntime) populateNodePathDefaults(ctx context.Context, node *types.AnalysisNode) {
+	if node == nil {
+		return
+	}
+
+	baseWorkspace := strings.TrimSpace(node.WorkspaceDir)
+	if baseWorkspace == "" {
+		analysisOutputDir := r.lookupAnalysisOutputDir(ctx, strings.TrimSpace(node.AnalysisID))
+		if analysisOutputDir != "" {
+			baseWorkspace = filepath.Join(analysisOutputDir, strings.TrimSpace(node.AnalysisNodeID))
+		}
+	}
+
+	if strings.TrimSpace(node.WorkspaceDir) == "" {
+		node.WorkspaceDir = baseWorkspace
+	}
+	if strings.TrimSpace(node.OutputDir) == "" && baseWorkspace != "" {
+		node.OutputDir = filepath.Join(baseWorkspace, "output")
+	}
+	if strings.TrimSpace(node.ParamsPath) == "" && baseWorkspace != "" {
+		node.ParamsPath = filepath.Join(baseWorkspace, "params.json")
+	}
+	if strings.TrimSpace(node.CommandPath) == "" && baseWorkspace != "" {
+		node.CommandPath = filepath.Join(baseWorkspace, "run.sh")
+	}
+	if strings.TrimSpace(node.LogPath) == "" && baseWorkspace != "" {
+		node.LogPath = filepath.Join(baseWorkspace, "command.log")
+	}
+}
+
+func (r *persistentDataflowRuntime) lookupAnalysisOutputDir(ctx context.Context, analysisID string) string {
+	if r == nil || r.repo == nil || analysisID == "" {
+		return ""
+	}
+	analysis, err := r.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	if err != nil {
+		logger.Warnf(ctx,
+			"[DataflowDagOrchestratorV3] lookup analysis output_dir failed, analysis_id=%s err=%v",
+			analysisID,
+			err,
+		)
+		return ""
+	}
+	if analysis == nil {
+		return ""
+	}
+	return strings.TrimSpace(analysis.OutputDir)
 }
 
 func findPersistedNodeInstance(items []*types.AnalysisNode, nodeID string, inputHash string) *types.AnalysisNode {
@@ -473,6 +529,11 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 		InputValidationErrors:  types.JSONSlice{},
 		OutputValidationErrors: types.JSONSlice{},
 		RerunReason:            strings.TrimSpace(payload.RerunReason),
+		WorkspaceDir:           strings.TrimSpace(payload.WorkspaceDir),
+		OutputDir:              strings.TrimSpace(payload.OutputDir),
+		CommandPath:            strings.TrimSpace(payload.CommandPath),
+		ParamsPath:             strings.TrimSpace(payload.ParamsPath),
+		LogPath:                strings.TrimSpace(payload.LogPath),
 	}
 }
 
@@ -1204,6 +1265,9 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 }
 
 func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+	if err := o.prepareAnalysisByCacheTypeV3(ctx, analysisID); err != nil {
+		return fmt.Errorf("prepare analysis by cache_type failed: %w", err)
+	}
 
 	spec := o.buildGraphSpec(analysisID, dagDefinition)
 	o.logFrameworkPhase(ctx, spec)
@@ -1247,9 +1311,9 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 	if err := kernel.bootstrapSourceProcesses(ctx); err != nil {
 		return err
 	}
-	if err := kernel.closeAll(ctx); err != nil {
-		return err
-	}
+	// if err := kernel.closeAll(ctx); err != nil {
+	// 	return err
+	// }
 
 	idleWindow := 200 * time.Millisecond
 	idleTimer := time.NewTimer(idleWindow)
@@ -1284,13 +1348,61 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 					}
 					idleTimer.Reset(idleWindow)
 				default:
-					return nil
+					// return nil
 				}
 				continue
 			}
 			idleTimer.Reset(idleWindow)
 		}
 	}
+}
+
+// prepareAnalysisByCacheTypeV3 handles cache-type driven pre-run behavior.
+//
+// Current V3 scope:
+// - CacheTypeRerunAll: clear persisted runtime graph and rebuild from scratch.
+// - CacheTypeReuseExistingNode: keep persisted runtime graph for reuse.
+func (o *dataflowDagOrchestratorV3) prepareAnalysisByCacheTypeV3(ctx context.Context, analysisID string) error {
+	analysisID = strings.TrimSpace(analysisID)
+	if analysisID == "" {
+		return nil
+	}
+
+	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	if err != nil {
+		return err
+	}
+	if analysis == nil {
+		return nil
+	}
+
+	switch analysis.CacheType {
+	case types.CacheTypeRerunAll:
+		if err := o.repo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
+			if err := tx.DeleteAnalysisNodesByAnalysisID(ctx, analysisID); err != nil {
+				return err
+			}
+			if err := tx.DeleteAnalysisEdgesByAnalysisID(ctx, analysisID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		logger.Infof(ctx,
+			"[DataflowDagOrchestratorV3] cache_type rerun_all, cleared persisted graph, analysis_id=%s",
+			analysisID,
+		)
+	case types.CacheTypeReuseExistingNode:
+		logger.Infof(ctx,
+			"[DataflowDagOrchestratorV3] cache_type reuse_existing_node, keep persisted graph, analysis_id=%s",
+			analysisID,
+		)
+	default:
+		// Keep existing behavior for other cache types in this incremental step.
+	}
+
+	return nil
 }
 
 func (o *dataflowDagOrchestratorV3) buildGraphSpec(analysisID string, dagDefinition map[string]any) DataflowGraphSpec {
