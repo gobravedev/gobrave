@@ -773,9 +773,12 @@ type simulatedDispatcher struct {
 	repo        *inMemoryAnalysisRepo
 	bus         event.Bus
 	analysisID  string
+	delayByNode map[string]time.Duration
+	asyncByNode map[string]bool
 	mu          sync.Mutex
 	dispatched  []string
 	dispatchIDs []int64
+	err         error
 }
 
 func (d *simulatedDispatcher) Dispatch(ctx context.Context, analysisNodeID int64) error {
@@ -787,6 +790,46 @@ func (d *simulatedDispatcher) Dispatch(ctx context.Context, analysisNodeID int64
 		return fmt.Errorf("node not found: %d", analysisNodeID)
 	}
 
+	d.mu.Lock()
+	d.dispatched = append(d.dispatched, strings.TrimSpace(node.NodeID))
+	d.dispatchIDs = append(d.dispatchIDs, node.ID)
+	d.mu.Unlock()
+
+	nodeID := strings.TrimSpace(node.NodeID)
+	if delay := d.delayByNode[nodeID]; delay > 0 {
+		if async := d.asyncByNode[nodeID]; async {
+			go d.completeNodeWithDelay(*node, delay)
+			return nil
+		}
+		time.Sleep(delay)
+	}
+
+	if async := d.asyncByNode[nodeID]; async {
+		go d.completeNodeWithDelay(*node, 0)
+		return nil
+	}
+
+	return d.completeNode(ctx, node)
+}
+
+func (d *simulatedDispatcher) completeNodeWithDelay(node types.AnalysisNode, delay time.Duration) {
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	if err := d.completeNode(context.Background(), &node); err != nil {
+		d.mu.Lock()
+		if d.err == nil {
+			d.err = err
+		}
+		d.mu.Unlock()
+	}
+}
+
+func (d *simulatedDispatcher) completeNode(ctx context.Context, node *types.AnalysisNode) error {
+	if node == nil {
+		return nil
+	}
+
 	outputs := simulatedNodeOutputs(node)
 	if err := d.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
 		"status":           dagruntime.StatusDone,
@@ -794,11 +837,6 @@ func (d *simulatedDispatcher) Dispatch(ctx context.Context, analysisNodeID int64
 	}); err != nil {
 		return err
 	}
-
-	d.mu.Lock()
-	d.dispatched = append(d.dispatched, strings.TrimSpace(node.NodeID))
-	d.dispatchIDs = append(d.dispatchIDs, node.ID)
-	d.mu.Unlock()
 
 	if d.bus != nil {
 		d.bus.Publish(dagruntime.RuntimeEvent{
@@ -821,6 +859,12 @@ func (d *simulatedDispatcher) DispatchedNodeIDs() []string {
 	out := make([]string, len(d.dispatched))
 	copy(out, d.dispatched)
 	return out
+}
+
+func (d *simulatedDispatcher) Err() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.err
 }
 
 func simulatedNodeOutputs(node *types.AnalysisNode) map[string]any {
@@ -877,6 +921,12 @@ func TestDataflowOrchestratorV3_ParamsJSON_FullPipelineWithSimulatedDispatcher(t
 	var kernel *dataflowKernel
 	runtime := &persistentDataflowRuntime{
 		repo: repo,
+		onNodeSubmitChange: func(nodeID string, delta int) {
+			if kernel == nil {
+				return
+			}
+			kernel.adjustSubmittedCount(nodeID, delta)
+		},
 		buildPersistParams: func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
 			if kernel == nil {
 				return nil, false
@@ -955,6 +1005,117 @@ func TestDataflowOrchestratorV3_ParamsJSON_FullPipelineWithSimulatedDispatcher(t
 	dispatched := dispatcher.DispatchedNodeIDs()
 	if len(dispatched) != 6 {
 		t.Fatalf("dispatcher dispatch count mismatch: got=%d want=%d", len(dispatched), 6)
+	}
+}
+
+func TestDataflowOrchestratorV3_ParamsJSON_SlowFastpDoesNotEmitToClosedChannel(t *testing.T) {
+	ctx := context.Background()
+	ensureTestSnowflake(t)
+	analysisID, parseResult, dagDefinition := loadDataflowParamsFixture(t)
+
+	repo := newInMemoryAnalysisRepo()
+	if err := repo.CreateAnalysis(ctx, &types.Analysis{
+		AnalysisID: analysisID,
+		OutputDir:  "/tmp/dataflow-orchestrator-v3-test",
+		CacheType:  types.CacheTypeReuseExistingNode,
+	}); err != nil {
+		t.Fatalf("seed analysis failed: %v", err)
+	}
+
+	o := &dataflowDagOrchestratorV3{}
+	spec := o.buildGraphSpec(analysisID, dagDefinition)
+	bus := newSyncEventBus()
+
+	var kernel *dataflowKernel
+	runtime := &persistentDataflowRuntime{
+		repo: repo,
+		onNodeSubmitChange: func(nodeID string, delta int) {
+			if kernel == nil {
+				return
+			}
+			kernel.adjustSubmittedCount(nodeID, delta)
+		},
+		buildPersistParams: func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
+			if kernel == nil {
+				return nil, false
+			}
+			return kernel.buildAnalysisNodePersistParams(req)
+		},
+	}
+
+	dispatcher := &simulatedDispatcher{
+		repo:       repo,
+		bus:        bus,
+		analysisID: analysisID,
+		delayByNode: map[string]time.Duration{
+			"759d6899-e632-400f-9b11-6a8b7b6e2042": 120 * time.Millisecond,
+		},
+		asyncByNode: map[string]bool{
+			"759d6899-e632-400f-9b11-6a8b7b6e2042": true,
+		},
+	}
+	runtime.dispatchFn = dispatcher.Dispatch
+
+	kernel = newDataflowKernel(spec, runtime, parseResult)
+	kernel.repo = repo
+
+	bridge := &runtimeEventBridge{analysisID: analysisID, kernel: kernel, runtime: runtime}
+	bus.Subscribe(bridge)
+
+	if err := kernel.bootstrapSourceProcesses(ctx); err != nil {
+		t.Fatalf("bootstrap source processes failed: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if err := bridge.Err(); err != nil {
+			t.Fatalf("runtime event bridge failed: %v", err)
+		}
+		if err := dispatcher.Err(); err != nil {
+			t.Fatalf("simulated dispatcher failed: %v", err)
+		}
+		nodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+		if err != nil {
+			t.Fatalf("list analysis nodes failed: %v", err)
+		}
+		allDone := len(nodes) >= 5
+		if allDone {
+			for _, n := range nodes {
+				if strings.TrimSpace(strings.ToLower(n.Status)) != dagruntime.StatusDone {
+					allDone = false
+					break
+				}
+			}
+		}
+		if allDone && runtime.InflightDispatches() == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting pipeline completion: nodes=%d inflight=%d", len(nodes), runtime.InflightDispatches())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	nodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+	if err != nil {
+		t.Fatalf("list analysis nodes failed: %v", err)
+	}
+
+	nodeCounts := map[string]int{}
+	for _, n := range nodes {
+		nodeCounts[strings.TrimSpace(n.NodeID)]++
+	}
+	if nodeCounts["759d6899-e632-400f-9b11-6a8b7b6e2042"] != 2 {
+		t.Fatalf("fastp instances mismatch: got=%d want=%d", nodeCounts["759d6899-e632-400f-9b11-6a8b7b6e2042"], 2)
+	}
+	if nodeCounts["7afe22e2-1e25-4261-b7c7-3f7d7ee52222"] != 1 {
+		t.Fatalf("bwa index instances mismatch: got=%d want=%d", nodeCounts["7afe22e2-1e25-4261-b7c7-3f7d7ee52222"], 1)
+	}
+	if nodeCounts["cbd1a1cc-ca62-46da-8713-b0e868a2d44f"] != 2 {
+		t.Fatalf("bwa instances mismatch: got=%d want=%d", nodeCounts["cbd1a1cc-ca62-46da-8713-b0e868a2d44f"], 2)
+	}
+	if nodeCounts["e3d00582-2a99-4b02-a687-65e556f7aefa"] < 1 {
+		t.Fatalf("joint_calling instances mismatch: got=%d want>=1", nodeCounts["e3d00582-2a99-4b02-a687-65e556f7aefa"])
 	}
 }
 

@@ -168,32 +168,14 @@ func (o *BaseOperator) tryFinish(ctx context.Context) error {
 			return err
 		}
 	}
-	return o.closeOutputs(ctx)
+	o.markFinished()
+	return nil
 }
 
-func (o *BaseOperator) closeOutputs(ctx context.Context) error {
+func (o *BaseOperator) markFinished() {
 	o.mu.Lock()
-	if o.finished {
-		o.mu.Unlock()
-		return nil
-	}
 	o.finished = true
-
-	outputs := make([]*DataflowChannel, 0, len(o.outputChannels))
-	for _, ch := range o.outputChannels {
-		outputs = append(outputs, ch)
-	}
 	o.mu.Unlock()
-
-	for _, ch := range outputs {
-		if ch == nil {
-			continue
-		}
-		if err := ch.Close(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type operatorCommonConfig struct {

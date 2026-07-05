@@ -194,6 +194,7 @@ func (ch *DataflowChannel) Emit(ctx context.Context, value any) error {
 	ch.mu.RLock()
 	if ch.state != dataflowChannelStateOpen {
 		ch.mu.RUnlock()
+		logger.Errorf(context.Background(), "[DataflowDagOrchestratorV3] emit to closed channel, channel_id=%s", ch.id)
 		return fmt.Errorf("channel %s is not open", ch.id)
 	}
 	subs := append([]DataflowOperator(nil), ch.subscribers...)
@@ -267,6 +268,7 @@ type persistentDataflowRuntime struct {
 	repo               interfaces.AnalysisRepository
 	dispatcher         *dagruntime.NodeDispatcher
 	dispatchFn         func(ctx context.Context, analysisNodeID int64) error
+	onNodeSubmitChange func(nodeID string, delta int)
 	buildPersistParams func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool)
 	mu                 sync.Mutex
 	inflightDispatches int
@@ -300,9 +302,15 @@ func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, r
 				if err := r.markNodeSubmitted(ctx, node); err != nil {
 					return err
 				}
+				if r.onNodeSubmitChange != nil {
+					r.onNodeSubmitChange(strings.TrimSpace(node.NodeID), 1)
+				}
 				r.incrementInflight(node.ID)
 				if err := dispatch(ctx, node.ID); err != nil {
 					r.decrementInflight(node.ID)
+					if r.onNodeSubmitChange != nil {
+						r.onNodeSubmitChange(strings.TrimSpace(node.NodeID), -1)
+					}
 					if rollbackErr := r.rollbackSubmittedNodeOnDispatchError(ctx, node.ID); rollbackErr != nil {
 						logger.Warnf(ctx,
 							"[DataflowDagOrchestratorV3] rollback submitted node failed, analysis_id=%s node_id=%s analysis_node_id=%s err=%v",
@@ -566,16 +574,23 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 }
 
 type dataflowKernel struct {
-	analysisID      string
-	repo            interfaces.AnalysisRepository
-	channels        map[string]*DataflowChannel
-	channelSpecByID map[string]DataflowChannelSpec
-	outgoingByNode  map[string][]string
-	processByNode   map[string]DataflowProcessSpec
-	operators       map[string]DataflowOperator
-	sourceNodes     []DataflowProcessSpec
-	params          map[string]any
-	runtime         DataflowProcessRuntime
+	analysisID          string
+	repo                interfaces.AnalysisRepository
+	channels            map[string]*DataflowChannel
+	channelSpecByID     map[string]DataflowChannelSpec
+	outgoingByNode      map[string][]string
+	processByNode       map[string]DataflowProcessSpec
+	operators           map[string]DataflowOperator
+	sourceNodes         []DataflowProcessSpec
+	sourceNodeSet       map[string]struct{}
+	params              map[string]any
+	runtime             DataflowProcessRuntime
+	stateMu             sync.Mutex
+	submittedByNode     map[string]int
+	completedByNode     map[string]int
+	outputsClosed       map[string]bool
+	emittingByNode      map[string]int
+	sourcesBootstrapped bool
 }
 
 type finishAwareDataflowOperator interface {
@@ -682,8 +697,13 @@ func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, p
 		outgoingByNode:  outgoingByNode,
 		processByNode:   make(map[string]DataflowProcessSpec, len(spec.Processes)),
 		operators:       make(map[string]DataflowOperator, len(spec.Processes)),
+		sourceNodeSet:   make(map[string]struct{}),
 		params:          params,
 		runtime:         runtime,
+		submittedByNode: make(map[string]int, len(spec.Processes)),
+		completedByNode: make(map[string]int, len(spec.Processes)),
+		outputsClosed:   make(map[string]bool, len(spec.Processes)),
+		emittingByNode:  make(map[string]int, len(spec.Processes)),
 	}
 
 	for _, proc := range spec.Processes {
@@ -723,10 +743,131 @@ func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, p
 	sort.Slice(k.sourceNodes, func(i, j int) bool {
 		return strings.TrimSpace(k.sourceNodes[i].NodeID) < strings.TrimSpace(k.sourceNodes[j].NodeID)
 	})
+	for _, proc := range k.sourceNodes {
+		nodeID := strings.TrimSpace(proc.NodeID)
+		if nodeID == "" {
+			continue
+		}
+		k.sourceNodeSet[nodeID] = struct{}{}
+	}
 	for nodeID := range k.outgoingByNode {
 		sort.Strings(k.outgoingByNode[nodeID])
 	}
 	return k
+}
+
+func (k *dataflowKernel) adjustSubmittedCount(nodeID string, delta int) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" || delta == 0 {
+		return
+	}
+	k.stateMu.Lock()
+	defer k.stateMu.Unlock()
+	next := k.submittedByNode[nodeID] + delta
+	if next < 0 {
+		next = 0
+	}
+	k.submittedByNode[nodeID] = next
+}
+
+func (k *dataflowKernel) markNodeCompleted(nodeID string) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return
+	}
+	k.stateMu.Lock()
+	k.completedByNode[nodeID]++
+	k.stateMu.Unlock()
+}
+
+func (k *dataflowKernel) tryCloseOutputChannelsForNode(ctx context.Context, nodeID string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil
+	}
+
+	k.stateMu.Lock()
+	if k.outputsClosed[nodeID] {
+		k.stateMu.Unlock()
+		return nil
+	}
+	submitted := k.submittedByNode[nodeID]
+	completed := k.completedByNode[nodeID]
+	emitting := k.emittingByNode[nodeID]
+	k.stateMu.Unlock()
+
+	if emitting > 0 {
+		return nil
+	}
+	if submitted == 0 || completed < submitted {
+		return nil
+	}
+	if !k.noMoreSubmissionsExpected(nodeID) {
+		return nil
+	}
+
+	for _, ch := range k.outputChannelsForNode(nodeID) {
+		if ch == nil {
+			continue
+		}
+		if err := ch.Close(ctx); err != nil {
+			return err
+		}
+	}
+
+	k.stateMu.Lock()
+	k.outputsClosed[nodeID] = true
+	k.stateMu.Unlock()
+	return nil
+}
+
+func (k *dataflowKernel) beginNodeEmit(nodeID string) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return
+	}
+	k.stateMu.Lock()
+	k.emittingByNode[nodeID]++
+	k.stateMu.Unlock()
+}
+
+func (k *dataflowKernel) endNodeEmit(nodeID string) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return
+	}
+	k.stateMu.Lock()
+	if k.emittingByNode[nodeID] > 0 {
+		k.emittingByNode[nodeID]--
+	}
+	k.stateMu.Unlock()
+}
+
+func (k *dataflowKernel) reconcileOutputChannelClosures(ctx context.Context) error {
+	for nodeID := range k.processByNode {
+		if err := k.tryCloseOutputChannelsForNode(ctx, nodeID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (k *dataflowKernel) noMoreSubmissionsExpected(nodeID string) bool {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return false
+	}
+	if _, ok := k.sourceNodeSet[nodeID]; ok {
+		k.stateMu.Lock()
+		bootstrapped := k.sourcesBootstrapped
+		k.stateMu.Unlock()
+		return bootstrapped
+	}
+	op, ok := k.operators[nodeID]
+	if !ok || op == nil {
+		return false
+	}
+	return isDataflowOperatorFinished(op)
 }
 
 func (k *dataflowKernel) buildAnalysisNodePersistParams(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
@@ -828,8 +969,43 @@ func (k *dataflowKernel) onNodeCompleted(ctx context.Context, analysisNodeID int
 	if nodeID == "" {
 		return nil
 	}
+	k.markNodeCompleted(nodeID)
 	outputs := map[string]any(node.ResolvedOutputs)
-	return k.emitToDownstream(ctx, nodeID, outputs)
+	k.beginNodeEmit(nodeID)
+	if err := k.emitToDownstream(ctx, nodeID, outputs); err != nil {
+		k.endNodeEmit(nodeID)
+		return err
+	}
+	k.endNodeEmit(nodeID)
+	if err := k.tryCloseOutputChannelsForNode(ctx, nodeID); err != nil {
+		return err
+	}
+	return k.reconcileOutputChannelClosures(ctx)
+}
+
+func (k *dataflowKernel) onNodeFailed(ctx context.Context, analysisNodeID int64) error {
+	if k.repo == nil {
+		return nil
+	}
+	if analysisNodeID <= 0 {
+		return nil
+	}
+	node, err := k.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
+	if err != nil {
+		return err
+	}
+	if node == nil || strings.TrimSpace(node.AnalysisID) != k.analysisID {
+		return nil
+	}
+	nodeID := strings.TrimSpace(node.NodeID)
+	if nodeID == "" {
+		return nil
+	}
+	k.markNodeCompleted(nodeID)
+	if err := k.tryCloseOutputChannelsForNode(ctx, nodeID); err != nil {
+		return err
+	}
+	return k.reconcileOutputChannelClosures(ctx)
 }
 
 func (k *dataflowKernel) closeAll(ctx context.Context) error {
@@ -849,6 +1025,19 @@ func (k *dataflowKernel) bootstrapSourceProcesses(ctx context.Context) error {
 		if err := k.submitSourceProcess(ctx, proc); err != nil {
 			return err
 		}
+	}
+
+	k.stateMu.Lock()
+	k.sourcesBootstrapped = true
+	k.stateMu.Unlock()
+
+	for _, proc := range k.sourceNodes {
+		if err := k.tryCloseOutputChannelsForNode(ctx, proc.NodeID); err != nil {
+			return err
+		}
+	}
+	if err := k.reconcileOutputChannelClosures(ctx); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1024,6 +1213,12 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 	runtime := &persistentDataflowRuntime{
 		repo:       o.repo,
 		dispatcher: dispatcher,
+		onNodeSubmitChange: func(nodeID string, delta int) {
+			if kernel == nil {
+				return
+			}
+			kernel.adjustSubmittedCount(nodeID, delta)
+		},
 		buildPersistParams: func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
 			if kernel == nil {
 				return nil, false
@@ -1050,11 +1245,18 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 			return nil
 		case evt := <-runtimeEvents:
 			runtime.onRuntimeEvent(evt)
-			if strings.TrimSpace(evt.Name) != dagruntime.EventNodeCompleted {
+			eventName := strings.TrimSpace(evt.Name)
+			switch eventName {
+			case dagruntime.EventNodeCompleted:
+				if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
+					return err
+				}
+			case dagruntime.EventNodeFailed:
+				if err := kernel.onNodeFailed(ctx, evt.AnalysisNodeID); err != nil {
+					return err
+				}
+			default:
 				continue
-			}
-			if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
-				return err
 			}
 			if !idleTimer.Stop() {
 				select {
@@ -1069,8 +1271,13 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 				select {
 				case evt := <-runtimeEvents:
 					runtime.onRuntimeEvent(evt)
-					if strings.TrimSpace(evt.Name) == dagruntime.EventNodeCompleted {
+					eventName := strings.TrimSpace(evt.Name)
+					if eventName == dagruntime.EventNodeCompleted {
 						if err := kernel.onNodeCompleted(ctx, evt.AnalysisNodeID); err != nil {
+							return err
+						}
+					} else if eventName == dagruntime.EventNodeFailed {
+						if err := kernel.onNodeFailed(ctx, evt.AnalysisNodeID); err != nil {
 							return err
 						}
 					}
