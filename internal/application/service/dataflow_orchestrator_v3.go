@@ -2,20 +2,26 @@ package service
 
 import (
 	"context"
-	"errors"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/gobravedev/gobrave/internal/config"
+	dagruntime "github.com/gobravedev/gobrave/internal/dag"
+	"github.com/gobravedev/gobrave/internal/dag/executor"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/logger"
+	"github.com/gobravedev/gobrave/internal/manager"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // dataflowDagOrchestratorV3 is the framework entry for a Nextflow-like
@@ -26,17 +32,42 @@ import (
 // - Keep existing frontend payload, executor path, and analysis persistence untouched.
 // - Delegate runtime execution to V2 for safe rollout.
 type dataflowDagOrchestratorV3 struct {
-	bus  event.Bus
-	repo interfaces.AnalysisRepository
+	bus          event.Bus
+	repo         interfaces.AnalysisRepository
+	workflowRepo interfaces.WorkflowRepository
+	containerMgr *manager.ContainerManager
+	cfg          *config.Config
 }
 
 func NewDataflowDagOrchestratorV3(
 	repo interfaces.AnalysisRepository,
+	workflowRepo interfaces.WorkflowRepository,
+	containerMgr *manager.ContainerManager,
+	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DataflowDagOrchestrator {
 	return &dataflowDagOrchestratorV3{
-		bus:  bus,
-		repo: repo,
+		bus:          bus,
+		repo:         repo,
+		workflowRepo: workflowRepo,
+		containerMgr: containerMgr,
+		cfg:          cfg,
+	}
+}
+
+type dataflowRuntimeEventHandler struct {
+	analysisID string
+	events     chan<- dagruntime.RuntimeEvent
+}
+
+func (h *dataflowRuntimeEventHandler) Handle(evt event.Event) {
+	runtimeEvt, ok := evt.(dagruntime.RuntimeEvent)
+	if !ok || strings.TrimSpace(runtimeEvt.AnalysisID) != h.analysisID {
+		return
+	}
+	select {
+	case h.events <- runtimeEvt:
+	default:
 	}
 }
 
@@ -81,6 +112,7 @@ type DataflowProcessSpec struct {
 type DataflowAnalysisNodePersistParams struct {
 	AnalysisID      string
 	NodeID          string
+	InputHash       string
 	NodeName        string
 	SampleID        string
 	ScriptID        string
@@ -234,8 +266,10 @@ func (r *loggingDataflowRuntime) SubmitProcessInstance(ctx context.Context, req 
 
 type persistentDataflowRuntime struct {
 	repo               interfaces.AnalysisRepository
+	dispatcher         *dagruntime.NodeDispatcher
 	buildPersistParams func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool)
-	onSubmitted        func(ctx context.Context, req DataflowProcessRunRequest) error
+	mu                 sync.Mutex
+	inflightDispatches int
 }
 
 func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, req DataflowProcessRunRequest) error {
@@ -250,44 +284,54 @@ func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, r
 	if r.repo != nil && r.buildPersistParams != nil {
 		persistParams, ok := r.buildPersistParams(req)
 		if ok {
-			if err := r.persistAnalysisNode(ctx, persistParams); err != nil {
+			node, created, err := r.persistAnalysisNode(ctx, persistParams)
+			if err != nil {
 				return err
 			}
+			if created && node != nil && r.dispatcher != nil {
+				r.incrementInflight()
+				defer r.decrementInflight()
+				if err := r.dispatcher.Dispatch(ctx, node.AnalysisID, node.AnalysisNodeID); err != nil {
+					return err
+				}
+			}
 		}
-	}
-
-	if r.onSubmitted != nil {
-		return r.onSubmitted(ctx, req)
 	}
 	return nil
 }
 
-func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, payload *DataflowAnalysisNodePersistParams) error {
+func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, payload *DataflowAnalysisNodePersistParams) (*types.AnalysisNode, bool, error) {
 	if r.repo == nil || payload == nil {
-		return nil
+		return nil, false, nil
 	}
 	payload.AnalysisID = strings.TrimSpace(payload.AnalysisID)
 	payload.NodeID = strings.TrimSpace(payload.NodeID)
+	payload.InputHash = strings.TrimSpace(payload.InputHash)
 	if payload.AnalysisID == "" || payload.NodeID == "" {
-		return nil
+		return nil, false, nil
+	}
+	if payload.InputHash == "" {
+		payload.InputHash = buildDataflowInstanceInputHash(payload.NodeID, payload.ResolvedInputs, payload.Params)
 	}
 
-	_, err := r.repo.GetAnalysisNodeByNodeID(ctx, payload.AnalysisID, payload.NodeID)
-	if err == nil {
+	existingNodes, err := r.repo.ListAnalysisNodesByAnalysisID(ctx, payload.AnalysisID)
+	if err != nil {
+		return nil, false, err
+	}
+	existing := findPersistedNodeInstance(existingNodes, payload.NodeID, payload.InputHash)
+	if existing != nil {
 		logger.Infof(ctx,
-			"[DataflowDagOrchestratorV3] skip persist duplicated analysis node, analysis_id=%s node_id=%s",
+			"[DataflowDagOrchestratorV3] skip persist duplicated analysis node instance, analysis_id=%s node_id=%s input_hash=%s",
 			payload.AnalysisID,
 			payload.NodeID,
+			payload.InputHash,
 		)
-		return nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return existing, false, nil
 	}
 
 	item := buildAnalysisNodeFromPersistPayload(payload)
 	if err := r.repo.CreateAnalysisNodes(ctx, []*types.AnalysisNode{item}); err != nil {
-		return err
+		return nil, false, err
 	}
 
 	logger.Infof(ctx,
@@ -296,7 +340,63 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 		item.NodeID,
 		item.AnalysisNodeID,
 	)
+	return item, true, nil
+}
+
+func findPersistedNodeInstance(items []*types.AnalysisNode, nodeID string, inputHash string) *types.AnalysisNode {
+	nodeID = strings.TrimSpace(nodeID)
+	inputHash = strings.TrimSpace(inputHash)
+	if nodeID == "" || inputHash == "" {
+		return nil
+	}
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if strings.TrimSpace(item.NodeID) != nodeID {
+			continue
+		}
+		if strings.TrimSpace(item.InputHash) != inputHash {
+			continue
+		}
+		return item
+	}
 	return nil
+}
+
+func buildDataflowInstanceInputHash(nodeID string, resolvedInputs map[string]any, params map[string]any) string {
+	payload := map[string]any{
+		"node_id":         strings.TrimSpace(nodeID),
+		"resolved_inputs": cloneInputs(resolvedInputs),
+		"params":          cloneInputs(params),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		fallback := sha256.Sum256([]byte(strings.TrimSpace(nodeID)))
+		return hex.EncodeToString(fallback[:])
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *persistentDataflowRuntime) incrementInflight() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inflightDispatches++
+}
+
+func (r *persistentDataflowRuntime) decrementInflight() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.inflightDispatches > 0 {
+		r.inflightDispatches--
+	}
+}
+
+func (r *persistentDataflowRuntime) InflightDispatches() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inflightDispatches
 }
 
 func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistParams) *types.AnalysisNode {
@@ -318,6 +418,7 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 		OutputPatterns:         dynamicToJSONMap(payload.OutputPatterns),
 		ResolvedOutputs:        dynamicToJSONMap(payload.ResolvedOutputs),
 		Params:                 dynamicToJSONMap(payload.Params),
+		InputHash:              strings.TrimSpace(payload.InputHash),
 		Status:                 status,
 		Executor:               strings.TrimSpace(payload.Executor),
 		Retry:                  payload.Retry,
@@ -670,24 +771,28 @@ func (o *GatherOperator) flushLocked(ctx context.Context) error {
 }
 
 type dataflowKernel struct {
-	analysisID     string
-	channels       map[string]*DataflowChannel
-	outgoingByNode map[string][]string
-	processByNode  map[string]DataflowProcessSpec
-	operators      map[string]DataflowOperator
-	sourceNodes    []DataflowProcessSpec
-	params         map[string]any
-	runtime        DataflowProcessRuntime
+	analysisID      string
+	repo            interfaces.AnalysisRepository
+	channels        map[string]*DataflowChannel
+	channelSpecByID map[string]DataflowChannelSpec
+	outgoingByNode  map[string][]string
+	processByNode   map[string]DataflowProcessSpec
+	operators       map[string]DataflowOperator
+	sourceNodes     []DataflowProcessSpec
+	params          map[string]any
+	runtime         DataflowProcessRuntime
 }
 
 func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, params map[string]any) *dataflowKernel {
 	channels := make(map[string]*DataflowChannel, len(spec.Channels))
+	channelSpecByID := make(map[string]DataflowChannelSpec, len(spec.Channels))
 	outgoingByNode := map[string][]string{}
 	for _, ch := range spec.Channels {
 		id := strings.TrimSpace(ch.ChannelID)
 		if id == "" {
 			continue
 		}
+		channelSpecByID[id] = ch
 		if _, exists := channels[id]; !exists {
 			channels[id] = newDataflowChannel(id)
 		}
@@ -710,13 +815,14 @@ func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, p
 	}
 
 	k := &dataflowKernel{
-		analysisID:     spec.AnalysisID,
-		channels:       channels,
-		outgoingByNode: outgoingByNode,
-		processByNode:  make(map[string]DataflowProcessSpec, len(spec.Processes)),
-		operators:      make(map[string]DataflowOperator, len(spec.Processes)),
-		params:         params,
-		runtime:        runtime,
+		analysisID:      spec.AnalysisID,
+		channels:        channels,
+		channelSpecByID: channelSpecByID,
+		outgoingByNode:  outgoingByNode,
+		processByNode:   make(map[string]DataflowProcessSpec, len(spec.Processes)),
+		operators:       make(map[string]DataflowOperator, len(spec.Processes)),
+		params:          params,
+		runtime:         runtime,
 	}
 
 	for _, proc := range spec.Processes {
@@ -761,14 +867,6 @@ func newDataflowKernel(spec DataflowGraphSpec, runtime DataflowProcessRuntime, p
 	return k
 }
 
-func (k *dataflowKernel) onProcessSubmitted(ctx context.Context, req DataflowProcessRunRequest) error {
-	nodeID := strings.TrimSpace(req.NodeID)
-	if nodeID == "" {
-		return nil
-	}
-	return k.emitToDownstream(ctx, nodeID, cloneInputs(req.Inputs))
-}
-
 func (k *dataflowKernel) buildAnalysisNodePersistParams(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
 	nodeID := strings.TrimSpace(req.NodeID)
 	if nodeID == "" {
@@ -798,6 +896,7 @@ func (k *dataflowKernel) buildAnalysisNodePersistParams(req DataflowProcessRunRe
 	return &DataflowAnalysisNodePersistParams{
 		AnalysisID:      analysisID,
 		NodeID:          nodeID,
+		InputHash:       buildDataflowInstanceInputHash(nodeID, resolvedInputs, params),
 		NodeName:        strings.TrimSpace(proc.NodeName),
 		SampleID:        strings.TrimSpace(proc.SampleID),
 		ScriptID:        strings.TrimSpace(proc.ScriptID),
@@ -827,11 +926,42 @@ func (k *dataflowKernel) emitToDownstream(ctx context.Context, fromNodeID string
 		if !exists || ch == nil {
 			continue
 		}
-		if err := ch.Emit(ctx, value); err != nil {
+		emitValue := value
+		if outputs, ok := value.(map[string]any); ok {
+			channelSpec, hasSpec := k.channelSpecByID[channelID]
+			fromPort := ""
+			if hasSpec {
+				fromPort = strings.TrimSpace(channelSpec.FromPort)
+			}
+			if fromPort != "" {
+				v, exists := outputs[fromPort]
+				if !exists {
+					continue
+				}
+				emitValue = v
+			}
+		}
+		if err := ch.Emit(ctx, emitValue); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (k *dataflowKernel) onNodeCompleted(ctx context.Context, nodeID string) error {
+	if k.repo == nil {
+		return nil
+	}
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil
+	}
+	node, err := k.repo.GetAnalysisNodeByNodeID(ctx, k.analysisID, nodeID)
+	if err != nil {
+		return err
+	}
+	outputs := map[string]any(node.ResolvedOutputs)
+	return k.emitToDownstream(ctx, nodeID, outputs)
 }
 
 func newDataflowOperator(
@@ -1014,30 +1144,90 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 
 	spec := o.buildGraphSpec(analysisID, dagDefinition)
 	o.logFrameworkPhase(ctx, spec)
+
+	runtimeEngine := dagruntime.NewRuntimeEngine(o.repo)
+	storageBase := ""
+	if o.cfg != nil && o.cfg.Storage != nil {
+		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
+	}
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, storageBase)
+	dispatcher := dagruntime.NewNodeDispatcher(
+		runtimeEngine,
+		o.repo,
+		o.bus,
+		executor.NewFactory(executor.FactoryDeps{
+			WorkflowRepository: o.workflowRepo,
+			ContainerManager:   o.containerMgr,
+		}),
+		nil,
+		preparer,
+	)
+
+	runtimeEvents := make(chan dagruntime.RuntimeEvent, 256)
+	if o.bus != nil {
+		o.bus.Subscribe(&dataflowRuntimeEventHandler{analysisID: analysisID, events: runtimeEvents})
+	}
+
 	var kernel *dataflowKernel
 	runtime := &persistentDataflowRuntime{
-		repo: o.repo,
+		repo:       o.repo,
+		dispatcher: dispatcher,
 		buildPersistParams: func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
 			if kernel == nil {
 				return nil, false
 			}
 			return kernel.buildAnalysisNodePersistParams(req)
 		},
-		onSubmitted: func(cbCtx context.Context, req DataflowProcessRunRequest) error {
-			if kernel == nil {
-				return nil
-			}
-			return kernel.onProcessSubmitted(cbCtx, req)
-		},
 	}
 	kernel = newDataflowKernel(spec, runtime, parseAnalysisResult)
+	kernel.repo = o.repo
 	if err := kernel.bootstrapSourceProcesses(ctx); err != nil {
 		return err
 	}
 	if err := kernel.closeAll(ctx); err != nil {
 		return err
 	}
-	return nil
+
+	idleWindow := 200 * time.Millisecond
+	idleTimer := time.NewTimer(idleWindow)
+	defer idleTimer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case evt := <-runtimeEvents:
+			if strings.TrimSpace(evt.Name) != dagruntime.EventNodeCompleted {
+				continue
+			}
+			if err := kernel.onNodeCompleted(ctx, evt.NodeID); err != nil {
+				return err
+			}
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(idleWindow)
+		case <-idleTimer.C:
+			if runtime.InflightDispatches() == 0 {
+				select {
+				case evt := <-runtimeEvents:
+					if strings.TrimSpace(evt.Name) == dagruntime.EventNodeCompleted {
+						if err := kernel.onNodeCompleted(ctx, evt.NodeID); err != nil {
+							return err
+						}
+					}
+					idleTimer.Reset(idleWindow)
+				default:
+					return nil
+				}
+				continue
+			}
+			idleTimer.Reset(idleWindow)
+		}
+	}
 
 }
 

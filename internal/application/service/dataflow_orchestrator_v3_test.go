@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	"github.com/gobravedev/gobrave/internal/types"
 )
 
 type captureDataflowRuntime struct {
@@ -390,6 +392,58 @@ func TestBuildAnalysisNodePersistParams(t *testing.T) {
 	if payload.Status != "ready" {
 		t.Fatalf("unexpected default status: got=%q", payload.Status)
 	}
+	if payload.InputHash == "" {
+		t.Fatalf("input hash should be generated for instance-level idempotency")
+	}
+}
+
+func TestBuildDataflowInstanceInputHashStable(t *testing.T) {
+	hashA := buildDataflowInstanceInputHash(
+		"node-align",
+		map[string]any{"a": 1, "b": 2},
+		map[string]any{"threads": 8},
+	)
+	hashB := buildDataflowInstanceInputHash(
+		"node-align",
+		map[string]any{"b": 2, "a": 1},
+		map[string]any{"threads": 8},
+	)
+	hashC := buildDataflowInstanceInputHash(
+		"node-align",
+		map[string]any{"a": 1, "b": 3},
+		map[string]any{"threads": 8},
+	)
+
+	if hashA == "" || hashB == "" || hashC == "" {
+		t.Fatalf("hash should never be empty")
+	}
+	if hashA != hashB {
+		t.Fatalf("hash should be stable across map key order: %q != %q", hashA, hashB)
+	}
+	if hashA == hashC {
+		t.Fatalf("hash should change when inputs change: %q", hashA)
+	}
+}
+
+func TestFindPersistedNodeInstance(t *testing.T) {
+	items := []*types.AnalysisNode{
+		{AnalysisID: "analysis-1", NodeID: "node-a", InputHash: "hash-1", AnalysisNodeID: "node-1"},
+		{AnalysisID: "analysis-1", NodeID: "node-a", InputHash: "hash-2", AnalysisNodeID: "node-2"},
+		{AnalysisID: "analysis-1", NodeID: "node-b", InputHash: "hash-1", AnalysisNodeID: "node-3"},
+	}
+
+	matched := findPersistedNodeInstance(items, "node-a", "hash-2")
+	if matched == nil {
+		t.Fatalf("expected matched instance")
+	}
+	if matched.AnalysisNodeID != "node-2" {
+		t.Fatalf("unexpected matched node id: got=%q", matched.AnalysisNodeID)
+	}
+
+	notFound := findPersistedNodeInstance(items, "node-a", "hash-3")
+	if notFound != nil {
+		t.Fatalf("should not match non-existing hash")
+	}
 }
 
 func TestKernelSubmissionFeedsDownstreamChannels(t *testing.T) {
@@ -418,34 +472,20 @@ func TestKernelSubmissionFeedsDownstreamChannels(t *testing.T) {
 		},
 	}
 
-	runtime := &feedbackCaptureDataflowRuntime{}
-	var k *dataflowKernel
-	runtime.onSubmitted = func(cbCtx context.Context, req DataflowProcessRunRequest) error {
-		if k == nil {
-			return nil
-		}
-		return k.onProcessSubmitted(cbCtx, req)
-	}
-
-	k = newDataflowKernel(spec, runtime, map[string]any{"reads": "r1.fq"})
-	if err := k.bootstrapSourceProcesses(ctx); err != nil {
-		t.Fatalf("bootstrap failed: %v", err)
-	}
-	if err := k.closeAll(ctx); err != nil {
-		t.Fatalf("closeAll failed: %v", err)
+	runtime := &captureDataflowRuntime{}
+	k := newDataflowKernel(spec, runtime, map[string]any{"reads": "r1.fq"})
+	if err := k.emitToDownstream(ctx, "node-a", map[string]any{"out": "bwa.bam"}); err != nil {
+		t.Fatalf("emitToDownstream failed: %v", err)
 	}
 
 	reqs := runtime.Requests()
-	if len(reqs) != 2 {
-		t.Fatalf("expected 2 submissions, got=%d", len(reqs))
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 downstream submission, got=%d", len(reqs))
 	}
-	if reqs[0].NodeID != "node-a" {
-		t.Fatalf("first submission should be source node-a, got=%q", reqs[0].NodeID)
+	if reqs[0].NodeID != "node-b" {
+		t.Fatalf("submission should be downstream node-b, got=%q", reqs[0].NodeID)
 	}
-	if reqs[1].NodeID != "node-b" {
-		t.Fatalf("second submission should be downstream node-b, got=%q", reqs[1].NodeID)
-	}
-	if reqs[1].Inputs["in"] == nil {
-		t.Fatalf("downstream input should be fed by upstream channel, got=%v", reqs[1].Inputs)
+	if reqs[0].Inputs["in"] != "bwa.bam" {
+		t.Fatalf("downstream input should receive fromPort value, got=%v", reqs[0].Inputs)
 	}
 }
