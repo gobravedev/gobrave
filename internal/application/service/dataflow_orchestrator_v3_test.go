@@ -2,11 +2,30 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	dagruntime "github.com/gobravedev/gobrave/internal/dag"
+	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/types"
+	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 )
+
+var testSnowflakeInitOnce sync.Once
+
+func ensureTestSnowflake(t *testing.T) {
+	t.Helper()
+	testSnowflakeInitOnce.Do(func() {
+		if err := utils.InitSnowflake(1); err != nil {
+			t.Fatalf("init snowflake failed: %v", err)
+		}
+	})
+}
 
 type captureDataflowRuntime struct {
 	mu    sync.Mutex
@@ -492,3 +511,633 @@ func TestKernelSubmissionFeedsDownstreamChannels(t *testing.T) {
 		t.Fatalf("downstream input should receive fromPort value, got=%v", reqs[0].Inputs)
 	}
 }
+
+type syncEventBus struct {
+	mu       sync.RWMutex
+	handlers []event.Handler
+}
+
+func newSyncEventBus() *syncEventBus {
+	return &syncEventBus{}
+}
+
+func (b *syncEventBus) Publish(evt event.Event) {
+	b.mu.RLock()
+	handlers := append([]event.Handler(nil), b.handlers...)
+	b.mu.RUnlock()
+	for _, h := range handlers {
+		h.Handle(evt)
+	}
+}
+
+func (b *syncEventBus) Subscribe(handler event.Handler) {
+	if handler == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.handlers = append(b.handlers, handler)
+}
+
+type inMemoryAnalysisRepo struct {
+	mu            sync.Mutex
+	analyses      map[string]*types.Analysis
+	nodesByID     map[int64]*types.AnalysisNode
+	nodesByAID    map[string][]*types.AnalysisNode
+	nextNodeIDSeq int64
+}
+
+var _ interfaces.AnalysisRepository = (*inMemoryAnalysisRepo)(nil)
+
+func newInMemoryAnalysisRepo() *inMemoryAnalysisRepo {
+	return &inMemoryAnalysisRepo{
+		analyses:      map[string]*types.Analysis{},
+		nodesByID:     map[int64]*types.AnalysisNode{},
+		nodesByAID:    map[string][]*types.AnalysisNode{},
+		nextNodeIDSeq: 100,
+	}
+}
+
+func (r *inMemoryAnalysisRepo) GetAnalysisByAnalysisID(_ context.Context, analysisID string) (*types.Analysis, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.analyses[strings.TrimSpace(analysisID)]
+	if !ok {
+		return nil, nil
+	}
+	out := *item
+	return &out, nil
+}
+
+func (r *inMemoryAnalysisRepo) ListAnalysisByJobStatus(_ context.Context, _ string) ([]*types.Analysis, error) {
+	return nil, nil
+}
+
+func (r *inMemoryAnalysisRepo) GetAnalysisNodeByID(_ context.Context, id int64) (*types.AnalysisNode, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	node, ok := r.nodesByID[id]
+	if !ok {
+		return nil, nil
+	}
+	out := *node
+	return &out, nil
+}
+
+func (r *inMemoryAnalysisRepo) GetAnalysisNodeByAnalysisNodeID(_ context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	needle := strings.TrimSpace(analysisNodeID)
+	for _, node := range r.nodesByID {
+		if node != nil && strings.TrimSpace(node.AnalysisNodeID) == needle {
+			out := *node
+			return &out, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *inMemoryAnalysisRepo) GetAnalysisNodeByNodeID(_ context.Context, analysisID string, nodeID string) (*types.AnalysisNode, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, node := range r.nodesByAID[strings.TrimSpace(analysisID)] {
+		if node != nil && strings.TrimSpace(node.NodeID) == strings.TrimSpace(nodeID) {
+			out := *node
+			return &out, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *inMemoryAnalysisRepo) WithTransaction(_ context.Context, fn func(interfaces.AnalysisRepository) error) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(r)
+}
+
+func (r *inMemoryAnalysisRepo) CreateAnalysis(_ context.Context, item *types.Analysis) error {
+	if item == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cloned := *item
+	r.analyses[strings.TrimSpace(item.AnalysisID)] = &cloned
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) TryMarkAnalysisRunning(_ context.Context, _ string, _ time.Time, _ time.Time) (bool, error) {
+	return true, nil
+}
+
+func (r *inMemoryAnalysisRepo) UpdateAnalysisByAnalysisID(_ context.Context, analysisID string, values map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.analyses[strings.TrimSpace(analysisID)]
+	if !ok {
+		return nil
+	}
+	if v, ok := values["output_dir"]; ok {
+		item.OutputDir = strings.TrimSpace(dynamicToString(v))
+	}
+	if v, ok := values["cache_type"]; ok {
+		item.CacheType = dynamicIntFromAny(v, item.CacheType)
+	}
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) ListAnalysisNodesByAnalysisID(_ context.Context, analysisID string) ([]*types.AnalysisNode, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := r.nodesByAID[strings.TrimSpace(analysisID)]
+	out := make([]*types.AnalysisNode, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		cloned := *item
+		out = append(out, &cloned)
+	}
+	return out, nil
+}
+
+func (r *inMemoryAnalysisRepo) ListAnalysisEdgesByAnalysisID(_ context.Context, _ string) ([]*types.AnalysisEdge, error) {
+	return nil, nil
+}
+
+func (r *inMemoryAnalysisRepo) UpdateAnalysisNodeByAnalysisNodeID(_ context.Context, analysisNodeID string, values map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	needle := strings.TrimSpace(analysisNodeID)
+	for _, node := range r.nodesByID {
+		if node == nil || strings.TrimSpace(node.AnalysisNodeID) != needle {
+			continue
+		}
+		if v, ok := values["status"]; ok {
+			node.Status = strings.TrimSpace(dynamicToString(v))
+		}
+		if v, ok := values["resolved_outputs"]; ok {
+			node.ResolvedOutputs = types.JSONMap(dynamicToMap(v))
+		}
+		if v, ok := values["resolved_inputs"]; ok {
+			node.ResolvedInputs = types.JSONMap(dynamicToMap(v))
+		}
+		return nil
+	}
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) ClaimNextReadyNode(_ context.Context, _ string, _ string, _ string) (*types.AnalysisNode, error) {
+	return nil, nil
+}
+
+func (r *inMemoryAnalysisRepo) DeleteAnalysisNodesByAnalysisID(_ context.Context, analysisID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	analysisID = strings.TrimSpace(analysisID)
+	for id, node := range r.nodesByID {
+		if node != nil && strings.TrimSpace(node.AnalysisID) == analysisID {
+			delete(r.nodesByID, id)
+		}
+	}
+	delete(r.nodesByAID, analysisID)
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) CreateAnalysisNodes(_ context.Context, items []*types.AnalysisNode) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		cloned := *item
+		if cloned.ID <= 0 {
+			r.nextNodeIDSeq++
+			cloned.ID = r.nextNodeIDSeq
+		}
+		r.nodesByID[cloned.ID] = &cloned
+		aid := strings.TrimSpace(cloned.AnalysisID)
+		r.nodesByAID[aid] = append(r.nodesByAID[aid], &cloned)
+	}
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) DeleteAnalysisEdgesByAnalysisID(_ context.Context, _ string) error {
+	return nil
+}
+
+func (r *inMemoryAnalysisRepo) CreateAnalysisEdges(_ context.Context, _ []*types.AnalysisEdge) error {
+	return nil
+}
+
+type runtimeEventBridge struct {
+	analysisID string
+	kernel     *dataflowKernel
+	runtime    *persistentDataflowRuntime
+	mu         sync.Mutex
+	err        error
+}
+
+func (h *runtimeEventBridge) Handle(evt event.Event) {
+	runtimeEvt, ok := evt.(dagruntime.RuntimeEvent)
+	if !ok || strings.TrimSpace(runtimeEvt.AnalysisID) != strings.TrimSpace(h.analysisID) {
+		return
+	}
+	if h.runtime != nil {
+		h.runtime.onRuntimeEvent(runtimeEvt)
+	}
+	if strings.TrimSpace(runtimeEvt.Name) != dagruntime.EventNodeCompleted {
+		return
+	}
+	if h.kernel == nil {
+		return
+	}
+	if err := h.kernel.onNodeCompleted(context.Background(), runtimeEvt.AnalysisNodeID); err != nil {
+		h.mu.Lock()
+		if h.err == nil {
+			h.err = err
+		}
+		h.mu.Unlock()
+	}
+}
+
+func (h *runtimeEventBridge) Err() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.err
+}
+
+type simulatedDispatcher struct {
+	repo        *inMemoryAnalysisRepo
+	bus         event.Bus
+	analysisID  string
+	mu          sync.Mutex
+	dispatched  []string
+	dispatchIDs []int64
+}
+
+func (d *simulatedDispatcher) Dispatch(ctx context.Context, analysisNodeID int64) error {
+	node, err := d.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
+	if err != nil {
+		return err
+	}
+	if node == nil {
+		return fmt.Errorf("node not found: %d", analysisNodeID)
+	}
+
+	outputs := simulatedNodeOutputs(node)
+	if err := d.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
+		"status":           dagruntime.StatusDone,
+		"resolved_outputs": outputs,
+	}); err != nil {
+		return err
+	}
+
+	d.mu.Lock()
+	d.dispatched = append(d.dispatched, strings.TrimSpace(node.NodeID))
+	d.dispatchIDs = append(d.dispatchIDs, node.ID)
+	d.mu.Unlock()
+
+	if d.bus != nil {
+		d.bus.Publish(dagruntime.RuntimeEvent{
+			Name:           dagruntime.EventNodeCompleted,
+			AnalysisID:     strings.TrimSpace(d.analysisID),
+			AnalysisNodeID: node.ID,
+			NodeID:         strings.TrimSpace(node.NodeID),
+			OccurredAt:     time.Now().UTC(),
+			Payload: map[string]any{
+				"status": dagruntime.StatusDone,
+			},
+		})
+	}
+	return nil
+}
+
+func (d *simulatedDispatcher) DispatchedNodeIDs() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]string, len(d.dispatched))
+	copy(out, d.dispatched)
+	return out
+}
+
+func simulatedNodeOutputs(node *types.AnalysisNode) map[string]any {
+	nodeID := strings.TrimSpace(node.NodeID)
+	resolvedInputs := map[string]any(node.ResolvedInputs)
+	switch nodeID {
+	case "759d6899-e632-400f-9b11-6a8b7b6e2042":
+		reads := dynamicToMap(resolvedInputs["reads"])
+		r1 := strings.TrimSpace(dynamicToString(reads["FASTQ_R1"]))
+		r2 := strings.TrimSpace(dynamicToString(reads["FASTQ_R2"]))
+		if r1 == "" {
+			r1 = "unknown_R1"
+		}
+		if r2 == "" {
+			r2 = "unknown_R2"
+		}
+		return map[string]any{
+			"fastq1_trimmed": r1 + ".trimmed",
+			"fastq2_trimmed": r2 + ".trimmed",
+		}
+	case "7afe22e2-1e25-4261-b7c7-3f7d7ee52222":
+		index := strings.TrimSpace(dynamicToString(resolvedInputs["reference_genome"]))
+		if index == "" {
+			index = "/data/index"
+		}
+		return map[string]any{"index": index}
+	case "cbd1a1cc-ca62-46da-8713-b0e868a2d44f":
+		return map[string]any{"bam": fmt.Sprintf("%s.bam", strings.TrimSpace(node.AnalysisNodeID))}
+	case "e3d00582-2a99-4b02-a687-65e556f7aefa":
+		return map[string]any{"vcf": "joint_calling.vcf"}
+	default:
+		return map[string]any{}
+	}
+}
+
+func TestDataflowOrchestratorV3_ParamsJSON_FullPipelineWithSimulatedDispatcher(t *testing.T) {
+	ctx := context.Background()
+	ensureTestSnowflake(t)
+	analysisID, parseResult, dagDefinition := loadDataflowParamsFixture(t)
+
+	repo := newInMemoryAnalysisRepo()
+	if err := repo.CreateAnalysis(ctx, &types.Analysis{
+		AnalysisID: analysisID,
+		OutputDir:  "/tmp/dataflow-orchestrator-v3-test",
+		CacheType:  types.CacheTypeReuseExistingNode,
+	}); err != nil {
+		t.Fatalf("seed analysis failed: %v", err)
+	}
+
+	o := &dataflowDagOrchestratorV3{}
+	spec := o.buildGraphSpec(analysisID, dagDefinition)
+	bus := newSyncEventBus()
+
+	var kernel *dataflowKernel
+	runtime := &persistentDataflowRuntime{
+		repo: repo,
+		buildPersistParams: func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool) {
+			if kernel == nil {
+				return nil, false
+			}
+			return kernel.buildAnalysisNodePersistParams(req)
+		},
+	}
+
+	dispatcher := &simulatedDispatcher{repo: repo, bus: bus, analysisID: analysisID}
+	runtime.dispatchFn = dispatcher.Dispatch
+
+	kernel = newDataflowKernel(spec, runtime, parseResult)
+	kernel.repo = repo
+
+	bridge := &runtimeEventBridge{analysisID: analysisID, kernel: kernel, runtime: runtime}
+	bus.Subscribe(bridge)
+
+	if err := kernel.bootstrapSourceProcesses(ctx); err != nil {
+		t.Fatalf("bootstrap source processes failed: %v", err)
+	}
+	if err := bridge.Err(); err != nil {
+		t.Fatalf("runtime event bridge failed: %v", err)
+	}
+
+	nodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
+	if err != nil {
+		t.Fatalf("list analysis nodes failed: %v", err)
+	}
+	if len(nodes) != 6 {
+		t.Fatalf("unexpected persisted node count: got=%d want=%d", len(nodes), 6)
+	}
+
+	nodeCounts := map[string]int{}
+	for _, n := range nodes {
+		nodeCounts[strings.TrimSpace(n.NodeID)]++
+		if strings.TrimSpace(strings.ToLower(n.Status)) != dagruntime.StatusDone {
+			t.Fatalf("node should be done: node_id=%s status=%s", n.NodeID, n.Status)
+		}
+	}
+
+	if nodeCounts["759d6899-e632-400f-9b11-6a8b7b6e2042"] != 2 {
+		t.Fatalf("fastp instances mismatch: got=%d want=%d", nodeCounts["759d6899-e632-400f-9b11-6a8b7b6e2042"], 2)
+	}
+	if nodeCounts["7afe22e2-1e25-4261-b7c7-3f7d7ee52222"] != 1 {
+		t.Fatalf("bwa index instances mismatch: got=%d want=%d", nodeCounts["7afe22e2-1e25-4261-b7c7-3f7d7ee52222"], 1)
+	}
+	if nodeCounts["cbd1a1cc-ca62-46da-8713-b0e868a2d44f"] != 2 {
+		t.Fatalf("bwa instances mismatch: got=%d want=%d", nodeCounts["cbd1a1cc-ca62-46da-8713-b0e868a2d44f"], 2)
+	}
+	if nodeCounts["e3d00582-2a99-4b02-a687-65e556f7aefa"] != 1 {
+		t.Fatalf("joint_calling instances mismatch: got=%d want=%d", nodeCounts["e3d00582-2a99-4b02-a687-65e556f7aefa"], 1)
+	}
+
+	var jointCallingNode *types.AnalysisNode
+	for _, n := range nodes {
+		if strings.TrimSpace(n.NodeID) == "e3d00582-2a99-4b02-a687-65e556f7aefa" {
+			jointCallingNode = n
+			break
+		}
+	}
+	if jointCallingNode == nil {
+		t.Fatalf("joint_calling node not found")
+	}
+	bams, ok := any(jointCallingNode.ResolvedInputs["bam"]).([]any)
+	if !ok {
+		t.Fatalf("joint_calling bam input should be []any, got=%T", jointCallingNode.ResolvedInputs["bam"])
+	}
+	if len(bams) != 2 {
+		t.Fatalf("joint_calling bam list size mismatch: got=%d want=%d", len(bams), 2)
+	}
+
+	if inflight := runtime.InflightDispatches(); inflight != 0 {
+		t.Fatalf("inflight dispatches should be 0 after completion, got=%d", inflight)
+	}
+
+	dispatched := dispatcher.DispatchedNodeIDs()
+	if len(dispatched) != 6 {
+		t.Fatalf("dispatcher dispatch count mismatch: got=%d want=%d", len(dispatched), 6)
+	}
+}
+
+func loadDataflowParamsFixture(t *testing.T) (string, map[string]any, map[string]any) {
+	t.Helper()
+	root := map[string]any{}
+	if err := json.Unmarshal([]byte(dataflowParamsFixtureJSON), &root); err != nil {
+		t.Fatalf("unmarshal params fixture failed: %v", err)
+	}
+	analysisID := strings.TrimSpace(dynamicToString(root["analysis_id"]))
+	if analysisID == "" {
+		t.Fatalf("analysis_id is required in fixture")
+	}
+	parseResult := dynamicToMap(root["parse_analysis_result"])
+	dagDefinition := dynamicToMap(root["dag_definition"])
+	return analysisID, parseResult, dagDefinition
+}
+
+const dataflowParamsFixtureJSON = `
+{
+  "analysis_id": "9065a0f9-fe2a-4a8c-bb13-c947b54ada30",
+  "dag_definition": {
+    "edges": [
+      {
+        "id": "xy-edge__759d6899-e632-400f-9b11-6a8b7b6e2042_1fastq1_trimmed-cbd1a1cc-ca62-46da-8713-b0e868a2d44f_1fastq1",
+        "source": "759d6899-e632-400f-9b11-6a8b7b6e2042",
+        "sourceHandle": "fastq1_trimmed",
+        "target": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f",
+        "targetHandle": "fastq1"
+      },
+      {
+        "id": "xy-edge__759d6899-e632-400f-9b11-6a8b7b6e2042_1fastq2_trimmed-cbd1a1cc-ca62-46da-8713-b0e868a2d44f_1fastq2",
+        "source": "759d6899-e632-400f-9b11-6a8b7b6e2042",
+        "sourceHandle": "fastq2_trimmed",
+        "target": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f",
+        "targetHandle": "fastq2"
+      },
+      {
+        "id": "xy-edge__cbd1a1cc-ca62-46da-8713-b0e868a2d44f_1bam-e3d00582-2a99-4b02-a687-65e556f7aefa_1bam",
+        "source": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f",
+        "sourceHandle": "bam",
+        "target": "e3d00582-2a99-4b02-a687-65e556f7aefa",
+        "targetHandle": "bam"
+      },
+      {
+        "id": "xy-edge__7afe22e2-1e25-4261-b7c7-3f7d7ee52222_1index-cbd1a1cc-ca62-46da-8713-b0e868a2d44f_1index",
+        "source": "7afe22e2-1e25-4261-b7c7-3f7d7ee52222",
+        "sourceHandle": "index",
+        "target": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f",
+        "targetHandle": "index"
+      }
+    ],
+    "nodes": [
+      {
+        "color": "lime",
+        "gather": {
+          "field": "bam",
+          "mode": "list"
+        },
+        "icon": "scissors",
+        "id": "e3d00582-2a99-4b02-a687-65e556f7aefa",
+        "inputs": {
+          "bam": {
+            "type": "BaseInput"
+          }
+        },
+        "name": "joint_calling",
+        "node_id": "e3d00582-2a99-4b02-a687-65e556f7aefa_1",
+        "outputs": {
+          "vcf": {
+            "type": "file"
+          }
+        },
+        "script_id": "e3d00582-2a99-4b02-a687-65e556f7aefa"
+      },
+      {
+        "color": "green",
+        "icon": "scissors",
+        "id": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f",
+        "inputs": {
+          "fastq1": {
+            "label": "fastq1",
+            "required": true,
+            "type": "BaseInput"
+          },
+          "fastq2": {
+            "label": "fastq2",
+            "required": true,
+            "type": "BaseInput"
+          },
+          "index": {
+            "label": "index",
+            "required": true,
+            "type": "BaseInput"
+          }
+        },
+        "name": "bwa",
+        "node_id": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f_1",
+        "outputs": {
+          "bam": {
+            "type": "file"
+          }
+        },
+        "script_id": "cbd1a1cc-ca62-46da-8713-b0e868a2d44f"
+      },
+      {
+        "color": "magenta",
+        "icon": "scissors",
+        "id": "759d6899-e632-400f-9b11-6a8b7b6e2042",
+        "inputs": {
+          "fastq1": {
+            "required": true,
+            "type": "BaseInput"
+          },
+          "fastq2": {
+            "required": true,
+            "type": "BaseInput"
+          }
+        },
+        "name": "fastp",
+        "node_id": "759d6899-e632-400f-9b11-6a8b7b6e2042_1",
+        "outputs": {
+          "fastq1_trimmed": {
+            "type": "file"
+          },
+          "fastq2_trimmed": {
+            "type": "file"
+          }
+        },
+        "scatter": {
+          "field": "reads",
+          "mode": "each"
+        },
+        "script_id": "759d6899-e632-400f-9b11-6a8b7b6e2042"
+      },
+      {
+        "color": "green",
+        "icon": "scissors",
+        "id": "7afe22e2-1e25-4261-b7c7-3f7d7ee52222",
+        "inputs": {
+          "reference_genome": {
+            "label": "Reference Genome Index Path",
+            "required": true,
+            "rules": [
+              {
+                "message": "Please specify the reference genome index path",
+                "required": true
+              }
+            ],
+            "type": "BaseInput"
+          }
+        },
+        "name": "bwa index",
+        "node_id": "7afe22e2-1e25-4261-b7c7-3f7d7ee52222_1",
+        "outputs": {
+          "index": {
+            "type": "file"
+          }
+        },
+        "script_id": "7afe22e2-1e25-4261-b7c7-3f7d7ee52222"
+      }
+    ]
+  },
+  "parse_analysis_result": {
+    "analysis_name": "ssss",
+    "group_field": "group",
+    "groups": [
+      "reads"
+    ],
+    "output_name": "bwa_alignment",
+    "reads": [
+      {
+        "FASTQ_R1": "/data/test2_1.fq",
+        "FASTQ_R2": "/data/test2_2.fq",
+        "ID": "2065805577694482432"
+      },
+      {
+        "FASTQ_R1": "/data/test1_1.fq",
+        "FASTQ_R2": "/data/test1_2.fq",
+        "ID": "2065805403978993664"
+      }
+    ],
+    "reference_genome": "/data/index"
+  }
+}
+`

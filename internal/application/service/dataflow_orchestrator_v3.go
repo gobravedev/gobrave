@@ -266,6 +266,7 @@ func (r *loggingDataflowRuntime) SubmitProcessInstance(ctx context.Context, req 
 type persistentDataflowRuntime struct {
 	repo               interfaces.AnalysisRepository
 	dispatcher         *dagruntime.NodeDispatcher
+	dispatchFn         func(ctx context.Context, analysisNodeID int64) error
 	buildPersistParams func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool)
 	mu                 sync.Mutex
 	inflightDispatches int
@@ -288,12 +289,19 @@ func (r *persistentDataflowRuntime) SubmitProcessInstance(ctx context.Context, r
 			if err != nil {
 				return err
 			}
-			if created && node != nil && r.dispatcher != nil {
+			if created && node != nil {
+				dispatch := r.dispatchFn
+				if dispatch == nil {
+					dispatch = r.dispatcher.Dispatch
+				}
+				if dispatch == nil {
+					return nil
+				}
 				if err := r.markNodeSubmitted(ctx, node); err != nil {
 					return err
 				}
 				r.incrementInflight(node.ID)
-				if err := r.dispatcher.Dispatch(ctx, node.ID); err != nil {
+				if err := dispatch(ctx, node.ID); err != nil {
 					r.decrementInflight(node.ID)
 					if rollbackErr := r.rollbackSubmittedNodeOnDispatchError(ctx, node.ID); rollbackErr != nil {
 						logger.Warnf(ctx,

@@ -243,6 +243,7 @@ type InputOperator struct {
 	inputByChID  map[string]string
 	requiredKeys []string
 	buffers      map[string][]any
+	receivedCnt  map[string]int
 	runtime      DataflowProcessRuntime
 	mu           sync.Mutex
 }
@@ -261,6 +262,7 @@ func newInputOperator(
 		inputByChID:  common.inputByChID,
 		requiredKeys: common.requiredKeys,
 		buffers:      make(map[string][]any, len(common.requiredKeys)),
+		receivedCnt:  make(map[string]int, len(common.requiredKeys)),
 		runtime:      common.runtime,
 	}
 	o.BaseOperator = newBaseOperator(baseOperatorConfig{
@@ -279,11 +281,37 @@ func (o *InputOperator) handleData(ctx context.Context, signal DataflowSignal) e
 	inputKey := o.inputByChID[signal.ChannelID]
 
 	o.buffers[inputKey] = append(o.buffers[inputKey], signal.Value)
+	o.receivedCnt[inputKey]++
 	for o.ready() {
 		inputs := make(map[string]any, len(o.requiredKeys))
+		consumeByKey := make(map[string]bool, len(o.requiredKeys))
+		consumedAny := false
 		for _, key := range o.requiredKeys {
 			queue := o.buffers[key]
-			inputs[key] = queue[0]
+			value, consume := o.pickInputValueLocked(key, queue)
+			inputs[key] = value
+			consumeByKey[key] = consume
+			if consume {
+				consumedAny = true
+			}
+		}
+		if !consumedAny {
+			for _, key := range o.requiredKeys {
+				if len(o.buffers[key]) == 0 {
+					continue
+				}
+				consumeByKey[key] = true
+				consumedAny = true
+			}
+		}
+		for _, key := range o.requiredKeys {
+			if !consumeByKey[key] {
+				continue
+			}
+			queue := o.buffers[key]
+			if len(queue) == 0 {
+				continue
+			}
 			o.buffers[key] = queue[1:]
 		}
 		if o.runtime != nil {
@@ -298,6 +326,38 @@ func (o *InputOperator) handleData(ctx context.Context, signal DataflowSignal) e
 		}
 	}
 	return nil
+}
+
+func (o *InputOperator) pickInputValueLocked(key string, queue []any) (any, bool) {
+	if len(queue) == 0 {
+		return nil, false
+	}
+	// Nextflow-like value semantics: singleton value input in a multi-input join
+	// is reusable across multiple tuples emitted by other inputs.
+	if len(o.requiredKeys) > 1 && len(queue) == 1 && o.receivedCnt[key] == 1 {
+		return queue[0], false
+	}
+	return queue[0], true
+}
+
+func (o *InputOperator) isInputKeyClosed(inputKey string) bool {
+	if o.BaseOperator == nil {
+		return false
+	}
+	o.BaseOperator.mu.Lock()
+	defer o.BaseOperator.mu.Unlock()
+
+	found := false
+	for channelID, key := range o.inputByChID {
+		if key != inputKey {
+			continue
+		}
+		found = true
+		if !o.BaseOperator.inputClosed[channelID] {
+			return false
+		}
+	}
+	return found
 }
 
 func (o *InputOperator) ready() bool {
