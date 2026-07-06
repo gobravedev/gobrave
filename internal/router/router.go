@@ -240,6 +240,7 @@ func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
 	r.GET("/analysis/visualization-node-file/:analysisNodeId", handler.VisualizationNodeFile)
+	r.GET("/analysis/visualization-node-tree/:analysisId", handler.VisualizationNodeTree)
 }
 
 func RegisterRealtimeRoutes(r *gin.RouterGroup, handler *handler.RealtimeHandler) {

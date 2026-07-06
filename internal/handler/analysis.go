@@ -73,6 +73,19 @@ type VisualizationNodeFileResponse struct {
 	ServerStatus string                      `json:"server_status"`
 }
 
+type VisualizationNodeTreeItem struct {
+	ScriptID   string                `json:"script_id"`
+	ScriptName string                `json:"script_name"`
+	Children   []*types.AnalysisNode `json:"children"`
+}
+
+type VisualizationNodeTreeResponse struct {
+	AnalysisID   string                      `json:"analysis_id"`
+	AnalysisName string                      `json:"analysis_name"`
+	RelationID   string                      `json:"relation_id"`
+	Result       []VisualizationNodeTreeItem `json:"result"`
+}
+
 type analysisControllerRequest struct {
 	RequestParam   map[string]interface{} `json:"request_param" binding:"required"`
 	AnalysisNodeID string                 `json:"analysis_node_id"`
@@ -740,6 +753,130 @@ func (h *AnalysisHandler) VisualizationNodeFile(c *gin.Context) {
 		Result:       result,
 		Status:       analysisNode.Status,
 		ServerStatus: analysisNode.ServerStatus,
+	})
+}
+
+// VisualizationNodeTree godoc
+// @Summary      分析节点树可视化
+// @Description  按 workflow dag_definition 的脚本节点分组，返回 analysis nodes 树结构
+// @Tags         分析
+// @Produce      json
+// @Param        analysisId  path      string                                 true  "分析 ID"
+// @Success      200         {object}  handler.VisualizationNodeTreeResponse
+// @Failure      400         {object}  errors.AppError
+// @Failure      401         {object}  errors.AppError
+// @Failure      404         {object}  errors.AppError
+// @Failure      500         {object}  errors.AppError
+// @Security     Bearer
+// @Router       /analysis/visualization-node-tree/{analysisId} [get]
+func (h *AnalysisHandler) VisualizationNodeTree(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	analysisID := strings.TrimSpace(c.Param("analysisId"))
+	if analysisID == "" {
+		c.Error(errors.NewValidationError("analysisId is required"))
+		return
+	}
+
+	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("analysis not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get analysis").WithDetails(err.Error()))
+		return
+	}
+
+	dagDefinition, err := h.workflowService.GetWorkflowVisByWorkflowID(c.Request.Context(), analysisItem.WorkflowID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("workflow not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get workflow visualization").WithDetails(err.Error()))
+		return
+	}
+
+	nodesAny, _ := dagDefinition["nodes"].([]any)
+	scriptOrder := make([]string, 0, len(nodesAny))
+	scriptNames := make(map[string]string)
+	scriptSet := make(map[string]struct{})
+	for _, nodeAny := range nodesAny {
+		node, ok := nodeAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		scriptID := strings.TrimSpace(fmt.Sprintf("%v", node["script_id"]))
+		if scriptID == "" {
+			continue
+		}
+		if _, exists := scriptSet[scriptID]; !exists {
+			scriptSet[scriptID] = struct{}{}
+			scriptOrder = append(scriptOrder, scriptID)
+		}
+
+		scriptName := strings.TrimSpace(fmt.Sprintf("%v", node["name"]))
+		if scriptName == "" || scriptName == "<nil>" {
+			scriptName = strings.TrimSpace(fmt.Sprintf("%v", node["script_name"]))
+		}
+		if scriptName == "" || scriptName == "<nil>" {
+			scriptName = scriptID
+		}
+		scriptNames[scriptID] = scriptName
+	}
+
+	analysisNodes, err := h.analysisService.ListAnalysisNodesByAnalysisID(c.Request.Context(), analysisID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to list analysis nodes").WithDetails(err.Error()))
+		return
+	}
+
+	grouped := make(map[string][]*types.AnalysisNode)
+	for _, node := range analysisNodes {
+		if node == nil {
+			continue
+		}
+		if len(scriptSet) > 0 {
+			if _, ok := scriptSet[node.ScriptID]; !ok {
+				continue
+			}
+		}
+		grouped[node.ScriptID] = append(grouped[node.ScriptID], node)
+		if _, exists := scriptNames[node.ScriptID]; !exists || strings.TrimSpace(scriptNames[node.ScriptID]) == "" {
+			scriptNames[node.ScriptID] = node.ScriptID
+		}
+	}
+
+	result := make([]VisualizationNodeTreeItem, 0)
+	if len(scriptOrder) > 0 {
+		for _, scriptID := range scriptOrder {
+			result = append(result, VisualizationNodeTreeItem{
+				ScriptID:   scriptID,
+				ScriptName: scriptNames[scriptID],
+				Children:   grouped[scriptID],
+			})
+		}
+	} else {
+		for scriptID, children := range grouped {
+			result = append(result, VisualizationNodeTreeItem{
+				ScriptID:   scriptID,
+				ScriptName: scriptNames[scriptID],
+				Children:   children,
+			})
+		}
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].ScriptID < result[j].ScriptID
+		})
+	}
+
+	c.JSON(http.StatusOK, VisualizationNodeTreeResponse{
+		AnalysisID:   analysisItem.AnalysisID,
+		AnalysisName: analysisItem.AnalysisName,
+		RelationID:   analysisItem.WorkflowID,
+		Result:       result,
 	})
 }
 
