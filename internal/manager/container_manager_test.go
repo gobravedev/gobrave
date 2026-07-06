@@ -180,6 +180,9 @@ func (m *mockContainerRepo) PageAppSessionByUserID(ctx context.Context, userID s
 		if query != nil && query.AnalysisNodeID != nil && v.AnalysisNodeID != *query.AnalysisNodeID {
 			continue
 		}
+		if query != nil && query.ProjectID != nil && v.ProjectID != *query.ProjectID {
+			continue
+		}
 		items = append(items, v)
 	}
 	return items, int64(len(items)), nil

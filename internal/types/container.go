@@ -177,6 +177,7 @@ type AppSession struct {
 
 type AppSessionPageQuery struct {
 	AnalysisNodeID *int64 `json:"analysis_node_id,string,omitempty"`
+	ProjectID      *string `json:"project_id,omitempty"`
 }
 
 func (AppSession) TableName() string {

@@ -51,10 +51,12 @@ type appSessionPageRequest struct {
 	types.Pagination
 	Query          *appSessionPageQuery `json:"query"`
 	AnalysisNodeID string               `json:"analysis_node_id"`
+	ProjectID      string               `json:"project_id"`
 }
 
 type appSessionPageQuery struct {
 	AnalysisNodeID string `json:"analysis_node_id"`
+	ProjectID      string `json:"project_id"`
 }
 
 type containerInstancePageRequest struct {
@@ -808,9 +810,22 @@ func buildAppSessionPageQuery(req *appSessionPageRequest) (*types.AppSessionPage
 	if req.Query != nil && strings.TrimSpace(req.Query.AnalysisNodeID) != "" {
 		rawAnalysisNodeID = strings.TrimSpace(req.Query.AnalysisNodeID)
 	}
+	rawProjectID := strings.TrimSpace(req.ProjectID)
+	if req.Query != nil && strings.TrimSpace(req.Query.ProjectID) != "" {
+		rawProjectID = strings.TrimSpace(req.Query.ProjectID)
+	}
+
+	if rawAnalysisNodeID == "" && rawProjectID == "" {
+		return nil, nil
+	}
+
+	query := &types.AppSessionPageQuery{}
+	if rawProjectID != "" {
+		query.ProjectID = &rawProjectID
+	}
 
 	if rawAnalysisNodeID == "" {
-		return nil, nil
+		return query, nil
 	}
 
 	parsedAnalysisNodeID, err := strconv.ParseInt(rawAnalysisNodeID, 10, 64)
@@ -818,9 +833,9 @@ func buildAppSessionPageQuery(req *appSessionPageRequest) (*types.AppSessionPage
 		return nil, errors.NewValidationError("invalid query.analysis_node_id")
 	}
 
-	return &types.AppSessionPageQuery{
-		AnalysisNodeID: &parsedAnalysisNodeID,
-	}, nil
+	query.AnalysisNodeID = &parsedAnalysisNodeID
+
+	return query, nil
 }
 
 // PageContainerInstance godoc

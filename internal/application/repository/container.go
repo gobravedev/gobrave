@@ -187,6 +187,9 @@ func (r *containerRepository) PageAppSessionByUserID(ctx context.Context, userID
 	if query != nil && query.AnalysisNodeID != nil {
 		dbQuery = dbQuery.Where("analysis_node_id = ?", *query.AnalysisNodeID)
 	}
+	if query != nil && query.ProjectID != nil {
+		dbQuery = dbQuery.Where("project_id = ?", *query.ProjectID)
+	}
 	if err := dbQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

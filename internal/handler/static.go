@@ -46,7 +46,27 @@ func RegisterProjectDocsRoute(r *gin.Engine, cfg *config.Config) {
 		}
 
 		info, err := os.Stat(targetPath)
-		if err != nil || info.IsDir() {
+		if err != nil {
+			if os.IsNotExist(err) && relFile == "index.html" {
+				if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0755); mkErr != nil {
+					return "", http.StatusInternalServerError, false
+				}
+
+				defaultHTML := "<!doctype html><html><head><meta charset=\"utf-8\"><title>Docs</title></head><body><h1>Project Docs</h1></body></html>\n"
+				if writeErr := os.WriteFile(targetPath, []byte(defaultHTML), 0644); writeErr != nil {
+					return "", http.StatusInternalServerError, false
+				}
+
+				info, err = os.Stat(targetPath)
+				if err != nil {
+					return "", http.StatusInternalServerError, false
+				}
+			} else {
+				return "", http.StatusNotFound, false
+			}
+		}
+
+		if info.IsDir() {
 			return "", http.StatusNotFound, false
 		}
 
