@@ -720,13 +720,19 @@ func (h *AnalysisHandler) VisualizationNodeFile(c *gin.Context) {
 		return
 	}
 
-	analysisNodeID := c.Param("analysisNodeId")
-	if analysisNodeID == "" {
+	analysisNodeIDParam := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeIDParam == "" {
 		c.Error(errors.NewValidationError("analysisNodeId is required"))
 		return
 	}
 
-	analysisNode, err := h.analysisService.GetAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID)
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDParam, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("analysisNodeId must be a positive integer"))
+		return
+	}
+
+	analysisNode, err := h.analysisService.GetAnalysisNodeByID(c.Request.Context(), analysisNodeID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("analysis node not found"))
