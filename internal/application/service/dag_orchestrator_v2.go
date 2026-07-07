@@ -118,11 +118,14 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 		return nil
 	}
 
+	o.publishDagRuntimeEvent(dagruntime.EventDagStarted, analysisID, nil)
+
 	if err := o.prepareAnalysisForCacheRerun(ctx, analysisID); err != nil {
 		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
 			"job_status": "failed",
 			"updated_at": time.Now().UTC(),
 		})
+		o.publishDagRuntimeEvent(dagruntime.EventDagFailed, analysisID, map[string]any{"reason": err.Error()})
 		return fmt.Errorf("prepare cached analysis rerun failed: %w", err)
 	}
 
@@ -133,6 +136,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 			"job_status": "failed",
 			"updated_at": time.Now().UTC(),
 		})
+		o.publishDagRuntimeEvent(dagruntime.EventDagFailed, analysisID, map[string]any{"reason": err.Error()})
 		return fmt.Errorf("compile runtime dag for dynamic v2 failed: %w", err)
 	}
 
@@ -159,8 +163,10 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 		defer close(heartbeatStop)
 		defer runCancel()
 		finalStatus := "finished"
+		var finalErr error
 		if err := o.runDynamicLoop(runCtx, analysisID, nodeTemplates, edgeRows); err != nil {
 			finalStatus = "failed"
+			finalErr = err
 			logger.Warnf(context.Background(), "[DynamicDagOrchestratorV2] run failed, analysis_id=%s err=%v", analysisID, err)
 		}
 		if o.registry.IsStopping(analysisID) {
@@ -168,6 +174,18 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID 
 			finalStatus = "stopped"
 		}
 		o.registry.MarkFinished(analysisID, finalStatus)
+		if finalStatus == "finished" {
+			o.publishDagRuntimeEvent(dagruntime.EventDagCompleted, analysisID, map[string]any{"status": finalStatus})
+		} else {
+			payload := map[string]any{"status": finalStatus}
+			if finalErr != nil {
+				payload["reason"] = finalErr.Error()
+			}
+			if finalStatus == "stopped" {
+				payload["reason"] = "stopped"
+			}
+			o.publishDagRuntimeEvent(dagruntime.EventDagFailed, analysisID, payload)
+		}
 		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
 			"job_status": finalStatus,
 			"updated_at": time.Now().UTC(),
@@ -889,6 +907,21 @@ func (o *dynamicDagOrchestratorV2) renewRunningLease(analysisID string, stop <-c
 			})
 		}
 	}
+}
+
+func (o *dynamicDagOrchestratorV2) publishDagRuntimeEvent(name, analysisID string, payload map[string]any) {
+	if o.bus == nil {
+		return
+	}
+	evt := dagruntime.RuntimeEvent{
+		Name:       name,
+		AnalysisID: analysisID,
+		OccurredAt: time.Now().UTC(),
+	}
+	if len(payload) > 0 {
+		evt.Payload = payload
+	}
+	o.bus.Publish(evt)
 }
 
 // buildAnalysisEdges converts compiled edge rows into persistence entities.
