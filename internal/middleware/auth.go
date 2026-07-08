@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -246,6 +247,19 @@ func Auth(
 		// }
 
 		// 没有提供任何认证信息
+		prefix := c.GetHeader("X-Forwarded-Prefix")
+		// fmt.Printf("Unauthorized access attempt to %s%s from %s\n", prefix, c.Request.URL.Path, c.ClientIP())
+
+		acceptHeader := strings.ToLower(c.GetHeader("Accept"))
+		if strings.Contains(acceptHeader, "text/html") {
+			request_path := c.Request.URL.Path
+			if prefix != "" {
+				request_path = fmt.Sprintf("%s%s", prefix, c.Request.URL.Path)
+			}
+			c.Redirect(http.StatusFound, fmt.Sprintf("%s/#/login?redirect=%s", prefix, request_path))
+			c.Abort()
+			return
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: missing authentication"})
 		c.Abort()
 	}

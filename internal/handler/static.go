@@ -40,7 +40,7 @@ func RegisterProjectDocsRoute(r *gin.Engine, cfg *config.Config) {
 			relFile = "index.html"
 		}
 
-		targetPath, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data", projectID, "docs", relFile))
+		targetPath, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data", projectID, "docs", "book", relFile))
 		if err != nil {
 			return "", http.StatusBadRequest, false
 		}
@@ -91,5 +91,3 @@ func RegisterProjectDocsRoute(r *gin.Engine, cfg *config.Config) {
 		c.File(targetPath)
 	})
 }
-
-
