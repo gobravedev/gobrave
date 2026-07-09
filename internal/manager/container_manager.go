@@ -172,26 +172,8 @@ func (m *ContainerManager) CreateByTemplate(
 	}
 
 	resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
-	if ownerType == types.ContainerOwnerDagNode && strings.EqualFold(runtimeName, "docker") {
-		if uid := strings.TrimSpace(resolveVars["USERID"]); uid != "" {
-			if gid := strings.TrimSpace(resolveVars["GROUPID"]); gid != "" {
-				spec.User = uid + ":" + gid
-			}
-		}
-
-		logPath := strings.TrimSpace(resolveVars["LOG_PATH"])
-		if logPath == "" {
-			if envLogPath, ok := os.LookupEnv("LOG_PATH"); ok {
-				logPath = strings.TrimSpace(envLogPath)
-			}
-		}
-		applyDagNodeTaskSpec(spec, logPath)
-
-		if strings.TrimSpace(spec.WorkDir) == "" {
-			if workspacePath := strings.TrimSpace(resolveVars["WORKSPACE_PATH"]); workspacePath != "" {
-				spec.WorkDir = workspacePath
-			}
-		}
+	if ownerType == types.ContainerOwnerDagNode {
+		applyDagNodeRuntimeSpec(spec, resolveVars, runtimeName)
 	}
 
 	if m.res != nil {
@@ -955,6 +937,45 @@ func applyDagNodeTaskSpec(spec *types.ContainerSpec, logPath string) {
 
 	spec.Entrypoint = []string{"bash"}
 	spec.Command = []string{"-c", script}
+}
+
+func applyDagNodeRuntimeSpec(spec *types.ContainerSpec, resolveVars map[string]string, runtimeName string) {
+	if spec == nil {
+		return
+	}
+
+	logPath := strings.TrimSpace(resolveVars["LOG_PATH"])
+	if logPath == "" {
+		if envLogPath, ok := os.LookupEnv("LOG_PATH"); ok {
+			logPath = strings.TrimSpace(envLogPath)
+		}
+	}
+	applyDagNodeTaskSpec(spec, logPath)
+
+	if strings.TrimSpace(spec.WorkDir) == "" {
+		if workspacePath := strings.TrimSpace(resolveVars["WORKSPACE_PATH"]); workspacePath != "" {
+			spec.WorkDir = workspacePath
+		}
+	}
+
+	uid := strings.TrimSpace(resolveVars["USERID"])
+	if uid == "" {
+		return
+	}
+	gid := strings.TrimSpace(resolveVars["GROUPID"])
+
+	switch strings.ToLower(strings.TrimSpace(runtimeName)) {
+	case "docker":
+		if gid != "" {
+			spec.User = uid + ":" + gid
+			return
+		}
+		spec.User = uid
+	case "k8s", "k3s", "kubernetes":
+		// Kubernetes runtime currently maps ContainerSpec.User to runAsUser,
+		// so set a plain uid value here.
+		spec.User = uid
+	}
 }
 
 func shellSingleQuote(text string) string {
