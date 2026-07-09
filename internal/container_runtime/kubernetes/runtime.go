@@ -83,6 +83,25 @@ func (k *KubernetesRuntime) Name() string {
 	return k.name
 }
 
+// EnsureImage satisfies containerruntime.RuntimeImageManager.
+// For Kubernetes runtimes, image pull is performed by kubelet during pod scheduling.
+// This method validates input and enforces pull-policy constraints that can be checked early.
+func (k *KubernetesRuntime) EnsureImage(_ context.Context, imageName string, pullPolicy string) error {
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return errors.New("image is required")
+	}
+
+	switch normalizePullPolicy(pullPolicy) {
+	case types.PullPolicyAlways, types.PullPolicyIfNotPresent:
+		return nil
+	case types.PullPolicyNever:
+		return fmt.Errorf("pull policy %s is not supported for kubernetes runtime preflight; kubelet-local image cache cannot be verified centrally", types.PullPolicyNever)
+	default:
+		return fmt.Errorf("unsupported pull policy: %s", pullPolicy)
+	}
+}
+
 func (k *KubernetesRuntime) Create(ctx context.Context, spec *types.ContainerSpec) (string, error) {
 	if spec == nil {
 		return "", errors.New("container spec is nil")
@@ -694,4 +713,17 @@ func buildRESTConfig(cfg KubernetesRuntimeConfig) (*rest.Config, error) {
 		return nil, fmt.Errorf("load default kubeconfig: %w", err)
 	}
 	return restCfg, nil
+}
+
+func normalizePullPolicy(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case strings.ToLower(types.PullPolicyAlways):
+		return types.PullPolicyAlways
+	case strings.ToLower(types.PullPolicyNever):
+		return types.PullPolicyNever
+	case "", strings.ToLower(types.PullPolicyIfNotPresent):
+		return types.PullPolicyIfNotPresent
+	default:
+		return strings.TrimSpace(policy)
+	}
 }

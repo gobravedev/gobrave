@@ -654,7 +654,25 @@ func (m *ContainerManager) getRuntimeByName(name string) (containerruntime.Runti
 func (m *ContainerManager) resolveRuntimeName(runtimeName string) string {
 	runtimeName = strings.TrimSpace(runtimeName)
 	if runtimeName != "" {
-		return runtimeName
+		normalized := strings.ToLower(runtimeName)
+		switch normalized {
+		case "kubernetes":
+			normalized = "k8s"
+		}
+
+		if m.reg != nil {
+			if m.reg.Get(normalized) != nil {
+				return normalized
+			}
+			if normalized == "k8s" && m.reg.Get("k3s") != nil {
+				return "k3s"
+			}
+			if normalized == "k3s" && m.reg.Get("k8s") != nil {
+				return "k8s"
+			}
+		}
+
+		return normalized
 	}
 
 	if m.cfg != nil {

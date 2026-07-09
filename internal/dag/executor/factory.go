@@ -27,9 +27,13 @@ func NewFactory(deps FactoryDeps) *Factory {
 			deps.WorkflowRepository,
 			deps.ContainerManager,
 		),
-		nextflow:   NewNextflowExecutor(local),
-		local:      local,
-		kubernetes: NewKubernetesExecutor(local),
+		nextflow: NewNextflowExecutor(local),
+		local:    local,
+		kubernetes: NewKubernetesExecutor(
+			local,
+			deps.WorkflowRepository,
+			deps.ContainerManager,
+		),
 	}
 }
 
