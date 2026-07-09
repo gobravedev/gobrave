@@ -157,7 +157,7 @@ func (s *containerService) createAppSessionByTemplate(ctx context.Context, userI
 		return nil, err
 	}
 
-	inst, err := s.containerMgr.CreateByTemplate(ctx, "docker", containerTemplateID, types.ContainerOwnerAppSession, session.ID, name)
+	inst, err := s.containerMgr.CreateByTemplate(ctx, "", containerTemplateID, types.ContainerOwnerAppSession, session.ID, name)
 	if err != nil {
 		session.Status = "FAILED"
 		_ = s.containerRepo.UpdateAppSession(ctx, session)

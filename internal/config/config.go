@@ -34,12 +34,20 @@ type RealtimeConfig struct {
 }
 
 type ContainerConfig struct {
-	RefreshImageStatusOnStart           bool   `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
-	RecoverRunningDagOnStart            bool   `yaml:"recover_running_dag_on_start" json:"recover_running_dag_on_start"`
-	CleanupDagNodeContainersBeforeStart bool   `yaml:"cleanup_dag_node_containers_before_start" json:"cleanup_dag_node_containers_before_start"`
-	DeleteContainerOnNodeSuccess        bool   `yaml:"delete_container_on_node_success" json:"delete_container_on_node_success"`
-	DagNodeCleanupOnFailed              string `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
-	DagNodeCleanupOnDagFinished         string `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
+	Runtime                             string                   `yaml:"runtime" json:"runtime"`
+	Kubernetes                          *KubernetesRuntimeConfig `yaml:"kubernetes" json:"kubernetes"`
+	RefreshImageStatusOnStart           bool                     `yaml:"refresh_image_status_on_start" json:"refresh_image_status_on_start"`
+	RecoverRunningDagOnStart            bool                     `yaml:"recover_running_dag_on_start" json:"recover_running_dag_on_start"`
+	CleanupDagNodeContainersBeforeStart bool                     `yaml:"cleanup_dag_node_containers_before_start" json:"cleanup_dag_node_containers_before_start"`
+	DeleteContainerOnNodeSuccess        bool                     `yaml:"delete_container_on_node_success" json:"delete_container_on_node_success"`
+	DagNodeCleanupOnFailed              string                   `yaml:"dag_node_cleanup_on_failed" json:"dag_node_cleanup_on_failed"`
+	DagNodeCleanupOnDagFinished         string                   `yaml:"dag_node_cleanup_on_dag_finished" json:"dag_node_cleanup_on_dag_finished"`
+}
+
+type KubernetesRuntimeConfig struct {
+	Namespace  string `yaml:"namespace" json:"namespace"`
+	Kubeconfig string `yaml:"kubeconfig" json:"kubeconfig"`
+	InCluster  bool   `yaml:"in_cluster" json:"in_cluster"`
 }
 
 type StorageConfig struct {
@@ -54,9 +62,10 @@ type ProxyConfig struct {
 }
 
 type RouteConfig struct {
-	Registry   string              `yaml:"registry"     json:"registry"`
-	AppsPrefix string              `yaml:"apps_prefix"  json:"apps_prefix"`
-	Traefik    *TraefikRouteConfig `yaml:"traefik"      json:"traefik"`
+	Registry   string                 `yaml:"registry"     json:"registry"`
+	AppsPrefix string                 `yaml:"apps_prefix"  json:"apps_prefix"`
+	Traefik    *TraefikRouteConfig    `yaml:"traefik"      json:"traefik"`
+	K8sIngress *K8sIngressRouteConfig `yaml:"k8s_ingress"  json:"k8s_ingress"`
 }
 
 const defaultAppsPrefix = "/apps"
@@ -69,6 +78,16 @@ type TraefikRouteConfig struct {
 	AuthToken     string `yaml:"auth_token"      json:"auth_token"`
 	TimeoutSecond int    `yaml:"timeout_second"  json:"timeout_second"`
 	FilePath      string `yaml:"file_path"       json:"file_path"`
+}
+
+type K8sIngressRouteConfig struct {
+	Namespace        string            `yaml:"namespace"          json:"namespace"`
+	Kubeconfig       string            `yaml:"kubeconfig"         json:"kubeconfig"`
+	InCluster        bool              `yaml:"in_cluster"         json:"in_cluster"`
+	IngressClassName string            `yaml:"ingress_class_name" json:"ingress_class_name"`
+	Host             string            `yaml:"host"               json:"host"`
+	PathType         string            `yaml:"path_type"          json:"path_type"`
+	Annotations      map[string]string `yaml:"annotations"        json:"annotations"`
 }
 
 // ServerConfig 服务器配置
@@ -167,6 +186,15 @@ func LoadConfig() (*Config, error) {
 				TimeoutSecond: 5,
 				FilePath:      "",
 			},
+			K8sIngress: &K8sIngressRouteConfig{
+				Namespace:        "default",
+				Kubeconfig:       "",
+				InCluster:        false,
+				IngressClassName: "",
+				Host:             "",
+				PathType:         "Prefix",
+				Annotations:      map[string]string{},
+			},
 		},
 		Storage: &StorageConfig{
 			ImageDir: "",
@@ -179,6 +207,8 @@ func LoadConfig() (*Config, error) {
 			AckMaxRetries:         3,
 		},
 		Container: &ContainerConfig{
+			Runtime:                             "docker",
+			Kubernetes:                          &KubernetesRuntimeConfig{Namespace: "default"},
 			RefreshImageStatusOnStart:           true,
 			RecoverRunningDagOnStart:            true,
 			CleanupDagNodeContainersBeforeStart: true,
@@ -226,6 +256,8 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.Container == nil {
 		cfg.Container = &ContainerConfig{
+			Runtime:                             "docker",
+			Kubernetes:                          &KubernetesRuntimeConfig{Namespace: "default"},
 			RefreshImageStatusOnStart:           true,
 			RecoverRunningDagOnStart:            true,
 			CleanupDagNodeContainersBeforeStart: true,
@@ -234,6 +266,14 @@ func LoadConfig() (*Config, error) {
 			DagNodeCleanupOnDagFinished:         "delete",
 		}
 	}
+	cfg.Container.Runtime = normalizeContainerRuntime(cfg.Container.Runtime)
+	if cfg.Container.Kubernetes == nil {
+		cfg.Container.Kubernetes = &KubernetesRuntimeConfig{Namespace: "default"}
+	}
+	if strings.TrimSpace(cfg.Container.Kubernetes.Namespace) == "" {
+		cfg.Container.Kubernetes.Namespace = "default"
+	}
+	cfg.Container.Kubernetes.Kubeconfig = strings.TrimSpace(cfg.Container.Kubernetes.Kubeconfig)
 	if cfg.Realtime == nil {
 		cfg.Realtime = &RealtimeConfig{
 			Transport:             "ws",
@@ -278,6 +318,19 @@ func LoadConfig() (*Config, error) {
 	if strings.TrimSpace(cfg.Route.Traefik.DeletePath) == "" {
 		cfg.Route.Traefik.DeletePath = "/api/providers/http/routes/{route_key}"
 	}
+	if cfg.Route.K8sIngress == nil {
+		cfg.Route.K8sIngress = &K8sIngressRouteConfig{}
+	}
+	if strings.TrimSpace(cfg.Route.K8sIngress.Namespace) == "" {
+		cfg.Route.K8sIngress.Namespace = "default"
+	}
+	cfg.Route.K8sIngress.Kubeconfig = strings.TrimSpace(cfg.Route.K8sIngress.Kubeconfig)
+	cfg.Route.K8sIngress.IngressClassName = strings.TrimSpace(cfg.Route.K8sIngress.IngressClassName)
+	cfg.Route.K8sIngress.Host = strings.TrimSpace(cfg.Route.K8sIngress.Host)
+	cfg.Route.K8sIngress.PathType = normalizeIngressPathType(cfg.Route.K8sIngress.PathType)
+	if cfg.Route.K8sIngress.Annotations == nil {
+		cfg.Route.K8sIngress.Annotations = map[string]string{}
+	}
 
 	TENANT_AES_KEY := cfg.Tenant.AesKey
 	os.Setenv("TENANT_AES_KEY", TENANT_AES_KEY)
@@ -290,6 +343,13 @@ func ResolveAppsPathPrefix(cfg *Config) string {
 		return defaultAppsPrefix
 	}
 	return normalizePathPrefix(cfg.Route.AppsPrefix, defaultAppsPrefix)
+}
+
+func ResolveContainerRuntime(cfg *Config) string {
+	if cfg == nil || cfg.Container == nil {
+		return "docker"
+	}
+	return normalizeContainerRuntime(cfg.Container.Runtime)
 }
 
 func normalizePathPrefix(value, fallback string) string {
@@ -314,6 +374,35 @@ func normalizeContainerCleanupPolicy(value string, fallback string) string {
 		return v
 	default:
 		return fallback
+	}
+}
+
+func normalizeContainerRuntime(value string) string {
+	v := strings.TrimSpace(strings.ToLower(value))
+	switch v {
+	case "", "docker":
+		return "docker"
+	case "k8s", "kubernetes":
+		return "k8s"
+	case "k3s":
+		return "k3s"
+	default:
+		return "docker"
+	}
+}
+
+func normalizeIngressPathType(value string) string {
+	v := strings.TrimSpace(strings.ToLower(value))
+	switch v {
+	case "exact":
+		return "Exact"
+	case "prefix", "", "implementation-specific", "implementationspecific":
+		if v == "implementation-specific" || v == "implementationspecific" {
+			return "ImplementationSpecific"
+		}
+		return "Prefix"
+	default:
+		return "Prefix"
 	}
 }
 

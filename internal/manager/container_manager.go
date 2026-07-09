@@ -82,6 +82,8 @@ func (m *ContainerManager) CreateByTemplate(
 	ownerID int64,
 	name string,
 ) (*types.ContainerInstance, error) {
+	runtimeName = m.resolveRuntimeName(runtimeName)
+
 	tpl, err := m.repo.GetContainerTemplateByID(ctx, templateID)
 	if err != nil {
 		return nil, err
@@ -144,17 +146,29 @@ func (m *ContainerManager) CreateByTemplate(
 			Mode:   "rw",
 		})
 	}
-	
-
 
 	spec := &types.ContainerSpec{
-		Image:   img.FullName,
-		Command: parseCommand(tpl.Command),
-		Env:     parseEnv(tpl.Env),
-		Volumes: volumes,
-		CPU:     tpl.CPU,
-		Memory:  tpl.Memory,
-		WorkDir: tpl.WorkDir,
+		Image:       img.FullName,
+		Command:     parseCommand(tpl.Command),
+		Env:         parseEnv(tpl.Env),
+		Volumes:     volumes,
+		CPU:         tpl.CPU,
+		Memory:      tpl.Memory,
+		WorkDir:     tpl.WorkDir,
+		RuntimeName: m.buildRuntimeResourceName(ownerType, inst.ID, name),
+		ExposedPort: tpl.Port,
+		Labels: map[string]string{
+			"gobrave-owner-type":  string(ownerType),
+			"gobrave-owner-id":    strconv.FormatInt(ownerID, 10),
+			"gobrave-instance-id": strconv.FormatInt(inst.ID, 10),
+		},
+	}
+	if ownerType == types.ContainerOwnerAppSession {
+		spec.WorkloadKind = "deployment"
+		spec.ExposeService = tpl.Port > 0
+	} else {
+		spec.WorkloadKind = "job"
+		spec.ExposeService = false
 	}
 
 	resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
@@ -637,6 +651,27 @@ func (m *ContainerManager) getRuntimeByName(name string) (containerruntime.Runti
 	return rt, nil
 }
 
+func (m *ContainerManager) resolveRuntimeName(runtimeName string) string {
+	runtimeName = strings.TrimSpace(runtimeName)
+	if runtimeName != "" {
+		return runtimeName
+	}
+
+	if m.cfg != nil {
+		resolved := config.ResolveContainerRuntime(m.cfg)
+		if strings.TrimSpace(resolved) != "" {
+			return resolved
+		}
+	}
+
+	runtimes := m.reg.List()
+	if len(runtimes) == 1 {
+		return runtimes[0].Name()
+	}
+
+	return "docker"
+}
+
 func (m *ContainerManager) getRuntimeByInstance(inst *types.ContainerInstance) (containerruntime.Runtime, error) {
 	if inst == nil {
 		return nil, errors.New("container instance is nil")
@@ -910,6 +945,60 @@ func shellSingleQuote(text string) string {
 		value = "./run.log"
 	}
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func (m *ContainerManager) buildRuntimeResourceName(ownerType types.ContainerOwnerType, instanceID int64, fallbackName string) string {
+	prefix := "workload"
+	switch ownerType {
+	case types.ContainerOwnerAppSession:
+		prefix = "app-session"
+	case types.ContainerOwnerDagNode:
+		prefix = "dag-node"
+	case types.ContainerOwnerService:
+		prefix = "service"
+	}
+
+	name := strings.TrimSpace(fallbackName)
+	if name != "" {
+		name = sanitizeKubernetesResourceName(name)
+	}
+	if name == "" {
+		name = prefix
+	}
+
+	if instanceID > 0 {
+		return fmt.Sprintf("%s-%d", name, instanceID)
+	}
+	return name
+}
+
+func sanitizeKubernetesResourceName(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return ""
+	}
+
+	b := strings.Builder{}
+	b.Grow(len(raw))
+	lastDash := false
+	for _, r := range raw {
+		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if isAlphaNum {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	value := strings.Trim(b.String(), "-")
+	if len(value) > 50 {
+		value = strings.Trim(value[:50], "-")
+	}
+	return value
 }
 
 func (m *ContainerManager) syncInstanceIPAddress(ctx context.Context, rt containerruntime.Runtime, inst *types.ContainerInstance) {

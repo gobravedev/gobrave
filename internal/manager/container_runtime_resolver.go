@@ -85,6 +85,12 @@ func cloneContainerSpec(spec *types.ContainerSpec) *types.ContainerSpec {
 			cloned.Env[k] = v
 		}
 	}
+	if spec.Labels != nil {
+		cloned.Labels = make(map[string]string, len(spec.Labels))
+		for k, v := range spec.Labels {
+			cloned.Labels[k] = v
+		}
+	}
 	if spec.Volumes != nil {
 		cloned.Volumes = append([]types.ContainerVolume(nil), spec.Volumes...)
 	}

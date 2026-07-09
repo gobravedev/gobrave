@@ -176,7 +176,7 @@ type AppSession struct {
 }
 
 type AppSessionPageQuery struct {
-	AnalysisNodeID *int64 `json:"analysis_node_id,string,omitempty"`
+	AnalysisNodeID *int64  `json:"analysis_node_id,string,omitempty"`
 	ProjectID      *string `json:"project_id,omitempty"`
 }
 
@@ -301,11 +301,17 @@ type ContainerSpec struct {
 	Env        map[string]string
 	Volumes    []ContainerVolume
 	User       string
+	Labels     map[string]string
 
 	CPU    float64
 	Memory int64
 
-	WorkDir string
+	WorkDir          string
+	RuntimeName      string
+	RuntimeNamespace string
+	WorkloadKind     string
+	ExposedPort      int
+	ExposeService    bool
 }
 
 type ContainerVolume struct {

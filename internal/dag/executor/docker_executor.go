@@ -53,7 +53,7 @@ func (e *DockerExecutor) Execute(ctx context.Context, node *types.AnalysisNode) 
 	instanceName := fmt.Sprintf("dag-node-%s-%s", node.AnalysisID, node.NodeID)
 	inst, err := e.containerMgr.CreateByTemplate(
 		ctx,
-		"docker",
+		"",
 		scriptItem.ContainerTemplateID,
 		types.ContainerOwnerDagNode,
 		int64(node.ID),

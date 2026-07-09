@@ -26,7 +26,7 @@ proxy:
   onlyoffice: http://localhost:8080
 
 route:
-  # gateway | traefik
+  # gateway | traefik | k8s-ingress
   registry: gateway
   # analysis app reverse proxy prefix
   apps_prefix: /c/analysis/apps
@@ -42,6 +42,16 @@ route:
     timeout_second: 5
     # when provider=file, write dynamic config to this path
     # file_path: ./traefik/dynamic/routes.yaml
+  k8s_ingress:
+    namespace: default
+    kubeconfig: ""
+    in_cluster: false
+    ingress_class_name: traefik
+    # 留空表示不限制 Host，仅按 PathPrefix 路由
+    host: ""
+    # Prefix | Exact | ImplementationSpecific
+    path_type: Prefix
+    annotations: {}
 
 storage:
   # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。
@@ -59,6 +69,14 @@ realtime:
   ack_max_retries: 3
 
 container:
+  # docker | k8s | k3s
+  runtime: docker
+  kubernetes:
+    namespace: default
+    # 留空时使用 KUBECONFIG 或 ~/.kube/config
+    kubeconfig: ""
+    # 在集群内运行时可设为 true，使用 in-cluster 配置
+    in_cluster: false
   # 服务启动时是否异步刷新 ContainerImage 状态。
   # true: 启动 goroutine 刷新镜像状态；false: 跳过启动刷新。
   refresh_image_status_on_start: true

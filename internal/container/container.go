@@ -19,6 +19,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/config"
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	dockerruntime "github.com/gobravedev/gobrave/internal/container_runtime/docker"
+	kubernetesruntime "github.com/gobravedev/gobrave/internal/container_runtime/kubernetes"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/handler"
 	"github.com/gobravedev/gobrave/internal/logger"
@@ -65,9 +66,32 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(initDatabase))
 	must(container.Provide(func() event.Bus { return event.NewMemoryBus() }))
 	must(container.Provide(containerruntime.NewRegistry))
-	must(container.Invoke(func(reg *containerruntime.Registry) {
-		rt := dockerruntime.NewDockerRuntime()
-		reg.Register(rt.Name(), rt)
+	must(container.Invoke(func(cfg *config.Config, reg *containerruntime.Registry) error {
+		switch config.ResolveContainerRuntime(cfg) {
+		case "docker":
+			rt := dockerruntime.NewDockerRuntime()
+			reg.Register(rt.Name(), rt)
+			return nil
+		case "k8s", "k3s":
+			kcfg := &config.KubernetesRuntimeConfig{Namespace: "default"}
+			if cfg != nil && cfg.Container != nil && cfg.Container.Kubernetes != nil {
+				kcfg = cfg.Container.Kubernetes
+			}
+
+			rt, err := kubernetesruntime.NewKubernetesRuntime(kubernetesruntime.KubernetesRuntimeConfig{
+				RuntimeName: config.ResolveContainerRuntime(cfg),
+				Namespace:   kcfg.Namespace,
+				Kubeconfig:  kcfg.Kubeconfig,
+				InCluster:   kcfg.InCluster,
+			})
+			if err != nil {
+				return err
+			}
+			reg.Register(rt.Name(), rt)
+			return nil
+		default:
+			return fmt.Errorf("unsupported container runtime: %s", config.ResolveContainerRuntime(cfg))
+		}
 	}))
 
 	logger.Debugf(ctx, "[Container] Registering timeline repository...")
@@ -116,6 +140,44 @@ func BuildContainer(container *dig.Container) *dig.Container {
 				AuthToken:  traefikCfg.AuthToken,
 				Timeout:    time.Duration(traefikCfg.TimeoutSecond) * time.Second,
 				FilePath:   traefikCfg.FilePath,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return reg, nil
+		case "k8s-ingress", "k8s_ingress", "k8singress":
+			ingressCfg := cfg.Route.K8sIngress
+			if ingressCfg == nil {
+				ingressCfg = &config.K8sIngressRouteConfig{}
+			}
+
+			namespace := strings.TrimSpace(ingressCfg.Namespace)
+			if namespace == "" && cfg.Container != nil && cfg.Container.Kubernetes != nil {
+				namespace = strings.TrimSpace(cfg.Container.Kubernetes.Namespace)
+			}
+			if namespace == "" {
+				namespace = "default"
+			}
+
+			kubeconfig := strings.TrimSpace(ingressCfg.Kubeconfig)
+			inCluster := ingressCfg.InCluster
+			if cfg.Container != nil && cfg.Container.Kubernetes != nil {
+				if kubeconfig == "" {
+					kubeconfig = strings.TrimSpace(cfg.Container.Kubernetes.Kubeconfig)
+				}
+				if !inCluster {
+					inCluster = cfg.Container.Kubernetes.InCluster
+				}
+			}
+
+			reg, err := route.NewK8sIngressRegistry(route.K8sIngressRegistryConfig{
+				Namespace:        namespace,
+				Kubeconfig:       kubeconfig,
+				InCluster:        inCluster,
+				IngressClassName: ingressCfg.IngressClassName,
+				Host:             ingressCfg.Host,
+				PathType:         ingressCfg.PathType,
+				Annotations:      ingressCfg.Annotations,
 			})
 			if err != nil {
 				return nil, err
