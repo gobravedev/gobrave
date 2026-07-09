@@ -1,0 +1,96 @@
+server:
+  port: 8084
+database:
+  driver: mysql
+  # driver: sqlite
+  host: localhost
+  port: 53306
+  user: root
+  password: "123456"
+  name: brave
+
+# ingest:
+#   enabled: true
+#   fetch_interval_sec: 300
+#   http_timeout_sec: 15
+#   fetch_workers: 1
+#   parser_grpc_addr: 127.0.0.1:50051
+#   parser_grpc_insecure: true
+#   parser_grpc_timeout_sec: 8
+#   parser_dispatch_batch_size: 100
+#   parser_callback_secret: ""
+
+proxy:
+  brave_api: http://localhost:5000
+  container: http://localhost:80
+  onlyoffice: http://localhost:8080
+
+route:
+  # gateway | traefik | k8s-ingress
+  registry: k8s-ingress
+  # analysis app reverse proxy prefix
+  apps_prefix: /c/analysis/apps
+  traefik:
+      # api | file
+    provider: file
+    base_url: http://localhost:8087
+    upsert_path: /api/providers/http/routes/{route_key}
+    delete_path: /api/providers/http/routes/{route_key}
+    auth_token: ""
+    timeout_second: 5
+    file_path: ./traefik/dynamic/routes.yaml
+  k8s_ingress:
+    namespace: default
+    kubeconfig: "/home/admin/.kube/config"
+    in_cluster: false
+    ingress_class_name: traefik
+    host: ""
+    path_type: Prefix
+    annotations: {}
+
+storage:
+  # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。
+  # 留空时默认使用“可执行文件所在目录/images”。
+  image_dir: /home/admin/workspace/go-project/gobrave/images
+  base_dir: /home/admin/.brave
+
+realtime:
+  transport: ws
+  max_connections_per_user: 2
+  ack_timeout_seconds: 10
+  ack_max_retries: 3
+
+
+container:
+  # docker | k8s | k3s
+  runtime: k8s
+  kubernetes:
+    namespace: default
+    kubeconfig: "/home/admin/.kube/config"
+    in_cluster: false
+  # 服务启动时是否异步刷新 ContainerImage 状态。
+  # true: 启动 goroutine 刷新镜像状态；false: 跳过启动刷新。
+  refresh_image_status_on_start: true
+  # 服务启动时是否自动恢复 job_status=running 的 analysis DAG。
+  # true: 扫描并尝试恢复；false: 不自动恢复。
+  recover_running_dag_on_start: true
+  # DAG 启动前是否按 analysis_id 删除全部 owner_type=dag_node 的容器实例（包含运行中和失败残留）。
+  # true: 启动前先清理，避免冗余 container instance；false: 跳过此步骤。
+  cleanup_dag_node_containers_before_start: true
+  # DAG 节点容器正常退出（exit_code=0）后是否立即删除 docker 和 container instance。
+  # true: 节点完成后立刻删除；false: 不立即删除，交给 DAG 结束阶段策略处理。
+  delete_container_on_node_success: true
+  # DAG 节点失败时，是否自动回收 owner_type=dag_node 的容器实例。
+  # 可选: none | stop | delete
+  dag_node_cleanup_on_failed: stop
+  # DAG 流程结束（finished/failed/timeout）时，是否自动回收 owner_type=dag_node 的容器实例。
+  # 可选: none | stop | delete
+  dag_node_cleanup_on_dag_finished: delete
+  
+tenant:
+  # default_tenant_id: "default"
+  # default_tenant_name: "Default Tenant"
+  # default_tenant_description: "This is the default tenant."
+  # api_key_prefix: "sk-"
+  # 16、24 或 32
+  aes_key: "xxxxxxxxxxxxxxxx"
