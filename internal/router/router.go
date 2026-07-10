@@ -33,6 +33,7 @@ type RouterParams struct {
 	ContainerHandler *handler.ContainerHandler
 	AnalysisHandler  *handler.AnalysisHandler
 	WorkflowHandler  *handler.WorkflowHandler
+	SettingHandler   *handler.SettingHandler
 	SheetHandler     *handler.SheetHandler
 	UploadHandler    *handler.UploadHandler
 	ProxyHandler     *handler.ProxyHandler
@@ -89,6 +90,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterContainerRoutes(v1, params.ContainerHandler)
 		RegisterAnalysisRoutes(v1, params.AnalysisHandler)
 		RegisterWorkflowRoutes(v1, params.WorkflowHandler)
+		RegisterSettingRoutes(v1, params.SettingHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
 		RegisterRealtimeRoutes(v1, params.RealtimeHandler)
 	}
@@ -226,6 +228,10 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
 	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
 	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
+}
+
+func RegisterSettingRoutes(r *gin.RouterGroup, handler *handler.SettingHandler) {
+	r.GET("/setting/get-setting", handler.GetSetting)
 }
 
 func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
