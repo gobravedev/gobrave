@@ -594,10 +594,117 @@ func buildPodSpec(spec *types.ContainerSpec) corev1.PodSpec {
 		container.Ports = []corev1.ContainerPort{{ContainerPort: int32(spec.ExposedPort)}}
 	}
 
+	affinity := buildNodeAffinity(spec.SchedulingConstraint)
+
 	return corev1.PodSpec{
 		Containers: []corev1.Container{container},
 		Volumes:    volumes,
+		Affinity:   affinity,
 	}
+}
+
+func buildNodeAffinity(selector *types.ContainerSchedulingSelector) *corev1.Affinity {
+	if selector == nil || len(selector.Constraints) == 0 {
+		return nil
+	}
+
+	requirements := make([]corev1.NodeSelectorRequirement, 0, len(selector.Constraints))
+	for _, rawConstraint := range selector.Constraints {
+		if !strings.EqualFold(strings.TrimSpace(rawConstraint.Type), "node") {
+			continue
+		}
+
+		key := normalizeNodeConstraintKey(rawConstraint.Key)
+		op, ok := toNodeSelectorOperator(rawConstraint.Operator)
+		if !ok || key == "" {
+			continue
+		}
+
+		values := normalizeConstraintValues(rawConstraint.Values)
+		if nodeSelectorOperatorNeedsValues(op) && len(values) == 0 {
+			continue
+		}
+		if !nodeSelectorOperatorNeedsValues(op) {
+			values = nil
+		}
+
+		requirements = append(requirements, corev1.NodeSelectorRequirement{
+			Key:      key,
+			Operator: op,
+			Values:   values,
+		})
+	}
+
+	if len(requirements) == 0 {
+		return nil
+	}
+
+	return &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+					MatchExpressions: requirements,
+				}},
+			},
+		},
+	}
+}
+
+func normalizeNodeConstraintKey(raw string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	if strings.EqualFold(key, "hostname") {
+		return corev1.LabelHostname
+	}
+	return key
+}
+
+func toNodeSelectorOperator(raw string) (corev1.NodeSelectorOperator, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "in":
+		return corev1.NodeSelectorOpIn, true
+	case "notin":
+		return corev1.NodeSelectorOpNotIn, true
+	case "exists":
+		return corev1.NodeSelectorOpExists, true
+	case "doesnotexist":
+		return corev1.NodeSelectorOpDoesNotExist, true
+	case "gt":
+		return corev1.NodeSelectorOpGt, true
+	case "lt":
+		return corev1.NodeSelectorOpLt, true
+	default:
+		return "", false
+	}
+}
+
+func nodeSelectorOperatorNeedsValues(op corev1.NodeSelectorOperator) bool {
+	return op == corev1.NodeSelectorOpIn || op == corev1.NodeSelectorOpNotIn || op == corev1.NodeSelectorOpGt || op == corev1.NodeSelectorOpLt
+}
+
+func normalizeConstraintValues(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func buildPodVolumes(bindings []types.ContainerVolume) ([]corev1.VolumeMount, []corev1.Volume) {

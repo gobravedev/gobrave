@@ -2,6 +2,21 @@
 swag init -g ./cmd/server/main.go  -o ./docs --parseDependency --parseInternal
 
 ```
+kubectl get node -L kubernetes.io/hostname
+```
+{
+    "constraints": [
+        {
+            "type": "node",
+            "key": "hostname",
+            "operator": "In",
+            "values": [
+                "ld0davo3ht3wb6w"
+            ]
+        }
+    ]
+}
+```
 
 ```
       location /c/analysis/ {

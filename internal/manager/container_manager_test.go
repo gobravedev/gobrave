@@ -756,6 +756,53 @@ func TestContainerManager_CreateByTemplate_DagNodeUsesTaskCommand(t *testing.T) 
 	}
 }
 
+func TestContainerManager_CreateByTemplate_ParsesSchedulingConstraint(t *testing.T) {
+	ctx := context.Background()
+
+	repo := newMockContainerRepo()
+	repo.images[1] = &types.ContainerImage{ID: 1, FullName: "docker.io/library/busybox:latest"}
+	repo.templates[10] = &types.ContainerTemplate{
+		ID:      10,
+		ImageID: 1,
+		Command: "echo ok",
+		SchedulingConstraint: datatypes.JSON([]byte(`{
+			"constraints": [
+				{"type":"node","key":"hostname","operator":"In","values":["worker01","worker02"]},
+				{"type":"resource","key":"gpu","operator":"Exists"}
+			]
+		}`)),
+	}
+
+	rt := &dockerMockRuntime{runtimeID: "docker-abc-node-selector"}
+	mgr := newTestManager(repo, rt)
+
+	if _, err := mgr.CreateByTemplate(ctx, "docker", 10, types.ContainerOwnerAppSession, 1001, "demo"); err != nil {
+		t.Fatalf("CreateByTemplate failed: %v", err)
+	}
+
+	if rt.lastSpec == nil {
+		t.Fatalf("runtime create spec was not captured")
+	}
+	if rt.lastSpec.SchedulingConstraint == nil {
+		t.Fatalf("expected scheduling constraint to be parsed")
+	}
+	if len(rt.lastSpec.SchedulingConstraint.Constraints) != 2 {
+		t.Fatalf("expected 2 constraints, got %d", len(rt.lastSpec.SchedulingConstraint.Constraints))
+	}
+	if got := rt.lastSpec.SchedulingConstraint.Constraints[0].Type; got != "node" {
+		t.Fatalf("expected first constraint type node, got %q", got)
+	}
+	if got := rt.lastSpec.SchedulingConstraint.Constraints[0].Key; got != "hostname" {
+		t.Fatalf("expected first constraint key hostname, got %q", got)
+	}
+	if got := rt.lastSpec.SchedulingConstraint.Constraints[0].Operator; got != "In" {
+		t.Fatalf("expected first constraint operator In, got %q", got)
+	}
+	if got := len(rt.lastSpec.SchedulingConstraint.Constraints[0].Values); got != 2 {
+		t.Fatalf("expected first constraint value size 2, got %d", got)
+	}
+}
+
 func TestContainerManager_CreateByTemplate_UpdatesImageStatusToReady(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockContainerRepo()

@@ -148,15 +148,16 @@ func (m *ContainerManager) CreateByTemplate(
 	}
 
 	spec := &types.ContainerSpec{
-		Image:       img.FullName,
-		Command:     parseCommand(tpl.Command),
-		Env:         parseEnv(tpl.Env),
-		Volumes:     volumes,
-		CPU:         tpl.CPU,
-		Memory:      tpl.Memory,
-		WorkDir:     tpl.WorkDir,
-		RuntimeName: m.buildRuntimeResourceName(ownerType, inst.ID, name),
-		ExposedPort: tpl.Port,
+		Image:                img.FullName,
+		Command:              parseCommand(tpl.Command),
+		Env:                  parseEnv(tpl.Env),
+		Volumes:              volumes,
+		SchedulingConstraint: parseSchedulingConstraint(tpl.SchedulingConstraint),
+		CPU:                  tpl.CPU,
+		Memory:               tpl.Memory,
+		WorkDir:              tpl.WorkDir,
+		RuntimeName:          m.buildRuntimeResourceName(ownerType, inst.ID, name),
+		ExposedPort:          tpl.Port,
 		Labels: map[string]string{
 			"gobrave-owner-type":  string(ownerType),
 			"gobrave-owner-id":    strconv.FormatInt(ownerID, 10),
@@ -1247,6 +1248,54 @@ func parseVolumes(raw []byte) []types.ContainerVolume {
 	}
 
 	return out
+}
+
+func parseSchedulingConstraint(raw []byte) *types.ContainerSchedulingSelector {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	parsed := &types.ContainerSchedulingSelector{}
+	if err := json.Unmarshal(raw, parsed); err != nil {
+		return nil
+	}
+
+	constraints := make([]types.ContainerSchedulingConstraint, 0, len(parsed.Constraints))
+	for _, item := range parsed.Constraints {
+		constraintType := strings.TrimSpace(item.Type)
+		key := strings.TrimSpace(item.Key)
+		operator := strings.TrimSpace(item.Operator)
+		if constraintType == "" || key == "" || operator == "" {
+			continue
+		}
+
+		values := make([]string, 0, len(item.Values))
+		seen := make(map[string]struct{}, len(item.Values))
+		for _, rawValue := range item.Values {
+			value := strings.TrimSpace(rawValue)
+			if value == "" {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			values = append(values, value)
+		}
+
+		constraints = append(constraints, types.ContainerSchedulingConstraint{
+			Type:     constraintType,
+			Key:      key,
+			Operator: operator,
+			Values:   values,
+		})
+	}
+
+	if len(constraints) == 0 {
+		return nil
+	}
+
+	return &types.ContainerSchedulingSelector{Constraints: constraints}
 }
 
 func normalizeScalarValue(raw interface{}) (string, bool) {

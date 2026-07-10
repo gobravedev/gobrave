@@ -38,6 +38,7 @@ func (r *defaultContainerRuntimeResolver) Resolve(_ context.Context, in *Contain
 	resolved.WorkDir = resolveTemplateVariables(strings.TrimSpace(resolved.WorkDir), in.Variables)
 	resolved.Entrypoint = resolveStringSlice(resolved.Entrypoint, in.Variables)
 	resolved.Command = resolveStringSlice(resolved.Command, in.Variables)
+	resolved.SchedulingConstraint = resolveSchedulingConstraint(resolved.SchedulingConstraint, in.Variables)
 
 	resolvedEnv := make(map[string]string, len(resolved.Env))
 	envKeys := make([]string, 0, len(resolved.Env))
@@ -94,6 +95,21 @@ func cloneContainerSpec(spec *types.ContainerSpec) *types.ContainerSpec {
 	if spec.Volumes != nil {
 		cloned.Volumes = append([]types.ContainerVolume(nil), spec.Volumes...)
 	}
+	if spec.SchedulingConstraint != nil {
+		constraints := make([]types.ContainerSchedulingConstraint, 0, len(spec.SchedulingConstraint.Constraints))
+		for _, item := range spec.SchedulingConstraint.Constraints {
+			copied := types.ContainerSchedulingConstraint{
+				Type:     item.Type,
+				Key:      item.Key,
+				Operator: item.Operator,
+			}
+			if item.Values != nil {
+				copied.Values = append([]string(nil), item.Values...)
+			}
+			constraints = append(constraints, copied)
+		}
+		cloned.SchedulingConstraint = &types.ContainerSchedulingSelector{Constraints: constraints}
+	}
 
 	return cloned
 }
@@ -129,6 +145,35 @@ func resolveStringSlice(values []string, vars map[string]string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func resolveSchedulingConstraint(selector *types.ContainerSchedulingSelector, vars map[string]string) *types.ContainerSchedulingSelector {
+	if selector == nil || len(selector.Constraints) == 0 {
+		return nil
+	}
+
+	constraints := make([]types.ContainerSchedulingConstraint, 0, len(selector.Constraints))
+	for _, item := range selector.Constraints {
+		constraintType := resolveTemplateVariables(strings.TrimSpace(item.Type), vars)
+		key := resolveTemplateVariables(strings.TrimSpace(item.Key), vars)
+		operator := resolveTemplateVariables(strings.TrimSpace(item.Operator), vars)
+		if constraintType == "" || key == "" || operator == "" {
+			continue
+		}
+
+		resolvedValues := resolveStringSlice(item.Values, vars)
+		constraints = append(constraints, types.ContainerSchedulingConstraint{
+			Type:     constraintType,
+			Key:      key,
+			Operator: operator,
+			Values:   resolvedValues,
+		})
+	}
+
+	if len(constraints) == 0 {
+		return nil
+	}
+	return &types.ContainerSchedulingSelector{Constraints: constraints}
 }
 
 func resolveTemplateVariables(raw string, vars map[string]string) string {

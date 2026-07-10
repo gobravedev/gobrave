@@ -103,11 +103,12 @@ type ContainerTemplate struct {
 	Port    int    `json:"port" gorm:"not null;default:8787"`
 	AppType string `json:"app_type" gorm:"type:varchar(32);index"`
 
-	Env       datatypes.JSON `json:"env" gorm:"type:json"`
-	Mounts    datatypes.JSON `json:"mounts" gorm:"type:json"`
-	Volumes   datatypes.JSON `json:"volumes" gorm:"type:json"`
-	Labels    datatypes.JSON `json:"labels" gorm:"type:json"`
-	ChangeUID bool           `json:"change_uid" gorm:"default:false"`
+	Env                  datatypes.JSON `json:"env" gorm:"type:json"`
+	Mounts               datatypes.JSON `json:"mounts" gorm:"type:json"`
+	Volumes              datatypes.JSON `json:"volumes" gorm:"type:json"`
+	SchedulingConstraint datatypes.JSON `json:"scheduling_constraint" gorm:"type:json"`
+	Labels               datatypes.JSON `json:"labels" gorm:"type:json"`
+	ChangeUID            bool           `json:"change_uid" gorm:"default:false"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -296,13 +297,14 @@ func (GatewayRoute) TableName() string {
 }
 
 type ContainerSpec struct {
-	Image      string
-	Entrypoint []string
-	Command    []string
-	Env        map[string]string
-	Volumes    []ContainerVolume
-	User       string
-	Labels     map[string]string
+	Image                string
+	Entrypoint           []string
+	Command              []string
+	Env                  map[string]string
+	Volumes              []ContainerVolume
+	SchedulingConstraint *ContainerSchedulingSelector
+	User                 string
+	Labels               map[string]string
 
 	CPU    float64
 	Memory int64
@@ -313,6 +315,17 @@ type ContainerSpec struct {
 	WorkloadKind     string
 	ExposedPort      int
 	ExposeService    bool
+}
+
+type ContainerSchedulingSelector struct {
+	Constraints []ContainerSchedulingConstraint `json:"constraints"`
+}
+
+type ContainerSchedulingConstraint struct {
+	Type     string   `json:"type"`
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values,omitempty"`
 }
 
 type ContainerVolume struct {
