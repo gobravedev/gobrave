@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 
 	containerruntime "github.com/gobravedev/gobrave/internal/container_runtime"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -564,12 +565,19 @@ func mergeLabels(spec *types.ContainerSpec, defaults map[string]string) map[stri
 }
 
 func (k *KubernetesRuntime) scaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
-	dep, err := k.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		scale, err := k.clientset.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if scale.Spec.Replicas == replicas {
+			return nil
+		}
+		scale.Spec.Replicas = replicas
+		_, err = k.clientset.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
-		return fmt.Errorf("get deployment %s: %w", name, err)
-	}
-	dep.Spec.Replicas = int32Ptr(replicas)
-	if _, err := k.clientset.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("scale deployment %s: %w", name, err)
 	}
 	return nil

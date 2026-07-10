@@ -1,0 +1,52 @@
+server:
+  port: 8084
+database:
+  driver: mysql
+  # driver: sqlite
+  host: 192.168.3.60
+  port: 53306
+  user: root
+  password: "123456"
+  name: pipeline
+proxy:
+  brave_api: http://localhost:5000
+  container: http://localhost:8089
+  onlyoffice: http://localhost:8080
+
+storage:
+  # 图片上传存储目录。支持绝对路径；相对路径按当前工作目录解析。
+  # 留空时默认使用“可执行文件所在目录/images”。
+  image_dir: "/ssd1/wy/workspace3/go-project/gobrave/images"
+  base_dir: "/data2/brave_analysis_workspace"
+# ingest:
+#   enabled: true
+#   fetch_interval_sec: 300
+#   http_timeout_sec: 15
+#   fetch_workers: 1
+#   parser_grpc_addr: 127.0.0.1:50051
+#   parser_grpc_insecure: true
+#   parser_grpc_timeout_sec: 8
+#   parser_dispatch_batch_size: 100
+#   parser_callback_secret: ""
+
+route:
+  # gateway | traefik
+  registry: traefik
+  apps_prefix: /c/analysis/apps
+  traefik:
+      # api | file
+    provider: file
+    base_url: http://localhost:8087
+    upsert_path: /api/providers/http/routes/{route_key}
+    delete_path: /api/providers/http/routes/{route_key}
+    auth_token: ""
+    timeout_second: 5
+    file_path: ./traefik/dynamic/routes.yaml
+
+tenant:
+  # default_tenant_id: "default"
+  # default_tenant_name: "Default Tenant"
+  # default_tenant_description: "This is the default tenant."
+  # api_key_prefix: "sk-"
+  # 16、24 或 32
+  aes_key: "xxxxxxxxxxxxx"

@@ -1,6 +1,6 @@
 module github.com/gobravedev/gobrave
 
-go 1.26.0
+go 1.25.6
 
 require (
 	github.com/bwmarrin/snowflake v0.3.0
