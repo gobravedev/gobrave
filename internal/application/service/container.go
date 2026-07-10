@@ -157,22 +157,10 @@ func (s *containerService) createAppSessionByTemplate(ctx context.Context, userI
 		return nil, err
 	}
 
-	inst, err := s.containerMgr.CreateByTemplate(ctx, "", containerTemplateID, types.ContainerOwnerAppSession, session.ID, name)
+	_, err = s.containerMgr.CreateByTemplate(ctx, "", containerTemplateID, types.ContainerOwnerAppSession, session.ID, name)
 	if err != nil {
 		session.Status = "FAILED"
 		_ = s.containerRepo.UpdateAppSession(ctx, session)
-		return nil, err
-	}
-
-	now := time.Now()
-	session.Status = "RUNNING"
-	if inst.StartedAt != nil {
-		session.StartedAt = inst.StartedAt
-	} else {
-		session.StartedAt = &now
-	}
-	session.StoppedAt = nil
-	if err := s.containerRepo.UpdateAppSession(ctx, session); err != nil {
 		return nil, err
 	}
 
@@ -195,9 +183,7 @@ func (s *containerService) StartAppSession(ctx context.Context, userID string, a
 		return err
 	}
 
-	now := time.Now()
-	session.Status = "RUNNING"
-	session.StartedAt = &now
+	session.Status = "RESUMING"
 	session.StoppedAt = nil
 	return s.containerRepo.UpdateAppSession(ctx, session)
 }

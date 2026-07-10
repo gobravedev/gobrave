@@ -193,6 +193,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		dig.Group("event_handlers"),
 	))
 	must(container.Provide(
+		manager.NewAppSessionEventHandler,
+		dig.As(new(event.Handler)),
+		dig.Group("event_handlers"),
+	))
+	must(container.Provide(
 		realtime.NewDagRuntimeEventNotifier,
 		dig.As(new(event.Handler)),
 		dig.Group("event_handlers"),

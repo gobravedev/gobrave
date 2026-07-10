@@ -428,7 +428,7 @@ func mustSeedTemplate(t *testing.T, repo *mockContainerRepo) {
 	repo.templates[10] = &types.ContainerTemplate{ID: 10, ImageID: 1, Command: "echo ok"}
 }
 
-func TestContainerManager_CreateByTemplate_TransitionsToRunning(t *testing.T) {
+func TestContainerManager_CreateByTemplate_StaysCreatingUntilStartedEvent(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockContainerRepo()
 	mustSeedTemplate(t, repo)
@@ -440,16 +440,16 @@ func TestContainerManager_CreateByTemplate_TransitionsToRunning(t *testing.T) {
 		t.Fatalf("CreateByTemplate failed: %v", err)
 	}
 
-	if inst.Status != types.ContainerRunning {
-		t.Fatalf("expected running, got %s", inst.Status)
+	if inst.Status != types.ContainerCreating {
+		t.Fatalf("expected creating before runtime started event, got %s", inst.Status)
 	}
 
 	stored, err := repo.GetContainerInstanceByID(ctx, inst.ID)
 	if err != nil {
 		t.Fatalf("load instance failed: %v", err)
 	}
-	if stored.Status != types.ContainerRunning {
-		t.Fatalf("expected stored status running, got %s", stored.Status)
+	if stored.Status != types.ContainerCreating {
+		t.Fatalf("expected stored status creating before runtime started event, got %s", stored.Status)
 	}
 }
 

@@ -207,14 +207,6 @@ func (m *ContainerManager) CreateByTemplate(
 		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
 		return nil, err
 	}
-	m.syncInstanceIPAddress(ctx, rt, inst)
-
-	now := time.Now()
-	inst.StartedAt = &now
-	inst.FinishedAt = nil
-	if err := m.transition(ctx, inst, fsm.Running, "ContainerStarted"); err != nil {
-		return nil, err
-	}
 
 	return inst, nil
 }
@@ -268,14 +260,6 @@ func (m *ContainerManager) Start(ctx context.Context, id int64) error {
 	if err := rt.Start(ctx, inst.RuntimeID); err != nil {
 		_ = m.transition(ctx, inst, fsm.Failed, "ContainerStartFailed")
 		_ = m.createContainerEvent(ctx, inst.ID, "ContainerStartFailedDetail", err.Error())
-		return err
-	}
-	m.syncInstanceIPAddress(ctx, rt, inst)
-
-	now := time.Now()
-	inst.StartedAt = &now
-	inst.FinishedAt = nil
-	if err := m.transition(ctx, inst, fsm.Running, "ContainerStarted"); err != nil {
 		return err
 	}
 	return nil
