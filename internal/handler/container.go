@@ -74,6 +74,7 @@ type outboxEventPageRequest struct {
 type appSessionPageItem struct {
 	*types.AppSession
 	PathPrefix string `json:"path_prefix"`
+	NodeName   string `json:"node_name"`
 }
 
 func NewContainerHandler(containerService interfaces.ContainerService, analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, cfg *config.Config) *ContainerHandler {
@@ -780,6 +781,27 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 	}
 
 	if items, ok := result.Data.([]*types.AppSession); ok {
+		nodeNameBySessionID := map[int64]string{}
+		ownerIDs := make([]int64, 0, len(items))
+		for _, item := range items {
+			if item == nil || item.ID == 0 {
+				continue
+			}
+			ownerIDs = append(ownerIDs, item.ID)
+		}
+		instances, err := h.containerService.ListContainerInstanceByOwnerTypeAndOwnerIDs(c.Request.Context(), types.ContainerOwnerAppSession, ownerIDs)
+		if err == nil {
+			for _, inst := range instances {
+				if inst == nil || inst.OwnerID == 0 {
+					continue
+				}
+				if _, exists := nodeNameBySessionID[inst.OwnerID]; exists {
+					continue
+				}
+				nodeNameBySessionID[inst.OwnerID] = strings.TrimSpace(inst.RuntimeNodeName)
+			}
+		}
+
 		pageItems := make([]*appSessionPageItem, 0, len(items))
 		for _, item := range items {
 			if item == nil {
@@ -788,6 +810,7 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 			pageItems = append(pageItems, &appSessionPageItem{
 				AppSession: item,
 				PathPrefix: fmt.Sprintf("%s/%s/%d", config.ResolveAppsPathPrefix(h.cfg), item.AppType, item.ID),
+				NodeName:   nodeNameBySessionID[item.ID],
 			})
 		}
 		result.Data = pageItems

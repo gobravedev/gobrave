@@ -51,6 +51,8 @@ type KubernetesRuntime struct {
 
 	monitorMu      sync.Mutex
 	monitoringByID map[string]struct{}
+	startMu        sync.Mutex
+	startingByID   map[string]struct{}
 }
 
 func NewKubernetesRuntime(cfg KubernetesRuntimeConfig) (*KubernetesRuntime, error) {
@@ -155,6 +157,7 @@ func (k *KubernetesRuntime) Start(ctx context.Context, runtimeID string) error {
 		if err := k.scaleDeployment(ctx, meta.Namespace, meta.Name, 1); err != nil {
 			return err
 		}
+		k.monitorStarted(runtimeID, meta.Namespace, meta.Name)
 		return nil
 	case workloadKindJob:
 		_, err := k.clientset.BatchV1().Jobs(meta.Namespace).Get(ctx, meta.Name, metav1.GetOptions{})
@@ -164,6 +167,7 @@ func (k *KubernetesRuntime) Start(ctx context.Context, runtimeID string) error {
 			}
 			return fmt.Errorf("get job %s: %w", meta.Name, err)
 		}
+		k.monitorStarted(runtimeID, meta.Namespace, meta.Name)
 		return k.Monitor(ctx, runtimeID)
 	default:
 		return fmt.Errorf("unsupported workload kind: %s", meta.Kind)
@@ -273,7 +277,23 @@ func (k *KubernetesRuntime) Inspect(ctx context.Context, runtimeID string) (*con
 	switch meta.Kind {
 	case workloadKindDeployment:
 		host := serviceNameForWorkload(meta.Name) + "." + meta.Namespace + ".svc.cluster.local"
-		return &containerruntime.RuntimeInspection{IPAddress: host}, nil
+		inspection := &containerruntime.RuntimeInspection{IPAddress: host}
+		podName, err := k.resolveLatestPodName(ctx, meta.Namespace, map[string]string{"gobrave-workload": meta.Name})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return inspection, nil
+			}
+			return nil, err
+		}
+		pod, err := k.clientset.CoreV1().Pods(meta.Namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return inspection, nil
+			}
+			return nil, fmt.Errorf("inspect pod %s: %w", podName, err)
+		}
+		inspection.NodeName = strings.TrimSpace(pod.Spec.NodeName)
+		return inspection, nil
 	case workloadKindJob:
 		podName, err := k.resolveLatestPodName(ctx, meta.Namespace, map[string]string{"gobrave-workload": meta.Name})
 		if err != nil {
@@ -286,7 +306,10 @@ func (k *KubernetesRuntime) Inspect(ctx context.Context, runtimeID string) (*con
 		if err != nil {
 			return nil, fmt.Errorf("inspect pod %s: %w", podName, err)
 		}
-		return &containerruntime.RuntimeInspection{IPAddress: strings.TrimSpace(pod.Status.PodIP)}, nil
+		return &containerruntime.RuntimeInspection{
+			IPAddress: strings.TrimSpace(pod.Status.PodIP),
+			NodeName:  strings.TrimSpace(pod.Spec.NodeName),
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported workload kind: %s", meta.Kind)
 	}
@@ -360,6 +383,62 @@ func (k *KubernetesRuntime) unmarkMonitoring(runtimeID string) {
 		return
 	}
 	delete(k.monitoringByID, runtimeID)
+}
+
+func (k *KubernetesRuntime) monitorStarted(runtimeID string, namespace string, workloadName string) {
+	if !k.markStarting(runtimeID) {
+		return
+	}
+
+	go func() {
+		defer k.unmarkStarting(runtimeID)
+
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		timeout := time.NewTimer(2 * time.Minute)
+		defer timeout.Stop()
+
+		labels := map[string]string{"gobrave-workload": workloadName}
+		for {
+			podName, err := k.resolveLatestPodName(context.Background(), namespace, labels)
+			if err == nil {
+				pod, podErr := k.clientset.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
+				if podErr == nil && strings.TrimSpace(pod.Spec.NodeName) != "" {
+					k.emitEvent("ContainerStarted", runtimeID, "")
+					return
+				}
+			}
+
+			select {
+			case <-timeout.C:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (k *KubernetesRuntime) markStarting(runtimeID string) bool {
+	k.startMu.Lock()
+	defer k.startMu.Unlock()
+	if k.startingByID == nil {
+		k.startingByID = map[string]struct{}{}
+	}
+	if _, ok := k.startingByID[runtimeID]; ok {
+		return false
+	}
+	k.startingByID[runtimeID] = struct{}{}
+	return true
+}
+
+func (k *KubernetesRuntime) unmarkStarting(runtimeID string) {
+	k.startMu.Lock()
+	defer k.startMu.Unlock()
+	if k.startingByID == nil {
+		return
+	}
+	delete(k.startingByID, runtimeID)
 }
 
 func (k *KubernetesRuntime) emitEvent(eventType string, runtimeID string, message string) {

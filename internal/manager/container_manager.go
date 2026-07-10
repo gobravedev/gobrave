@@ -501,11 +501,44 @@ func (m *ContainerManager) RecoverRuntimeMonitoring(ctx context.Context) (int, e
 	return recovered, nil
 }
 
+func (m *ContainerManager) BackfillRuntimeNodeName(ctx context.Context) (int, error) {
+	instances, err := m.repo.ListContainerInstance(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	backfilled := 0
+	for _, inst := range instances {
+		if !shouldBackfillRuntimeNodeName(inst) {
+			continue
+		}
+
+		rt, err := m.getRuntimeByInstance(inst)
+		if err != nil {
+			logger.Warnf(ctx, "[ContainerManager] resolve runtime for node backfill failed, instance_id=%d runtime_id=%s err=%v", inst.ID, inst.RuntimeID, err)
+			continue
+		}
+
+		beforeNodeName := strings.TrimSpace(inst.RuntimeNodeName)
+		m.syncInstanceIPAddress(ctx, rt, inst)
+		afterNodeName := strings.TrimSpace(inst.RuntimeNodeName)
+		if beforeNodeName == "" && afterNodeName != "" {
+			backfilled++
+		}
+	}
+
+	return backfilled, nil
+}
+
 // 恢复运行时监控的条件：
 func (m *ContainerManager) RunRuntimeReconciler(ctx context.Context, interval time.Duration) {
 	m.monitorOnce.Do(func() {
 		if interval <= 0 {
 			interval = 30 * time.Second
+		}
+		nodeBackfillInterval := interval * 10
+		if nodeBackfillInterval < 2*time.Minute {
+			nodeBackfillInterval = 2 * time.Minute
 		}
 		if ctx == nil {
 			ctx = context.Background()
@@ -519,8 +552,17 @@ func (m *ContainerManager) RunRuntimeReconciler(ctx context.Context, interval ti
 				logger.Infof(ctx, "[ContainerManager] startup runtime monitor recovery completed, recovered=%d", recovered)
 			}
 
+			backfilled, err := m.BackfillRuntimeNodeName(ctx)
+			if err != nil {
+				logger.Warnf(ctx, "[ContainerManager] startup runtime node backfill failed: %v", err)
+			} else if backfilled > 0 {
+				logger.Infof(ctx, "[ContainerManager] startup runtime node backfill completed, backfilled=%d", backfilled)
+			}
+
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
+			nodeTicker := time.NewTicker(nodeBackfillInterval)
+			defer nodeTicker.Stop()
 
 			for {
 				select {
@@ -535,10 +577,38 @@ func (m *ContainerManager) RunRuntimeReconciler(ctx context.Context, interval ti
 					if recovered > 0 {
 						logger.Infof(context.Background(), "[ContainerManager] periodic runtime monitor recovery completed, recovered=%d", recovered)
 					}
+				case <-nodeTicker.C:
+					backfilled, err := m.BackfillRuntimeNodeName(context.Background())
+					if err != nil {
+						logger.Warnf(context.Background(), "[ContainerManager] periodic runtime node backfill failed: %v", err)
+						continue
+					}
+					if backfilled > 0 {
+						logger.Infof(context.Background(), "[ContainerManager] periodic runtime node backfill completed, backfilled=%d", backfilled)
+					}
 				}
 			}
 		}()
 	})
+}
+
+func shouldBackfillRuntimeNodeName(inst *types.ContainerInstance) bool {
+	if inst == nil {
+		return false
+	}
+	if strings.TrimSpace(inst.RuntimeID) == "" {
+		return false
+	}
+	if strings.TrimSpace(inst.RuntimeNodeName) != "" {
+		return false
+	}
+
+	switch inst.Status {
+	case types.ContainerCreating, types.ContainerRunning, types.ContainerPaused:
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldRecoverRuntimeMonitoring(inst *types.ContainerInstance) bool {
@@ -1060,13 +1130,24 @@ func (m *ContainerManager) syncInstanceIPAddress(ctx context.Context, rt contain
 	}
 
 	ip := strings.TrimSpace(inspection.IPAddress)
-	if ip == "" || ip == inst.IPAddress {
+	nodeName := strings.TrimSpace(inspection.NodeName)
+
+	changed := false
+	if ip != "" && ip != inst.IPAddress {
+		inst.IPAddress = ip
+		changed = true
+	}
+	if nodeName != "" && nodeName != inst.RuntimeNodeName {
+		inst.RuntimeNodeName = nodeName
+		changed = true
+	}
+
+	if !changed {
 		return
 	}
 
-	inst.IPAddress = ip
 	if err := m.repo.UpdateContainerInstance(ctx, inst); err != nil {
-		logger.Warnf(ctx, "[ContainerManager] persist runtime ip failed, instance_id=%d ip=%s err=%v", inst.ID, ip, err)
+		logger.Warnf(ctx, "[ContainerManager] persist runtime inspect failed, instance_id=%d ip=%s node=%s err=%v", inst.ID, inst.IPAddress, inst.RuntimeNodeName, err)
 	}
 }
 

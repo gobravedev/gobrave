@@ -29,6 +29,7 @@ type ContainerService interface {
 	GetAppSessionByID(ctx context.Context, userID string, appSessionID int64) (*types.AppSession, error)
 	ListAppSessionByUserID(ctx context.Context, userID string) ([]*types.AppSession, error)
 	PageAppSessionByUserID(ctx context.Context, userID string, pagination *types.Pagination, query *types.AppSessionPageQuery) (*types.PageResult, error)
+	ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) ([]*types.ContainerInstance, error)
 
 	PageContainerInstance(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)
 	PageContainerEvent(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error)

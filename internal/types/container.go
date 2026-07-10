@@ -229,7 +229,8 @@ type ContainerInstance struct {
 
 	Status ContainerStatus `json:"status" gorm:"type:varchar(30);index;not null;default:pending"`
 
-	IPAddress string `json:"ip_address" gorm:"type:varchar(128)"`
+	IPAddress       string `json:"ip_address" gorm:"type:varchar(128)"`
+	RuntimeNodeName string `json:"runtime_node_name" gorm:"type:varchar(255);index"`
 
 	ExitCode *int `json:"exit_code"`
 

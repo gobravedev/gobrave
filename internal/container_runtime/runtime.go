@@ -43,6 +43,7 @@ type RuntimeImageManager interface {
 // RuntimeInspection carries runtime-specific inspect data used by manager/service.
 type RuntimeInspection struct {
 	IPAddress string
+	NodeName  string
 }
 
 // RuntimeInspector is an optional extension interface. Implementations can expose

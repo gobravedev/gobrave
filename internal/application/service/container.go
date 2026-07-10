@@ -274,6 +274,10 @@ func (s *containerService) PageAppSessionByUserID(ctx context.Context, userID st
 	return types.NewPageResult(total, pagination, items), nil
 }
 
+func (s *containerService) ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) ([]*types.ContainerInstance, error) {
+	return s.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, ownerType, ownerIDs)
+}
+
 func (s *containerService) PageContainerInstance(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}
