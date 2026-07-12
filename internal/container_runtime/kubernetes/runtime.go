@@ -404,7 +404,7 @@ func (k *KubernetesRuntime) monitorStarted(runtimeID string, namespace string, w
 			podName, err := k.resolveLatestPodName(context.Background(), namespace, labels)
 			if err == nil {
 				pod, podErr := k.clientset.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
-				if podErr == nil && strings.TrimSpace(pod.Spec.NodeName) != "" {
+				if podErr == nil && isPodReady(pod) {
 					k.emitEvent("ContainerStarted", runtimeID, "")
 					return
 				}
@@ -417,6 +417,18 @@ func (k *KubernetesRuntime) monitorStarted(runtimeID string, namespace string, w
 			}
 		}
 	}()
+}
+
+func isPodReady(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func (k *KubernetesRuntime) markStarting(runtimeID string) bool {
