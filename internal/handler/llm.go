@@ -25,6 +25,7 @@ const defaultCopilotCLIURL = "localhost:4321"
 type LLMHandler struct {
 	cliURL      string
 	model       string
+	githubToken string
 	providerCfg *copilot.ProviderConfig
 	hub         *realtime.Hub
 	cfg         *config.Config
@@ -35,17 +36,31 @@ type LLMHandler struct {
 }
 
 func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService) *LLMHandler {
-	cliURL := strings.TrimSpace(os.Getenv("COPILOT_CLI_URL"))
+	cliURL := ""
+	if cfg != nil && cfg.LLM != nil {
+		cliURL = strings.TrimSpace(cfg.LLM.CLIURL)
+	}
 	if cliURL == "" {
 		cliURL = defaultCopilotCLIURL
 	}
 
-	defaultModel := strings.TrimSpace(os.Getenv("COPILOT_MODEL"))
-	providerCfg := buildProviderConfigFromEnv(defaultModel)
+	defaultModel := ""
+	if cfg != nil && cfg.LLM != nil {
+		defaultModel = strings.TrimSpace(cfg.LLM.Model)
+	}
+	githubToken := ""
+	if cfg != nil && cfg.LLM != nil {
+		githubToken = strings.TrimSpace(cfg.LLM.GitHubToken)
+	}
+	if githubToken == "" {
+		githubToken = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	}
+	providerCfg := buildProviderConfigFromConfig(cfg, defaultModel)
 
 	h := &LLMHandler{
 		cliURL:         cliURL,
 		model:          defaultModel,
+		githubToken:    githubToken,
 		providerCfg:    providerCfg,
 		hub:            hub,
 		cfg:            cfg,
@@ -56,13 +71,17 @@ func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.
 	return h
 }
 
-func buildProviderConfigFromEnv(defaultModel string) *copilot.ProviderConfig {
-	providerType := strings.ToLower(strings.TrimSpace(os.Getenv("COPILOT_PROVIDER_TYPE")))
-	baseURL := strings.TrimSpace(os.Getenv("COPILOT_PROVIDER_BASE_URL"))
-	apiKey := strings.TrimSpace(os.Getenv("COPILOT_PROVIDER_API_KEY"))
-	bearerToken := strings.TrimSpace(os.Getenv("COPILOT_PROVIDER_BEARER_TOKEN"))
+func buildProviderConfigFromConfig(cfg *config.Config, defaultModel string) *copilot.ProviderConfig {
+	if cfg == nil || cfg.LLM == nil || cfg.LLM.Provider == nil {
+		return nil
+	}
 
-	if providerType == "" && baseURL == "" && apiKey == "" {
+	providerType := strings.ToLower(strings.TrimSpace(cfg.LLM.Provider.Type))
+	baseURL := strings.TrimSpace(cfg.LLM.Provider.BaseURL)
+	apiKey := strings.TrimSpace(cfg.LLM.Provider.APIKey)
+	bearerToken := strings.TrimSpace(cfg.LLM.Provider.BearerToken)
+
+	if providerType == "" && baseURL == "" && apiKey == "" && bearerToken == "" {
 		return nil
 	}
 
@@ -70,7 +89,7 @@ func buildProviderConfigFromEnv(defaultModel string) *copilot.ProviderConfig {
 		providerType = "openai"
 	}
 
-	cfg := &copilot.ProviderConfig{
+	providerCfg := &copilot.ProviderConfig{
 		Type:        providerType,
 		BaseURL:     baseURL,
 		APIKey:      apiKey,
@@ -78,11 +97,11 @@ func buildProviderConfigFromEnv(defaultModel string) *copilot.ProviderConfig {
 		ModelID:     strings.TrimSpace(defaultModel),
 	}
 
-	if cfg.BaseURL == "" {
+	if providerCfg.BaseURL == "" {
 		return nil
 	}
 
-	return cfg
+	return providerCfg
 }
 
 type copilotChatRequest struct {
@@ -464,6 +483,7 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 
 	copilotSession, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:            resolvedModel,
+		GitHubToken:      h.githubToken,
 		Streaming:        copilot.Bool(true),
 		Provider:         providerCfg,
 		WorkingDirectory: workingDir,

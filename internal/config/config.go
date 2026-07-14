@@ -20,10 +20,25 @@ type Config struct {
 	Route     *RouteConfig     `yaml:"route"    json:"route"`
 	Storage   *StorageConfig   `yaml:"storage"  json:"storage"`
 	Realtime  *RealtimeConfig  `yaml:"realtime" json:"realtime"`
+	LLM       *LLMConfig       `yaml:"llm" json:"llm"`
 	Container *ContainerConfig `yaml:"container" json:"container"`
 	// Ingest   *IngestConfig   `yaml:"ingest"   json:"ingest"`
 	Tenant *TenantConfig `yaml:"tenant"   json:"tenant"`
 	// Audio  *AudioConfig  `yaml`
+}
+
+type LLMConfig struct {
+	CLIURL      string             `yaml:"cli_url" json:"cli_url"`
+	Model       string             `yaml:"model" json:"model"`
+	GitHubToken string             `yaml:"github_token" json:"github_token"`
+	Provider    *LLMProviderConfig `yaml:"provider" json:"provider"`
+}
+
+type LLMProviderConfig struct {
+	Type        string `yaml:"type" json:"type"`
+	BaseURL     string `yaml:"base_url" json:"base_url"`
+	APIKey      string `yaml:"api_key" json:"api_key"`
+	BearerToken string `yaml:"bearer_token" json:"bearer_token"`
 }
 
 type RealtimeConfig struct {
@@ -206,6 +221,17 @@ func LoadConfig() (*Config, error) {
 			AckTimeoutSeconds:     10,
 			AckMaxRetries:         3,
 		},
+		LLM: &LLMConfig{
+			CLIURL:      "localhost:4321",
+			Model:       "",
+			GitHubToken: "",
+			Provider: &LLMProviderConfig{
+				Type:        "",
+				BaseURL:     "",
+				APIKey:      "",
+				BearerToken: "",
+			},
+		},
 		Container: &ContainerConfig{
 			Runtime:                             "docker",
 			Kubernetes:                          &KubernetesRuntimeConfig{Namespace: "default"},
@@ -282,6 +308,23 @@ func LoadConfig() (*Config, error) {
 			AckMaxRetries:         3,
 		}
 	}
+	if cfg.LLM == nil {
+		cfg.LLM = &LLMConfig{CLIURL: "localhost:4321", Provider: &LLMProviderConfig{}}
+	}
+	if cfg.LLM.Provider == nil {
+		cfg.LLM.Provider = &LLMProviderConfig{}
+	}
+	cfg.LLM.CLIURL = strings.TrimSpace(cfg.LLM.CLIURL)
+	if cfg.LLM.CLIURL == "" {
+		cfg.LLM.CLIURL = "localhost:4321"
+	}
+	cfg.LLM.Model = strings.TrimSpace(cfg.LLM.Model)
+	cfg.LLM.GitHubToken = strings.TrimSpace(cfg.LLM.GitHubToken)
+	cfg.LLM.Provider.Type = strings.TrimSpace(cfg.LLM.Provider.Type)
+	cfg.LLM.Provider.BaseURL = strings.TrimSpace(cfg.LLM.Provider.BaseURL)
+	cfg.LLM.Provider.APIKey = strings.TrimSpace(cfg.LLM.Provider.APIKey)
+	cfg.LLM.Provider.BearerToken = strings.TrimSpace(cfg.LLM.Provider.BearerToken)
+
 	cfg.Realtime.Transport = normalizeRealtimeTransport(cfg.Realtime.Transport)
 	if cfg.Realtime.MaxConnectionsPerUser <= 0 {
 		cfg.Realtime.MaxConnectionsPerUser = 2

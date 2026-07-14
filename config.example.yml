@@ -68,6 +68,18 @@ realtime:
   # websocket ACK 超时后的重试次数
   ack_max_retries: 3
 
+llm:
+  cli_url: "localhost:4321"
+  # gpt-5.5 | deepseek-v4-pro
+  model: "deepseek-v4-pro"
+  # github_token 与 provider 配置二选一，不能同时使用。若使用 provider，则 github_token 可留空。
+  github_token: "github_pat_****"
+  provider:
+    type: "anthropic"
+    base_url: "https://api.deepseek.com/anthropic"
+    api_key: "sk-*****"
+    bearer_token: ""
+
 container:
   # docker | k8s | k3s
   runtime: docker
