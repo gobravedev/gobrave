@@ -261,6 +261,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewProxyHandler))
 	must(container.Provide(realtime.NewHub))
 	must(container.Provide(handler.NewRealtimeHandler))
+	must(container.Provide(handler.NewLLMHandler))
 	// must(container.Provide(handler.NewTraceHandler))
 
 	// must(container.Provide(grpcserver.NewTraceServer))

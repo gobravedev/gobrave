@@ -61,6 +61,9 @@ definitions:
         type: string
       role:
         type: string
+      source:
+        description: data analysis external
+        type: string
     required:
     - dataset_id
     - path
@@ -72,8 +75,106 @@ definitions:
       file:
         $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.File'
     type: object
+  github_com_gobravedev_gobrave_internal_types.AnalysisNode:
+    properties:
+      analysis_id:
+        type: string
+      analysis_node_id:
+        type: string
+      cache_hit:
+        type: boolean
+      command_md5:
+        type: string
+      command_path:
+        type: string
+      cpu:
+        type: integer
+      created_at:
+        type: string
+      disk:
+        type: string
+      downstream_ids:
+        items: {}
+        type: array
+      error_message:
+        type: string
+      executor:
+        type: string
+      exit_code:
+        type: integer
+      finished_at:
+        type: string
+      gpu:
+        type: integer
+      id:
+        description: ID                     uint       `json:"id" gorm:"primaryKey;autoIncrement"`
+        example: "0"
+        type: string
+      input_hash:
+        type: string
+      input_validation_errors:
+        items: {}
+        type: array
+      inputs_patterns:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap'
+      job_id:
+        type: string
+      log_path:
+        type: string
+      max_retry:
+        type: integer
+      memory:
+        type: string
+      node_id:
+        type: string
+      node_name:
+        type: string
+      output_dir:
+        type: string
+      output_patterns:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap'
+      output_validation_errors:
+        items: {}
+        type: array
+      params:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap'
+      params_md5:
+        type: string
+      params_path:
+        type: string
+      pid:
+        type: integer
+      rerun_reason:
+        type: string
+      resolved_inputs:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap'
+      resolved_outputs:
+        $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap'
+      retry:
+        type: integer
+      sample_id:
+        type: string
+      script_id:
+        type: string
+      server_status:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      upstream_ids:
+        items: {}
+        type: array
+      workspace_dir:
+        type: string
+    type: object
   github_com_gobravedev_gobrave_internal_types.AppSession:
     properties:
+      analysis_node_id:
+        example: "0"
+        type: string
       app_type:
         type: string
       container_template_id:
@@ -178,6 +279,10 @@ definitions:
         type: string
       port:
         type: integer
+      scheduling_constraint:
+        items:
+          type: integer
+        type: array
       type:
         $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplateType'
       updated_at:
@@ -321,6 +426,9 @@ definitions:
     - ImageStatusFailed
     - ImageStatusDeleted
     - ImageStatusDisabled
+  github_com_gobravedev_gobrave_internal_types.JSONMap:
+    additionalProperties: {}
+    type: object
   github_com_gobravedev_gobrave_internal_types.LoginRequest:
     properties:
       email:
@@ -538,11 +646,11 @@ definitions:
         type: string
       analysis_name:
         type: string
+      cache_type:
+        type: integer
       formJson:
         items: {}
         type: array
-      is_cache:
-        type: boolean
       is_report:
         type: boolean
       request_param:
@@ -562,11 +670,11 @@ definitions:
       analysis_result:
         additionalProperties: true
         type: object
+      cache_type:
+        type: integer
       formJson:
         items: {}
         type: array
-      is_cache:
-        type: boolean
       is_report:
         type: boolean
       request_param:
@@ -589,8 +697,37 @@ definitions:
       status:
         type: string
     type: object
+  internal_handler.VisualizationNodeTreeItem:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AnalysisNode'
+        type: array
+      script_id:
+        type: string
+      script_name:
+        type: string
+    type: object
+  internal_handler.VisualizationNodeTreeResponse:
+    properties:
+      analysis_id:
+        type: string
+      analysis_name:
+        type: string
+      relation_id:
+        type: string
+      result:
+        items:
+          $ref: '#/definitions/internal_handler.VisualizationNodeTreeItem'
+        type: array
+    type: object
   internal_handler.VisualizationResultResponse:
     properties:
+      files:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
       htmls:
         items:
           additionalProperties: true
@@ -654,6 +791,16 @@ definitions:
     required:
     - project_id
     type: object
+  internal_handler.appSessionCreateByAnalysisNodeRequest:
+    properties:
+      analysis_node_id:
+        example: "0"
+        type: string
+      name:
+        type: string
+    required:
+    - analysis_node_id
+    type: object
   internal_handler.appSessionCreateRequest:
     properties:
       container_template_id:
@@ -675,8 +822,17 @@ definitions:
     required:
     - id
     type: object
+  internal_handler.appSessionPageQuery:
+    properties:
+      analysis_node_id:
+        type: string
+      project_id:
+        type: string
+    type: object
   internal_handler.appSessionPageRequest:
     properties:
+      analysis_node_id:
+        type: string
       page:
         description: Page
         minimum: 1
@@ -686,6 +842,10 @@ definitions:
         maximum: 1000
         minimum: 1
         type: integer
+      project_id:
+        type: string
+      query:
+        $ref: '#/definitions/internal_handler.appSessionPageQuery'
     type: object
   internal_handler.containerEventPageRequest:
     properties:
@@ -735,6 +895,15 @@ definitions:
         minimum: 1
         type: integer
     type: object
+  internal_handler.copilotChatRequest:
+    properties:
+      model:
+        type: string
+      prompt:
+        type: string
+    required:
+    - prompt
+    type: object
   internal_handler.datasetByProjectPageRequest:
     properties:
       dataset_id:
@@ -769,6 +938,11 @@ definitions:
         type: string
     required:
     - id
+    type: object
+  internal_handler.getSettingResponse:
+    properties:
+      container_runtime:
+        type: string
     type: object
   internal_handler.idBody:
     properties:
@@ -1022,6 +1196,43 @@ paths:
       summary: 分析节点结果文件可视化
       tags:
       - 分析
+  /analysis/visualization-node-tree/{analysisId}:
+    get:
+      description: 按 workflow dag_definition 的脚本节点分组，返回 analysis nodes 树结构
+      parameters:
+      - description: 分析 ID
+        in: path
+        name: analysisId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.VisualizationNodeTreeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 分析节点树可视化
+      tags:
+      - 分析
   /auth/change-password:
     post:
       consumes:
@@ -1247,6 +1458,47 @@ paths:
       security:
       - Bearer: []
       summary: 创建应用会话
+      tags:
+      - 容器管理
+  /container/app-session/create-by-analysis-node:
+    post:
+      consumes:
+      - application/json
+      description: 依据 analysis_node_id 查询 AnalysisNode/Analysis/Module，自动推导 ProjectID、ContainerTemplateID、WorkspacePath
+        并创建 AppSession
+      parameters:
+      - description: 请求参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.appSessionCreateByAnalysisNodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 通过分析节点创建应用会话
       tags:
       - 容器管理
   /container/app-session/delete:
@@ -3598,6 +3850,42 @@ paths:
       summary: 更新样本
       tags:
       - 数据管理
+  /llm/copilot-cli/chat:
+    post:
+      consumes:
+      - application/json
+      description: 连接已启动的 copilot --headless 服务并发送 prompt，按 SSE 流式返回助手消息
+      parameters:
+      - description: 聊天请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.copilotChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError'
+      security:
+      - Bearer: []
+      summary: 通过 Copilot SDK 调用本地 Copilot CLI Server
+      tags:
+      - LLM
   /project/activate-project:
     post:
       consumes:
@@ -3962,6 +4250,21 @@ paths:
       summary: 上传项目报告图片
       tags:
       - 项目
+  /setting/get-setting:
+    get:
+      description: 返回当前系统配置的容器运行时
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.getSettingResponse'
+      security:
+      - Bearer: []
+      summary: 获取系统设置
+      tags:
+      - 系统设置
   /sheet/workbook:
     get:
       description: 从本地文件读取工作簿并转换为 Univer 可用结构。当前优先支持 xlsx，csv/tsv 将在后续版本支持。

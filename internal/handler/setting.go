@@ -25,7 +25,6 @@ type getSettingResponse struct {
 // @Tags         系统设置
 // @Produce      json
 // @Success      200  {object}  getSettingResponse
-// @Failure      401  {object}  errors.AppError
 // @Security     Bearer
 // @Router       /setting/get-setting [get]
 func (h *SettingHandler) GetSetting(c *gin.Context) {

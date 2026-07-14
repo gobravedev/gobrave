@@ -41,6 +41,15 @@ type Stats struct {
 	ConnectionsByUser     map[string]int `json:"connections_by_user"`
 }
 
+type InboundMessage struct {
+	UserID     string          `json:"user_id"`
+	ClientID   string          `json:"client_id"`
+	Transport  Transport       `json:"transport"`
+	Payload    map[string]any  `json:"payload"`
+	Raw        json.RawMessage `json:"raw"`
+	ReceivedAt time.Time       `json:"received_at"`
+}
+
 type Hub struct {
 	transport             Transport
 	maxConnectionsPerUser int
@@ -52,6 +61,9 @@ type Hub struct {
 	mu            sync.RWMutex
 	clientsByUser map[string][]*client
 	clientByID    map[string]*client
+
+	inboundMu   sync.RWMutex
+	inboundSubs map[string]func(InboundMessage)
 }
 
 type client struct {
@@ -130,6 +142,36 @@ func NewHub(cfg *config.Config) *Hub {
 		},
 		clientsByUser: make(map[string][]*client),
 		clientByID:    make(map[string]*client),
+		inboundSubs:   make(map[string]func(InboundMessage)),
+	}
+}
+
+func (h *Hub) SubscribeInbound(handler func(InboundMessage)) func() {
+	if handler == nil {
+		return func() {}
+	}
+	subID := uuid.NewString()
+	h.inboundMu.Lock()
+	h.inboundSubs[subID] = handler
+	h.inboundMu.Unlock()
+
+	return func() {
+		h.inboundMu.Lock()
+		delete(h.inboundSubs, subID)
+		h.inboundMu.Unlock()
+	}
+}
+
+func (h *Hub) dispatchInbound(msg InboundMessage) {
+	h.inboundMu.RLock()
+	subs := make([]func(InboundMessage), 0, len(h.inboundSubs))
+	for _, handler := range h.inboundSubs {
+		subs = append(subs, handler)
+	}
+	h.inboundMu.RUnlock()
+
+	for _, handler := range subs {
+		handler(msg)
 	}
 }
 
@@ -488,6 +530,15 @@ func (h *Hub) wsReadLoop(c *client) {
 			raw, _ := json.Marshal(ack)
 			_ = ws.enqueue(outbound{messageType: websocket.TextMessage, payload: raw})
 		}
+
+		h.dispatchInbound(InboundMessage{
+			UserID:     c.userID,
+			ClientID:   c.id,
+			Transport:  c.transport,
+			Payload:    payload,
+			Raw:        append(json.RawMessage(nil), data...),
+			ReceivedAt: time.Now(),
+		})
 	}
 }
 

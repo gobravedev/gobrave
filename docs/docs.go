@@ -193,6 +193,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/analysis/visualization-node-tree/{analysisId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "按 workflow dag_definition 的脚本节点分组，返回 analysis nodes 树结构",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "分析"
+                ],
+                "summary": "分析节点树可视化",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "分析 ID",
+                        "name": "analysisId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.VisualizationNodeTreeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-password": {
             "post": {
                 "security": [
@@ -510,6 +568,69 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_handler.appSessionCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.AppSession"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/container/app-session/create-by-analysis-node": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "依据 analysis_node_id 查询 AnalysisNode/Analysis/Module，自动推导 ProjectID、ContainerTemplateID、WorkspacePath 并创建 AppSession",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "容器管理"
+                ],
+                "summary": "通过分析节点创建应用会话",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.appSessionCreateByAnalysisNodeRequest"
                         }
                     }
                 ],
@@ -4243,6 +4364,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/llm/copilot-cli/chat": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "连接已启动的 copilot --headless 服务并发送 prompt，按 SSE 流式返回助手消息",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "LLM"
+                ],
+                "summary": "通过 Copilot SDK 调用本地 Copilot CLI Server",
+                "parameters": [
+                    {
+                        "description": "聊天请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.copilotChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/project/activate-project": {
             "post": {
                 "security": [
@@ -4816,6 +4994,31 @@ const docTemplate = `{
                 }
             }
         },
+        "/setting/get-setting": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回当前系统配置的容器运行时",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统设置"
+                ],
+                "summary": "获取系统设置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.getSettingResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/sheet/workbook": {
             "get": {
                 "security": [
@@ -5264,6 +5467,10 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "string"
+                },
+                "source": {
+                    "description": "data analysis external",
+                    "type": "string"
                 }
             }
         },
@@ -5278,9 +5485,153 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_gobravedev_gobrave_internal_types.AnalysisNode": {
+            "type": "object",
+            "properties": {
+                "analysis_id": {
+                    "type": "string"
+                },
+                "analysis_node_id": {
+                    "type": "string"
+                },
+                "cache_hit": {
+                    "type": "boolean"
+                },
+                "command_md5": {
+                    "type": "string"
+                },
+                "command_path": {
+                    "type": "string"
+                },
+                "cpu": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "disk": {
+                    "type": "string"
+                },
+                "downstream_ids": {
+                    "type": "array",
+                    "items": {}
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "executor": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "gpu": {
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "ID                     uint       ` + "`" + `json:\"id\" gorm:\"primaryKey;autoIncrement\"` + "`" + `",
+                    "type": "string",
+                    "example": "0"
+                },
+                "input_hash": {
+                    "type": "string"
+                },
+                "input_validation_errors": {
+                    "type": "array",
+                    "items": {}
+                },
+                "inputs_patterns": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "log_path": {
+                    "type": "string"
+                },
+                "max_retry": {
+                    "type": "integer"
+                },
+                "memory": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "node_name": {
+                    "type": "string"
+                },
+                "output_dir": {
+                    "type": "string"
+                },
+                "output_patterns": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap"
+                },
+                "output_validation_errors": {
+                    "type": "array",
+                    "items": {}
+                },
+                "params": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap"
+                },
+                "params_md5": {
+                    "type": "string"
+                },
+                "params_path": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "rerun_reason": {
+                    "type": "string"
+                },
+                "resolved_inputs": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap"
+                },
+                "resolved_outputs": {
+                    "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.JSONMap"
+                },
+                "retry": {
+                    "type": "integer"
+                },
+                "sample_id": {
+                    "type": "string"
+                },
+                "script_id": {
+                    "type": "string"
+                },
+                "server_status": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "upstream_ids": {
+                    "type": "array",
+                    "items": {}
+                },
+                "workspace_dir": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_gobravedev_gobrave_internal_types.AppSession": {
             "type": "object",
             "properties": {
+                "analysis_node_id": {
+                    "type": "string",
+                    "example": "0"
+                },
                 "app_type": {
                     "type": "string"
                 },
@@ -5434,6 +5785,12 @@ const docTemplate = `{
                 },
                 "port": {
                     "type": "integer"
+                },
+                "scheduling_constraint": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "type": {
                     "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.ContainerTemplateType"
@@ -5640,6 +5997,10 @@ const docTemplate = `{
                 "ImageStatusDeleted",
                 "ImageStatusDisabled"
             ]
+        },
+        "github_com_gobravedev_gobrave_internal_types.JSONMap": {
+            "type": "object",
+            "additionalProperties": {}
         },
         "github_com_gobravedev_gobrave_internal_types.LoginRequest": {
             "type": "object",
@@ -5958,12 +6319,12 @@ const docTemplate = `{
                 "analysis_name": {
                     "type": "string"
                 },
+                "cache_type": {
+                    "type": "integer"
+                },
                 "formJson": {
                     "type": "array",
                     "items": {}
-                },
-                "is_cache": {
-                    "type": "boolean"
                 },
                 "is_report": {
                     "type": "boolean"
@@ -5993,12 +6354,12 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": true
                 },
+                "cache_type": {
+                    "type": "integer"
+                },
                 "formJson": {
                     "type": "array",
                     "items": {}
-                },
-                "is_cache": {
-                    "type": "boolean"
                 },
                 "is_report": {
                     "type": "boolean"
@@ -6033,9 +6394,53 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.VisualizationNodeTreeItem": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_gobravedev_gobrave_internal_types.AnalysisNode"
+                    }
+                },
+                "script_id": {
+                    "type": "string"
+                },
+                "script_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.VisualizationNodeTreeResponse": {
+            "type": "object",
+            "properties": {
+                "analysis_id": {
+                    "type": "string"
+                },
+                "analysis_name": {
+                    "type": "string"
+                },
+                "relation_id": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.VisualizationNodeTreeItem"
+                    }
+                }
+            }
+        },
         "internal_handler.VisualizationResultResponse": {
             "type": "object",
             "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                },
                 "htmls": {
                     "type": "array",
                     "items": {
@@ -6130,6 +6535,21 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.appSessionCreateByAnalysisNodeRequest": {
+            "type": "object",
+            "required": [
+                "analysis_node_id"
+            ],
+            "properties": {
+                "analysis_node_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.appSessionCreateRequest": {
             "type": "object",
             "required": [
@@ -6161,9 +6581,23 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.appSessionPageQuery": {
+            "type": "object",
+            "properties": {
+                "analysis_node_id": {
+                    "type": "string"
+                },
+                "project_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.appSessionPageRequest": {
             "type": "object",
             "properties": {
+                "analysis_node_id": {
+                    "type": "string"
+                },
                 "page": {
                     "description": "Page",
                     "type": "integer",
@@ -6174,6 +6608,12 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 1000,
                     "minimum": 1
+                },
+                "project_id": {
+                    "type": "string"
+                },
+                "query": {
+                    "$ref": "#/definitions/internal_handler.appSessionPageQuery"
                 }
             }
         },
@@ -6241,6 +6681,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.copilotChatRequest": {
+            "type": "object",
+            "required": [
+                "prompt"
+            ],
+            "properties": {
+                "model": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.datasetByProjectPageRequest": {
             "type": "object",
             "required": [
@@ -6288,6 +6742,14 @@ const docTemplate = `{
                 "id": {
                     "type": "string",
                     "example": "0"
+                }
+            }
+        },
+        "internal_handler.getSettingResponse": {
+            "type": "object",
+            "properties": {
+                "container_runtime": {
+                    "type": "string"
                 }
             }
         },

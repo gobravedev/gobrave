@@ -38,6 +38,7 @@ type RouterParams struct {
 	UploadHandler    *handler.UploadHandler
 	ProxyHandler     *handler.ProxyHandler
 	RealtimeHandler  *handler.RealtimeHandler
+	LLMHandler       *handler.LLMHandler
 }
 
 func NewRouter(params RouterParams) *gin.Engine {
@@ -93,6 +94,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSettingRoutes(v1, params.SettingHandler)
 		RegisterSheetRoutes(v1, params.SheetHandler)
 		RegisterRealtimeRoutes(v1, params.RealtimeHandler)
+		RegisterLLMRoutes(v1, params.LLMHandler)
 	}
 
 	r.Any("/brave-api", params.ProxyHandler.BraveAPIProxy)
@@ -255,6 +257,10 @@ func RegisterRealtimeRoutes(r *gin.RouterGroup, handler *handler.RealtimeHandler
 	r.GET("/realtime/sse", handler.ConnectSSE)
 	r.POST("/realtime/push", handler.Push)
 	r.GET("/realtime/stats", handler.Stats)
+}
+
+func RegisterLLMRoutes(r *gin.RouterGroup, handler *handler.LLMHandler) {
+	// r.POST("/llm/copilot-cli/chat", handler.CopilotChat)
 }
 
 // serveStatic maps local image resources under /images.
