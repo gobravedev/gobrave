@@ -1158,6 +1158,10 @@ func shouldForwardLLMEvent(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
 	case "assistant.message_delta":
 		return true
+	case "assistant.reasoning_delta":
+		return true
+	case "permission.request":
+		return true
 	default:
 		return false
 	}
