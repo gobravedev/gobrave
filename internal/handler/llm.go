@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	stderrs "errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,10 +16,13 @@ import (
 	copilot "github.com/github/copilot-sdk/go"
 	copilotrpc "github.com/github/copilot-sdk/go/rpc"
 	"github.com/gobravedev/gobrave/internal/config"
+	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/realtime"
+	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const defaultCopilotCLIURL = "localhost:4321"
@@ -30,12 +35,13 @@ type LLMHandler struct {
 	hub         *realtime.Hub
 	cfg         *config.Config
 	projectSvc  interfaces.ProjectService
+	llmSvc      interfaces.LLMService
 
 	bridgeMu       sync.RWMutex
 	bridgeSessions map[string]*llmBridgeSession
 }
 
-func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService) *LLMHandler {
+func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService, llmSvc interfaces.LLMService) *LLMHandler {
 	cliURL := ""
 	if cfg != nil && cfg.LLM != nil {
 		cliURL = strings.TrimSpace(cfg.LLM.CLIURL)
@@ -65,6 +71,7 @@ func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.
 		hub:            hub,
 		cfg:            cfg,
 		projectSvc:     projectSvc,
+		llmSvc:         llmSvc,
 		bridgeSessions: make(map[string]*llmBridgeSession),
 	}
 	h.hub.SubscribeInbound(h.onBridgeInboundMessage)
@@ -137,6 +144,18 @@ type copilotWSPermissionDecision struct {
 	Reason    string `json:"reason"`
 }
 
+type llmIDQuery struct {
+	ID int64 `form:"id" binding:"required"`
+}
+
+type llmIDBody struct {
+	ID int64 `json:"id,string" binding:"required"`
+}
+
+type llmConversationListQuery struct {
+	LLMSessionID int64 `form:"llm_session_id" binding:"required"`
+}
+
 type llmBridgeSession struct {
 	userID    string
 	sessionID string
@@ -149,6 +168,275 @@ type llmBridgeSession struct {
 type llmPermissionDecision struct {
 	approved bool
 	reason   string
+}
+
+func handleLLMError(c *gin.Context, err error, internalMsg string) {
+	if stderrs.Is(err, gorm.ErrRecordNotFound) {
+		c.Error(errors.NewNotFoundError("record not found"))
+		return
+	}
+	c.Error(errors.NewInternalServerError(internalMsg).WithDetails(err.Error()))
+}
+
+func (h *LLMHandler) CreateLLMSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req types.LLMSession
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if strings.TrimSpace(req.ProjectID) == "" {
+		c.Error(errors.NewValidationError("project_id is required"))
+		return
+	}
+
+	if strings.TrimSpace(req.SessionID) == "" {
+		req.SessionID = uuid.NewString()
+	}
+
+	if err := h.llmSvc.CreateLLMSession(c.Request.Context(), userID, &req); err != nil {
+		handleLLMError(c, err, "failed to create llm session")
+		return
+	}
+
+	c.JSON(http.StatusOK, req)
+}
+
+func (h *LLMHandler) GetLLMSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req llmIDQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	item, err := h.llmSvc.GetLLMSessionByID(c.Request.Context(), userID, req.ID)
+	if err != nil {
+		handleLLMError(c, err, "failed to get llm session")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *LLMHandler) UpdateLLMSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req types.LLMSession
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if req.ID == 0 {
+		c.Error(errors.NewValidationError("id is required"))
+		return
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		c.Error(errors.NewValidationError("project_id is required"))
+		return
+	}
+
+	if err := h.llmSvc.UpdateLLMSession(c.Request.Context(), userID, &req); err != nil {
+		handleLLMError(c, err, "failed to update llm session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "llm session updated successfully"})
+}
+
+func (h *LLMHandler) DeleteLLMSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req llmIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.llmSvc.DeleteLLMSession(c.Request.Context(), userID, req.ID); err != nil {
+		handleLLMError(c, err, "failed to delete llm session")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "llm session deleted successfully"})
+}
+
+func (h *LLMHandler) ListLLMSession(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	if h.projectSvc == nil {
+		c.Error(errors.NewInternalServerError("project service is not initialized"))
+		return
+	}
+
+	activeProject, err := h.projectSvc.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		handleLLMError(c, err, "failed to resolve active project")
+		return
+	}
+
+	activeProjectID := ""
+	if activeProject != nil {
+		activeProjectID = strings.TrimSpace(activeProject.ProjectID)
+	}
+
+	if activeProjectID == "" {
+		c.JSON(http.StatusOK, []*types.LLMSession{})
+		return
+	}
+
+	items, err := h.llmSvc.ListLLMSession(c.Request.Context(), userID)
+	if err != nil {
+		handleLLMError(c, err, "failed to list llm sessions")
+		return
+	}
+
+	filtered := make([]*types.LLMSession, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if strings.TrimSpace(item.ProjectID) == activeProjectID {
+			filtered = append(filtered, item)
+		}
+	}
+
+	c.JSON(http.StatusOK, filtered)
+}
+
+func (h *LLMHandler) CreateLLMConversation(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req types.LLMConversation
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if req.LLMSessionID == 0 {
+		c.Error(errors.NewValidationError("llm_session_id is required"))
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" {
+		req.ConversationID = uuid.NewString()
+	}
+
+	if err := h.llmSvc.CreateLLMConversation(c.Request.Context(), userID, &req); err != nil {
+		handleLLMError(c, err, "failed to create llm conversation")
+		return
+	}
+
+	c.JSON(http.StatusOK, req)
+}
+
+func (h *LLMHandler) GetLLMConversation(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req llmIDQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	item, err := h.llmSvc.GetLLMConversationByID(c.Request.Context(), userID, req.ID)
+	if err != nil {
+		handleLLMError(c, err, "failed to get llm conversation")
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+func (h *LLMHandler) UpdateLLMConversation(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req types.LLMConversation
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+	if req.ID == 0 {
+		c.Error(errors.NewValidationError("id is required"))
+		return
+	}
+	if req.LLMSessionID == 0 {
+		c.Error(errors.NewValidationError("llm_session_id is required"))
+		return
+	}
+
+	if err := h.llmSvc.UpdateLLMConversation(c.Request.Context(), userID, &req); err != nil {
+		handleLLMError(c, err, "failed to update llm conversation")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "llm conversation updated successfully"})
+}
+
+func (h *LLMHandler) DeleteLLMConversation(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req llmIDBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	if err := h.llmSvc.DeleteLLMConversation(c.Request.Context(), userID, req.ID); err != nil {
+		handleLLMError(c, err, "failed to delete llm conversation")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "llm conversation deleted successfully"})
+}
+
+func (h *LLMHandler) ListLLMConversation(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req llmConversationListQuery
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+		return
+	}
+
+	items, err := h.llmSvc.ListLLMConversationBySessionID(c.Request.Context(), userID, req.LLMSessionID)
+	if err != nil {
+		handleLLMError(c, err, "failed to list llm conversations")
+		return
+	}
+
+	c.JSON(http.StatusOK, items)
 }
 
 // CopilotChat godoc

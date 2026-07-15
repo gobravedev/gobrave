@@ -260,6 +260,18 @@ func RegisterRealtimeRoutes(r *gin.RouterGroup, handler *handler.RealtimeHandler
 }
 
 func RegisterLLMRoutes(r *gin.RouterGroup, handler *handler.LLMHandler) {
+	r.POST("/llm/session/create", handler.CreateLLMSession)
+	r.GET("/llm/session/get", handler.GetLLMSession)
+	r.POST("/llm/session/update", handler.UpdateLLMSession)
+	r.POST("/llm/session/delete", handler.DeleteLLMSession)
+	r.GET("/llm/session/list", handler.ListLLMSession)
+
+	r.POST("/llm/conversation/create", handler.CreateLLMConversation)
+	r.GET("/llm/conversation/get", handler.GetLLMConversation)
+	r.POST("/llm/conversation/update", handler.UpdateLLMConversation)
+	r.POST("/llm/conversation/delete", handler.DeleteLLMConversation)
+	r.GET("/llm/conversation/list", handler.ListLLMConversation)
+
 	// r.POST("/llm/copilot-cli/chat", handler.CopilotChat)
 }
 

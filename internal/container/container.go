@@ -113,6 +113,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAnalysisRepository))
 	must(container.Provide(repository.NewWorkflowRepository))
 	must(container.Provide(repository.NewContainerRepository))
+	must(container.Provide(repository.NewLLMRepository))
 	must(container.Provide(manager.NewDefaultContainerRuntimeResolver))
 	must(container.Provide(manager.NewImageManager))
 	must(container.Provide(manager.NewContainerManager))
@@ -232,6 +233,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDataflowDagOrchestratorV3))
 	must(container.Provide(service.NewWorkflowService))
 	must(container.Provide(service.NewContainerService))
+	must(container.Provide(service.NewLLMService))
 	must(container.Provide(service.NewSheetFileService))
 	// must(container.Provide(service.NewTraceService))
 	// must(container.Provide(service.NewAuthService))
@@ -502,6 +504,8 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.AppSession{},
 		&types.ContainerInstance{},
 		&types.ContainerEvent{},
+		&types.LLMSession{},
+		&types.LLMConversation{},
 		&types.GatewayRoute{},
 		&types.OutboxEvent{},
 	// &types.Trace{},
