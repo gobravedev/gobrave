@@ -28,9 +28,9 @@ func (r *llmRepository) GetLLMSessionByID(ctx context.Context, id int64) (*types
 	return item, nil
 }
 
-func (r *llmRepository) GetLLMSessionByIDAndUserID(ctx context.Context, id int64, userID string) (*types.LLMSession, error) {
+func (r *llmRepository) GetLLMSessionByIDAndProjectID(ctx context.Context, id int64, projectID string) (*types.LLMSession, error) {
 	item := &types.LLMSession{}
-	if err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).Take(item).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ? AND project_id = ?", id, projectID).Take(item).Error; err != nil {
 		return nil, err
 	}
 	return item, nil
@@ -40,7 +40,6 @@ func (r *llmRepository) UpdateLLMSession(ctx context.Context, session *types.LLM
 	return r.db.WithContext(ctx).Model(&types.LLMSession{}).
 		Where("id = ?", session.ID).
 		Updates(map[string]interface{}{
-			"session_id": session.SessionID,
 			"project_id": session.ProjectID,
 			"title":      session.Title,
 			"status":     session.Status,
@@ -51,9 +50,9 @@ func (r *llmRepository) DeleteLLMSession(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.LLMSession{}).Error
 }
 
-func (r *llmRepository) ListLLMSessionByUserID(ctx context.Context, userID string) ([]*types.LLMSession, error) {
+func (r *llmRepository) ListLLMSessionByProjectID(ctx context.Context, projectID string) ([]*types.LLMSession, error) {
 	items := make([]*types.LLMSession, 0)
-	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id DESC").Find(&items).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("project_id = ?", projectID).Order("id DESC").Find(&items).Error; err != nil {
 		return nil, err
 	}
 	return items, nil
@@ -83,13 +82,13 @@ func (r *llmRepository) GetLLMConversationByID(ctx context.Context, id int64) (*
 	return item, nil
 }
 
-func (r *llmRepository) GetLLMConversationByIDAndUserID(ctx context.Context, id int64, userID string) (*types.LLMConversation, error) {
+func (r *llmRepository) GetLLMConversationByIDAndProjectID(ctx context.Context, id int64, projectID string) (*types.LLMConversation, error) {
 	item := &types.LLMConversation{}
 	err := r.db.WithContext(ctx).
 		Table("go_llm_conversation AS c").
 		Select("c.id, c.conversation_id, c.llm_session_id, c.role, c.content, c.model, c.created_at, c.updated_at").
 		Joins("JOIN go_llm_session AS s ON s.id = c.llm_session_id").
-		Where("c.id = ? AND s.user_id = ?", id, userID).
+		Where("c.id = ? AND s.project_id = ?", id, projectID).
 		Take(item).Error
 	if err != nil {
 		return nil, err

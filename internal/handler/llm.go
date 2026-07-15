@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -133,12 +134,12 @@ type copilotWSStartRequest struct {
 	Type      string `json:"type"`
 	Prompt    string `json:"prompt"`
 	Model     string `json:"model"`
-	SessionID string `json:"session_id"`
+	SessionID int64  `json:"session_id"`
 }
 
 type copilotWSPermissionDecision struct {
 	Type      string `json:"type"`
-	SessionID string `json:"session_id"`
+	SessionID int64  `json:"session_id"`
 	RequestID string `json:"request_id"`
 	Approved  bool   `json:"approved"`
 	Reason    string `json:"reason"`
@@ -153,12 +154,12 @@ type llmIDBody struct {
 }
 
 type llmConversationListQuery struct {
-	LLMSessionID int64 `form:"llm_session_id" binding:"required"`
+	SessionID int64 `form:"session_id" binding:"required"`
 }
 
 type llmBridgeSession struct {
 	userID    string
-	sessionID string
+	sessionID int64
 	cancel    context.CancelFunc
 
 	decisionMu      sync.Mutex
@@ -193,10 +194,6 @@ func (h *LLMHandler) CreateLLMSession(c *gin.Context) {
 	if strings.TrimSpace(req.ProjectID) == "" {
 		c.Error(errors.NewValidationError("project_id is required"))
 		return
-	}
-
-	if strings.TrimSpace(req.SessionID) == "" {
-		req.SessionID = uuid.NewString()
 	}
 
 	if err := h.llmSvc.CreateLLMSession(c.Request.Context(), userID, &req); err != nil {
@@ -282,44 +279,13 @@ func (h *LLMHandler) ListLLMSession(c *gin.Context) {
 		return
 	}
 
-	if h.projectSvc == nil {
-		c.Error(errors.NewInternalServerError("project service is not initialized"))
-		return
-	}
-
-	activeProject, err := h.projectSvc.GetActiveProjectByUserID(c.Request.Context(), userID)
-	if err != nil {
-		handleLLMError(c, err, "failed to resolve active project")
-		return
-	}
-
-	activeProjectID := ""
-	if activeProject != nil {
-		activeProjectID = strings.TrimSpace(activeProject.ProjectID)
-	}
-
-	if activeProjectID == "" {
-		c.JSON(http.StatusOK, []*types.LLMSession{})
-		return
-	}
-
 	items, err := h.llmSvc.ListLLMSession(c.Request.Context(), userID)
 	if err != nil {
 		handleLLMError(c, err, "failed to list llm sessions")
 		return
 	}
 
-	filtered := make([]*types.LLMSession, 0, len(items))
-	for _, item := range items {
-		if item == nil {
-			continue
-		}
-		if strings.TrimSpace(item.ProjectID) == activeProjectID {
-			filtered = append(filtered, item)
-		}
-	}
-
-	c.JSON(http.StatusOK, filtered)
+	c.JSON(http.StatusOK, items)
 }
 
 func (h *LLMHandler) CreateLLMConversation(c *gin.Context) {
@@ -430,7 +396,7 @@ func (h *LLMHandler) ListLLMConversation(c *gin.Context) {
 		return
 	}
 
-	items, err := h.llmSvc.ListLLMConversationBySessionID(c.Request.Context(), userID, req.LLMSessionID)
+	items, err := h.llmSvc.ListLLMConversationBySessionID(c.Request.Context(), userID, req.SessionID)
 	if err != nil {
 		handleLLMError(c, err, "failed to list llm conversations")
 		return
@@ -658,42 +624,42 @@ func (h *LLMHandler) onBridgeInboundMessage(msg realtime.InboundMessage) {
 			Type:      typ,
 			Prompt:    toString(msg.Payload["prompt"]),
 			Model:     toString(msg.Payload["model"]),
-			SessionID: toString(msg.Payload["session_id"]),
+			SessionID: toInt64(msg.Payload["session_id"]),
 		}
 
-		sessionID := strings.TrimSpace(startReq.SessionID)
-		if sessionID == "" {
-			sessionID = uuid.NewString()
+		sessionID := startReq.SessionID
+		if sessionID == 0 {
+			h.pushBridgeEvent(msg.UserID, sessionID, "error", gin.H{"error": "failed to start llm session", "detail": "session_id is required"})
+			return
 		}
 
 		if err := h.startBridgeSession(context.Background(), msg.UserID, sessionID, startReq.Prompt, startReq.Model); err != nil {
 			h.pushBridgeEvent(msg.UserID, sessionID, "error", gin.H{"error": "failed to start llm session", "detail": err.Error()})
 			return
 		}
-		h.pushBridgeEvent(msg.UserID, sessionID, "session.started", gin.H{"session_id": sessionID})
+		h.pushBridgeEvent(msg.UserID, sessionID, "session.started", gin.H{"session_id": strconv.FormatInt(sessionID, 10)})
 	case "llm.permission.decision":
 		decision := copilotWSPermissionDecision{
 			Type:      typ,
-			SessionID: toString(msg.Payload["session_id"]),
+			SessionID: toInt64(msg.Payload["session_id"]),
 			RequestID: toString(msg.Payload["request_id"]),
 			Approved:  toBool(msg.Payload["approved"]),
 			Reason:    toString(msg.Payload["reason"]),
 		}
 		h.acceptBridgeDecision(msg.UserID, decision)
 	case "llm.chat.stop":
-		h.stopBridgeSession(msg.UserID, toString(msg.Payload["session_id"]))
+		h.stopBridgeSession(msg.UserID, toInt64(msg.Payload["session_id"]))
 	}
 }
 
-func (h *LLMHandler) startBridgeSession(parent context.Context, userID, sessionID, prompt, model string) error {
+func (h *LLMHandler) startBridgeSession(parent context.Context, userID string, sessionID int64, prompt, model string) error {
 	userID = strings.TrimSpace(userID)
-	sessionID = strings.TrimSpace(sessionID)
 	prompt = strings.TrimSpace(prompt)
 	model = strings.TrimSpace(model)
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
 	}
-	if sessionID == "" {
+	if sessionID == 0 {
 		return fmt.Errorf("session_id is required")
 	}
 	if prompt == "" {
@@ -716,6 +682,16 @@ func (h *LLMHandler) startBridgeSession(parent context.Context, userID, sessionI
 	}
 	h.bridgeSessions[key] = session
 	h.bridgeMu.Unlock()
+
+	if err := h.llmSvc.CreateLLMConversation(parent, userID, &types.LLMConversation{
+		LLMSessionID:   sessionID,
+		ConversationID: uuid.NewString(),
+		Role:           "user",
+		Content:        prompt,
+	}); err != nil {
+		h.removeBridgeSession(userID, sessionID)
+		return err
+	}
 
 	go h.runBridgeSession(ctx, session, prompt, model)
 	return nil
@@ -783,9 +759,9 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 				"request_id":             requestID,
 				"kind":                   string(request.Kind()),
 				"request":                request,
-				"copilot_session_id":     invocation.SessionID,
+				"copilot_session_id":     fmt.Sprintf("%v", invocation.SessionID),
 				"requires_write_confirm": requiresWriteConfirm,
-				"session_id":             session.sessionID,
+				"session_id":             strconv.FormatInt(session.sessionID, 10),
 			})
 
 			if !requiresWriteConfirm {
@@ -901,22 +877,34 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 			}
 			h.pushBridgeEvent(session.userID, session.sessionID, ev.name, ev.data)
 		case <-idleCh:
+			if finalContent.Len() > 0 {
+				if err := h.llmSvc.CreateLLMConversation(ctx, session.userID, &types.LLMConversation{
+					LLMSessionID:   session.sessionID,
+					ConversationID: uuid.NewString(),
+					Role:           "assistant",
+					Content:        finalContent.String(),
+					Model:          resolvedModel,
+				}); err != nil {
+					h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to persist llm conversation", "detail": err.Error()})
+					return
+				}
+			}
 			h.pushBridgeEvent(session.userID, session.sessionID, "completed", gin.H{"content": finalContent.String(), "model": resolvedModel})
 			return
 		}
 	}
 }
 
-func (h *LLMHandler) pushBridgeEvent(userID, sessionID, event string, data any) {
+func (h *LLMHandler) pushBridgeEvent(userID string, sessionID int64, event string, data any) {
 	payload := gin.H{
 		"type":        "llm.event",
-		"session_id":  sessionID,
+		"session_id":  strconv.FormatInt(sessionID, 10),
 		"event":       event,
 		"data":        data,
 		"require_ack": false,
 	}
 	if err := h.hub.PushMessage(userID, payload); err != nil {
-		logger.Warnf(context.Background(), "[LLM] push bridge event failed user_id=%s session_id=%s event=%s err=%v", userID, sessionID, event, err)
+		logger.Warnf(context.Background(), "[LLM] push bridge event failed user_id=%s session_id=%d event=%s err=%v", userID, sessionID, event, err)
 	}
 }
 
@@ -924,14 +912,16 @@ func (h *LLMHandler) acceptBridgeDecision(userID string, decision copilotWSPermi
 	key := bridgeSessionKey(userID, decision.SessionID)
 	h.bridgeMu.RLock()
 	session, ok := h.bridgeSessions[key]
+
 	h.bridgeMu.RUnlock()
 	if !ok {
+		logger.Errorf(context.Background(), "[LLM] accept bridge decision failed user_id=%s session_id=%d request_id=%s", userID, decision.SessionID, decision.RequestID)
 		return
 	}
 	session.acceptDecision(strings.TrimSpace(decision.RequestID), llmPermissionDecision{approved: decision.Approved, reason: decision.Reason})
 }
 
-func (h *LLMHandler) stopBridgeSession(userID, sessionID string) {
+func (h *LLMHandler) stopBridgeSession(userID string, sessionID int64) {
 	key := bridgeSessionKey(userID, sessionID)
 	h.bridgeMu.RLock()
 	session, ok := h.bridgeSessions[key]
@@ -972,7 +962,7 @@ func (h *LLMHandler) resolveWorkingDirectory(ctx context.Context, userID string)
 	return workingDir, nil
 }
 
-func (h *LLMHandler) removeBridgeSession(userID, sessionID string) {
+func (h *LLMHandler) removeBridgeSession(userID string, sessionID int64) {
 	key := bridgeSessionKey(userID, sessionID)
 	h.bridgeMu.Lock()
 	session, ok := h.bridgeSessions[key]
@@ -985,8 +975,8 @@ func (h *LLMHandler) removeBridgeSession(userID, sessionID string) {
 	}
 }
 
-func bridgeSessionKey(userID, sessionID string) string {
-	return strings.TrimSpace(userID) + "::" + strings.TrimSpace(sessionID)
+func bridgeSessionKey(userID string, sessionID int64) string {
+	return strings.TrimSpace(userID) + "::" + strconv.FormatInt(sessionID, 10)
 }
 
 func (s *llmBridgeSession) registerDecisionWaiter(requestID string) chan llmPermissionDecision {
@@ -1019,6 +1009,7 @@ func (s *llmBridgeSession) acceptDecision(requestID string, decision llmPermissi
 	}
 	s.decisionMu.Unlock()
 	if !ok {
+		logger.Warnf(context.Background(), "[LLM] accept decision failed: no waiter found for request_id=%s", requestID)
 		return
 	}
 	select {
@@ -1047,6 +1038,31 @@ func toString(v any) string {
 func toBool(v any) bool {
 	b, ok := v.(bool)
 	return ok && b
+}
+
+func toInt64(v any) int64 {
+	switch value := v.(type) {
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	case string:
+		parsed := strings.TrimSpace(value)
+		if parsed == "" {
+			return 0
+		}
+		id, err := strconv.ParseInt(parsed, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return id
+	default:
+		return 0
+	}
 }
 
 func requiresWriteApproval(request copilot.PermissionRequest) bool {

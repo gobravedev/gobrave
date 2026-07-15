@@ -12,11 +12,7 @@ import (
 type LLMSession struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
-	SessionID string `json:"session_id" gorm:"type:varchar(64);uniqueIndex;not null"`
-
 	ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
-
-	UserID string `json:"user_id" gorm:"type:varchar(36);index;not null"`
 
 	Title string `json:"title" gorm:"type:varchar(255)"`
 

@@ -9,62 +9,90 @@ import (
 )
 
 type llmService struct {
-	llmRepo interfaces.LLMRepository
+	llmRepo    interfaces.LLMRepository
+	projectSvc interfaces.ProjectService
 }
 
-func NewLLMService(llmRepo interfaces.LLMRepository) interfaces.LLMService {
-	return &llmService{llmRepo: llmRepo}
+func NewLLMService(llmRepo interfaces.LLMRepository, projectSvc interfaces.ProjectService) interfaces.LLMService {
+	return &llmService{llmRepo: llmRepo, projectSvc: projectSvc}
 }
 
 func (s *llmService) CreateLLMSession(ctx context.Context, userID string, session *types.LLMSession) error {
-	session.UserID = userID
 	return s.llmRepo.CreateLLMSession(ctx, session)
 }
 
 func (s *llmService) GetLLMSessionByID(ctx context.Context, userID string, id int64) (*types.LLMSession, error) {
-	return s.llmRepo.GetLLMSessionByIDAndUserID(ctx, id, userID)
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, id, projectID)
 }
 
 func (s *llmService) UpdateLLMSession(ctx context.Context, userID string, session *types.LLMSession) error {
-	current, err := s.llmRepo.GetLLMSessionByIDAndUserID(ctx, session.ID, userID)
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	current, err := s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, session.ID, projectID)
 	if err != nil {
 		return err
 	}
 
-	session.UserID = current.UserID
+	session.ProjectID = current.ProjectID
 	return s.llmRepo.UpdateLLMSession(ctx, session)
 }
 
 func (s *llmService) DeleteLLMSession(ctx context.Context, userID string, id int64) error {
-	if _, err := s.llmRepo.GetLLMSessionByIDAndUserID(ctx, id, userID); err != nil {
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, id, projectID); err != nil {
 		return err
 	}
 	return s.llmRepo.DeleteLLMSessionWithRelations(ctx, id)
 }
 
 func (s *llmService) ListLLMSession(ctx context.Context, userID string) ([]*types.LLMSession, error) {
-	return s.llmRepo.ListLLMSessionByUserID(ctx, userID)
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.llmRepo.ListLLMSessionByProjectID(ctx, projectID)
 }
 
 func (s *llmService) CreateLLMConversation(ctx context.Context, userID string, conversation *types.LLMConversation) error {
-	if _, err := s.llmRepo.GetLLMSessionByIDAndUserID(ctx, conversation.LLMSessionID, userID); err != nil {
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, conversation.LLMSessionID, projectID); err != nil {
 		return err
 	}
 	return s.llmRepo.CreateLLMConversation(ctx, conversation)
 }
 
 func (s *llmService) GetLLMConversationByID(ctx context.Context, userID string, id int64) (*types.LLMConversation, error) {
-	return s.llmRepo.GetLLMConversationByIDAndUserID(ctx, id, userID)
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.llmRepo.GetLLMConversationByIDAndProjectID(ctx, id, projectID)
 }
 
 func (s *llmService) UpdateLLMConversation(ctx context.Context, userID string, conversation *types.LLMConversation) error {
-	current, err := s.llmRepo.GetLLMConversationByIDAndUserID(ctx, conversation.ID, userID)
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	current, err := s.llmRepo.GetLLMConversationByIDAndProjectID(ctx, conversation.ID, projectID)
 	if err != nil {
 		return err
 	}
 
 	if conversation.LLMSessionID != current.LLMSessionID {
-		if _, err := s.llmRepo.GetLLMSessionByIDAndUserID(ctx, conversation.LLMSessionID, userID); err != nil {
+		if _, err := s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, conversation.LLMSessionID, projectID); err != nil {
 			return err
 		}
 	}
@@ -73,14 +101,22 @@ func (s *llmService) UpdateLLMConversation(ctx context.Context, userID string, c
 }
 
 func (s *llmService) DeleteLLMConversation(ctx context.Context, userID string, id int64) error {
-	if _, err := s.llmRepo.GetLLMConversationByIDAndUserID(ctx, id, userID); err != nil {
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.llmRepo.GetLLMConversationByIDAndProjectID(ctx, id, projectID); err != nil {
 		return err
 	}
 	return s.llmRepo.DeleteLLMConversation(ctx, id)
 }
 
 func (s *llmService) ListLLMConversationBySessionID(ctx context.Context, userID string, llmSessionID int64) ([]*types.LLMConversation, error) {
-	if _, err := s.llmRepo.GetLLMSessionByIDAndUserID(ctx, llmSessionID, userID); err != nil {
+	projectID, err := s.resolveActiveProjectID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.llmRepo.GetLLMSessionByIDAndProjectID(ctx, llmSessionID, projectID); err != nil {
 		return nil, err
 	}
 	items, err := s.llmRepo.ListLLMConversationBySessionID(ctx, llmSessionID)
@@ -91,4 +127,12 @@ func (s *llmService) ListLLMConversationBySessionID(ctx context.Context, userID 
 		return nil, err
 	}
 	return items, nil
+}
+
+func (s *llmService) resolveActiveProjectID(ctx context.Context, userID string) (string, error) {
+	project, err := s.projectSvc.GetActiveProjectByUserID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return project.ProjectID, nil
 }
