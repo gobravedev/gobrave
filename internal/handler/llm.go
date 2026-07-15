@@ -567,7 +567,7 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 
 	unsubscribe := copilotSession.On(func(event copilot.SessionEvent) {
 		eventType := string(event.Type())
-		if eventType != "" && event.Data != nil {
+		if shouldForwardLLMEvent(eventType) && event.Data != nil {
 			select {
 			case eventCh <- llmStreamEvent{name: eventType, data: event.Data}:
 			default:
@@ -771,6 +771,15 @@ func requiresWriteApproval(request copilot.PermissionRequest) bool {
 		}
 	}
 	return requiresWriteConfirm
+}
+
+func shouldForwardLLMEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case "assistant.message_delta":
+		return true
+	default:
+		return false
+	}
 }
 
 func writeSSEEvent(c *gin.Context, event string, data any) error {
