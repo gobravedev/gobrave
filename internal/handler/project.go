@@ -1,15 +1,22 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	stderrs "errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -349,33 +356,38 @@ func (h *ProjectHandler) DeleteProjectReport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "project report deleted successfully"})
 }
 
-type listProjectReportRequest struct {
-	ProjectID string `form:"project_id" binding:"required"`
-}
-
 type projectReportDetailRequest struct {
-	ID int64 `form:"id" binding:"required"`
+	ID string `form:"id" binding:"required"`
 }
 
 type projectReportListItem struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	Title     string `json:"title"`
+	Source    string `json:"source"`
 	SortOrder int    `json:"sort_order"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
 
+type projectReportDetailItem struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	SortOrder int       `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // ListProjectReport godoc
 // @Summary      查询项目报告列表
-// @Description  根据 project_id 查询报告列表，不返回 content 字段，按 sort_order、created_at 升序排序
+// @Description  查询当前用户激活项目的报告列表，不返回 content 字段，按 sort_order、created_at 升序排序
 // @Tags         项目
 // @Produce      json
-// @Param        project_id  query     string                  true  "项目ID"
 // @Success      200         {array}   projectReportListItem   "报告列表"
-// @Failure      400         {object}  errors.AppError         "参数错误"
 // @Failure      401         {object}  errors.AppError         "未认证"
-// @Failure      404         {object}  errors.AppError         "项目未关联当前用户"
+// @Failure      404         {object}  errors.AppError         "未找到激活项目"
 // @Failure      500         {object}  errors.AppError         "服务器错误"
 // @Security     Bearer
 // @Router       /project/list-project-report [get]
@@ -387,16 +399,20 @@ func (h *ProjectHandler) ListProjectReport(c *gin.Context) {
 		return
 	}
 
-	var req listProjectReportRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+	project, err := h.projectService.GetActiveProjectByUserID(ctx, userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
 		return
 	}
 
-	reports, err := h.projectService.ListProjectReportByProjectID(ctx, userID, req.ProjectID)
+	reports, err := h.projectService.ListProjectReportByProjectID(ctx, userID, project.ProjectID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
-			c.Error(errors.NewNotFoundError("project is not bound to current user"))
+			c.Error(errors.NewNotFoundError("active project is not bound to current user"))
 			return
 		}
 		c.Error(errors.NewInternalServerError("failed to list project report").WithDetails(err.Error()))
@@ -409,13 +425,67 @@ func (h *ProjectHandler) ListProjectReport(c *gin.Context) {
 			ID:        strconv.FormatInt(report.ID, 10),
 			ProjectID: report.ProjectID,
 			Title:     report.Title,
+			Source:    "database",
 			SortOrder: report.SortOrder,
 			CreatedAt: report.CreatedAt.Format("2006-01-02 15:04:05"),
 			UpdatedAt: report.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 
+	result = appendProjectReportMarkdownFiles(result, project.ProjectID)
+
 	c.JSON(http.StatusOK, result)
+}
+
+func appendProjectReportMarkdownFiles(result []projectReportListItem, projectID string) []projectReportListItem {
+	cfg, err := config.LoadConfig()
+	if err != nil || cfg == nil || cfg.Storage == nil {
+		return result
+	}
+
+	baseDir := strings.TrimSpace(cfg.Storage.BaseDir)
+	if baseDir == "" {
+		return result
+	}
+
+	srcDir, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data", projectID, "docs", "src"))
+	if err != nil {
+		return result
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return result
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		fileName := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(fileName), ".md") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		updatedAt := info.ModTime().Format("2006-01-02 15:04:05")
+		result = append(result, projectReportListItem{
+			ID:        "file:" + fileName,
+			ProjectID: projectID,
+			Title:     fileName,
+			Source:    "file",
+			SortOrder: 0,
+			CreatedAt: updatedAt,
+			UpdatedAt: updatedAt,
+		})
+	}
+
+	return result
 }
 
 // GetProjectReportDetail godoc
@@ -423,8 +493,8 @@ func (h *ProjectHandler) ListProjectReport(c *gin.Context) {
 // @Description  根据 id 查询报告详情（包含 content）
 // @Tags         项目
 // @Produce      json
-// @Param        id          query     integer                 true  "报告ID"
-// @Success      200         {object}  types.ProjectReport     "报告详情"
+// @Param        id          query     string                  true  "报告ID或 file:文件名.md"
+// @Success      200         {object}  projectReportDetailItem "报告详情"
 // @Failure      400         {object}  errors.AppError         "参数错误"
 // @Failure      401         {object}  errors.AppError         "未认证"
 // @Failure      404         {object}  errors.AppError         "项目未关联当前用户"
@@ -445,7 +515,32 @@ func (h *ProjectHandler) GetProjectReportDetail(c *gin.Context) {
 		return
 	}
 
-	report, err := h.projectService.GetProjectReportDetailByID(ctx, userID, req.ID)
+	if strings.HasPrefix(req.ID, "file:") {
+		report, err := h.getProjectReportDetailFromFile(ctx, userID, req.ID)
+		if err != nil {
+			if appErr, ok := errors.IsAppError(err); ok {
+				c.Error(appErr)
+				return
+			}
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("project report is not bound to current user"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to get project report detail").WithDetails(err.Error()))
+			return
+		}
+
+		c.JSON(http.StatusOK, report)
+		return
+	}
+
+	reportID, err := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails("id must be an integer or file:filename.md"))
+		return
+	}
+
+	report, err := h.projectService.GetProjectReportDetailByID(ctx, userID, reportID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("project report is not bound to current user"))
@@ -455,7 +550,77 @@ func (h *ProjectHandler) GetProjectReportDetail(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, report)
+	c.JSON(http.StatusOK, newProjectReportDetailItem(strconv.FormatInt(report.ID, 10), report))
+}
+
+func (h *ProjectHandler) getProjectReportDetailFromFile(ctx context.Context, userID, fileID string) (*projectReportDetailItem, error) {
+	project, err := h.projectService.GetActiveProjectByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	fileName := strings.TrimSpace(strings.TrimPrefix(fileID, "file:"))
+	if fileName == "" || !strings.HasSuffix(strings.ToLower(fileName), ".md") {
+		return nil, errors.NewValidationError("invalid request parameters").WithDetails("invalid file report id")
+	}
+	if filepath.Base(fileName) != fileName {
+		return nil, errors.NewValidationError("invalid request parameters").WithDetails("invalid file report id")
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil || cfg == nil || cfg.Storage == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	baseDir := strings.TrimSpace(cfg.Storage.BaseDir)
+	if baseDir == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	filePath, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data", project.ProjectID, "docs", "src", fileName))
+	if err != nil {
+		return nil, errors.NewValidationError("invalid request parameters").WithDetails("invalid file report id")
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &types.ProjectReport{
+		ProjectID: project.ProjectID,
+		Title:     fileName,
+		Content:   string(content),
+		SortOrder: 0,
+		CreatedAt: info.ModTime(),
+		UpdatedAt: info.ModTime(),
+	}
+
+	return newProjectReportDetailItem(fileID, report), nil
+}
+
+func newProjectReportDetailItem(id string, report *types.ProjectReport) *projectReportDetailItem {
+	if report == nil {
+		return nil
+	}
+
+	return &projectReportDetailItem{
+		ID:        id,
+		ProjectID: report.ProjectID,
+		Title:     report.Title,
+		Content:   report.Content,
+		SortOrder: report.SortOrder,
+		CreatedAt: report.CreatedAt,
+		UpdatedAt: report.UpdatedAt,
+	}
 }
 
 func getCurrentUserID(c *gin.Context) (string, bool) {
