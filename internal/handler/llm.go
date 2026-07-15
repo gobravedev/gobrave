@@ -715,6 +715,8 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		resolvedModel = "auto"
 	}
 
+	copilotSessionID := buildCopilotSessionID(session.userID, session.sessionID)
+
 	providerCfg := h.providerCfg
 	if providerCfg != nil && strings.TrimSpace(providerCfg.ModelID) == "" && resolvedModel != "" {
 		copied := *providerCfg
@@ -745,26 +747,49 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		}
 	}()
 
-	copilotSession, err := client.CreateSession(ctx, &copilot.SessionConfig{
-		Model:            resolvedModel,
-		GitHubToken:      h.githubToken,
-		Streaming:        copilot.Bool(true),
-		Provider:         providerCfg,
-		WorkingDirectory: workingDir,
-		OnPermissionRequest: func(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (copilotrpc.PermissionDecision, error) {
-			requiresWriteConfirm := requiresWriteApproval(request)
-			requestID := uuid.NewString()
+	permissionHandler := func(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (copilotrpc.PermissionDecision, error) {
+		requiresWriteConfirm := requiresWriteApproval(request)
+		requestID := uuid.NewString()
 
-			h.pushBridgeEvent(session.userID, session.sessionID, "permission.request", gin.H{
-				"request_id":             requestID,
-				"kind":                   string(request.Kind()),
-				"request":                request,
-				"copilot_session_id":     fmt.Sprintf("%v", invocation.SessionID),
-				"requires_write_confirm": requiresWriteConfirm,
-				"session_id":             strconv.FormatInt(session.sessionID, 10),
+		h.pushBridgeEvent(session.userID, session.sessionID, "permission.request", gin.H{
+			"request_id":             requestID,
+			"kind":                   string(request.Kind()),
+			"request":                request,
+			"copilot_session_id":     fmt.Sprintf("%v", invocation.SessionID),
+			"requires_write_confirm": requiresWriteConfirm,
+			"session_id":             strconv.FormatInt(session.sessionID, 10),
+		})
+
+		if !requiresWriteConfirm {
+			decision := copilotrpc.PermissionDecisionApproveOnce{}
+			h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
+				"request_id": requestID,
+				"kind":       string(request.Kind()),
+				"approved":   true,
 			})
+			return decision, nil
+		}
 
-			if !requiresWriteConfirm {
+		waiter := session.registerDecisionWaiter(requestID)
+		defer session.removeDecisionWaiter(requestID)
+
+		select {
+		case <-streamCtx.Done():
+			feedback := "request canceled while waiting for ui confirmation"
+			forceReject := true
+			return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
+		case <-time.After(3 * time.Minute):
+			feedback := "ui confirmation timeout"
+			forceReject := true
+			h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
+				"request_id": requestID,
+				"kind":       string(request.Kind()),
+				"approved":   false,
+				"reason":     feedback,
+			})
+			return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
+		case uiDecision := <-waiter:
+			if uiDecision.approved {
 				decision := copilotrpc.PermissionDecisionApproveOnce{}
 				h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
 					"request_id": requestID,
@@ -774,52 +799,24 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 				return decision, nil
 			}
 
-			waiter := session.registerDecisionWaiter(requestID)
-			defer session.removeDecisionWaiter(requestID)
-
-			select {
-			case <-streamCtx.Done():
-				feedback := "request canceled while waiting for ui confirmation"
-				forceReject := true
-				return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
-			case <-time.After(3 * time.Minute):
-				feedback := "ui confirmation timeout"
-				forceReject := true
-				h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
-					"request_id": requestID,
-					"kind":       string(request.Kind()),
-					"approved":   false,
-					"reason":     feedback,
-				})
-				return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
-			case uiDecision := <-waiter:
-				if uiDecision.approved {
-					decision := copilotrpc.PermissionDecisionApproveOnce{}
-					h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
-						"request_id": requestID,
-						"kind":       string(request.Kind()),
-						"approved":   true,
-					})
-					return decision, nil
-				}
-
-				feedback := strings.TrimSpace(uiDecision.reason)
-				if feedback == "" {
-					feedback = "rejected by ui"
-				}
-				forceReject := true
-				h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
-					"request_id": requestID,
-					"kind":       string(request.Kind()),
-					"approved":   false,
-					"reason":     feedback,
-				})
-				return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
+			feedback := strings.TrimSpace(uiDecision.reason)
+			if feedback == "" {
+				feedback = "rejected by ui"
 			}
-		},
-	})
+			forceReject := true
+			h.pushBridgeEvent(session.userID, session.sessionID, "permission.decision", gin.H{
+				"request_id": requestID,
+				"kind":       string(request.Kind()),
+				"approved":   false,
+				"reason":     feedback,
+			})
+			return copilotrpc.PermissionDecisionDeniedInteractivelyByUser{Feedback: &feedback, ForceReject: &forceReject}, nil
+		}
+	}
+
+	copilotSession, resumed, err := h.openOrResumeCopilotSession(ctx, client, copilotSessionID, resolvedModel, workingDir, providerCfg, permissionHandler)
 	if err != nil {
-		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to create copilot session", "detail": err.Error()})
+		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to initialize copilot session", "detail": err.Error()})
 		return
 	}
 	defer func() {
@@ -828,7 +825,12 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		}
 	}()
 
-	h.pushBridgeEvent(session.userID, session.sessionID, "start", gin.H{"model": resolvedModel, "cli_url": h.cliURL})
+	h.pushBridgeEvent(session.userID, session.sessionID, "start", gin.H{
+		"model":              resolvedModel,
+		"cli_url":            h.cliURL,
+		"copilot_session_id": copilotSessionID,
+		"resumed":            resumed,
+	})
 
 	unsubscribe := copilotSession.On(func(event copilot.SessionEvent) {
 		eventType := string(event.Type())
@@ -977,6 +979,80 @@ func (h *LLMHandler) removeBridgeSession(userID string, sessionID int64) {
 
 func bridgeSessionKey(userID string, sessionID int64) string {
 	return strings.TrimSpace(userID) + "::" + strconv.FormatInt(sessionID, 10)
+}
+
+func buildCopilotSessionID(userID string, sessionID int64) string {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		trimmedUserID = "anonymous"
+	}
+
+	b := strings.Builder{}
+	b.Grow(len(trimmedUserID))
+	for _, r := range trimmedUserID {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+
+	return "gobrave-" + b.String() + "-" + strconv.FormatInt(sessionID, 10)
+}
+
+func (h *LLMHandler) openOrResumeCopilotSession(
+	ctx context.Context,
+	client *copilot.Client,
+	copilotSessionID string,
+	model string,
+	workingDir string,
+	providerCfg *copilot.ProviderConfig,
+	permissionHandler copilot.PermissionHandlerFunc,
+) (*copilot.Session, bool, error) {
+	resumeCfg := &copilot.ResumeSessionConfig{
+		Model:               model,
+		GitHubToken:         h.githubToken,
+		Streaming:           copilot.Bool(true),
+		Provider:            providerCfg,
+		WorkingDirectory:    workingDir,
+		OnPermissionRequest: permissionHandler,
+	}
+
+	metadata, err := client.GetSessionMetadata(ctx, copilotSessionID)
+	if err != nil {
+		logger.Warnf(ctx, "[LLM] session metadata check failed session_id=%s: %v", copilotSessionID, err)
+	} else if metadata != nil {
+		// "/home/admin/.copilot/session-state/gobrave-74a7c2e4-2546-416c-8e33-e079d0905c61-2077303418459787264"
+		s, resumeErr := client.ResumeSession(ctx, copilotSessionID, resumeCfg)
+		if resumeErr != nil {
+			return nil, false, fmt.Errorf("failed to resume session %s: %w", copilotSessionID, resumeErr)
+		}
+		return s, true, nil
+	}
+
+	createCfg := &copilot.SessionConfig{
+		SessionID:           copilotSessionID,
+		Model:               model,
+		GitHubToken:         h.githubToken,
+		Streaming:           copilot.Bool(true),
+		Provider:            providerCfg,
+		WorkingDirectory:    workingDir,
+		OnPermissionRequest: permissionHandler,
+	}
+
+	s, createErr := client.CreateSession(ctx, createCfg)
+	if createErr != nil {
+		return nil, false, fmt.Errorf("failed to create session %s: %w", copilotSessionID, createErr)
+	}
+
+	return s, false, nil
 }
 
 func (s *llmBridgeSession) registerDecisionWaiter(requestID string) chan llmPermissionDecision {
