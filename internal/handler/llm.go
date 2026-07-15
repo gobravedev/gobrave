@@ -497,6 +497,7 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 				"request":                request,
 				"copilot_session_id":     invocation.SessionID,
 				"requires_write_confirm": requiresWriteConfirm,
+				"session_id":             session.sessionID,
 			})
 
 			if !requiresWriteConfirm {
