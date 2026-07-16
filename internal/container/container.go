@@ -235,6 +235,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewContainerService))
 	must(container.Provide(service.NewLLMService))
 	must(container.Provide(service.NewSheetFileService))
+	must(container.Provide(service.NewNodeCompletionBootstrap))
+
 	// must(container.Provide(service.NewTraceService))
 	// must(container.Provide(service.NewAuthService))
 	// must(container.Provide(service.NewRSSSourceService))
@@ -302,8 +304,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		mgr.RunRuntimeReconciler(context.Background(), 30*time.Second)
 	}))
 	// Startup node completion coordinator
-	must(container.Invoke(func(orchestrator interfaces.DagOrchestrator) {
-		orchestrator.EnsureCompletionCoordinatorStarted(context.Background())
+	must(container.Invoke(func(bootstrap *service.NodeCompletionBootstrap) {
+		bootstrap.Start(context.Background())
 	}))
 	// Startup event handlers
 	must(container.Invoke(func(bus event.Bus, in eventHandlerGroupIn) {

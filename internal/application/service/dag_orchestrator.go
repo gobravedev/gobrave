@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/config"
@@ -31,15 +30,13 @@ const (
 )
 
 type dagOrchestrator struct {
-	repo           interfaces.AnalysisRepository
-	workflowRepo   interfaces.WorkflowRepository
-	containerRepo  interfaces.ContainerRepository
-	containerMgr   *manager.ContainerManager
-	cfg            *config.Config
-	bus            event.Bus
-	registry       *dagruntime.RunningRegistry
-	completion     *dagruntime.NodeCompletionCoordinator
-	completionOnce sync.Once
+	repo          interfaces.AnalysisRepository
+	workflowRepo  interfaces.WorkflowRepository
+	containerRepo interfaces.ContainerRepository
+	containerMgr  *manager.ContainerManager
+	cfg           *config.Config
+	bus           event.Bus
+	registry      *dagruntime.RunningRegistry
 }
 
 func NewDagOrchestrator(
@@ -59,34 +56,7 @@ func NewDagOrchestrator(
 		bus:           bus,
 		registry:      dagruntime.NewRunningRegistry(),
 	}
-	o.completion = dagruntime.NewNodeCompletionCoordinator(
-		o.repo,
-		o.containerRepo,
-		o.containerMgr,
-		nil,
-		o.bus,
-		func(cleanupCtx context.Context, node *types.AnalysisNode) {
-			o.cleanupDagNodeContainer(cleanupCtx, node, o.cleanupPolicyOnNodeFailed())
-		},
-		o.deleteContainerOnNodeSuccess(),
-		2*time.Second,
-	)
 	return o
-}
-
-func (o *dagOrchestrator) EnsureCompletionCoordinatorStarted(ctx context.Context) {
-	o.completionOnce.Do(func() {
-		if o.completion == nil {
-			return
-		}
-		if o.bus != nil {
-			o.bus.Subscribe(o.completion)
-		}
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		go o.completion.Start(ctx)
-	})
 }
 
 func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) error {
@@ -123,9 +93,6 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 
 	heartbeatStop := make(chan struct{})
 	go o.renewAnalysisRunningLease(analysisID, heartbeatStop)
-
-	// Keep an in-path guard so node completion still works even if startup hooks change.
-	o.EnsureCompletionCoordinatorStarted(context.Background())
 
 	runtime := dagruntime.NewRuntimeEngine(o.repo)
 	onNodeFailedCleanupPolicy := o.cleanupPolicyOnNodeFailed()
