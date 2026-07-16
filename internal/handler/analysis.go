@@ -426,7 +426,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *AnalysisHandler) SaveAnalysisControllerWithScript(c *gin.Context) {
+func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	if _, ok := getCurrentUserID(c); !ok {
 		return
 	}
@@ -471,30 +471,21 @@ func (h *AnalysisHandler) SaveAnalysisControllerWithScript(c *gin.Context) {
 			analysisID = "preview"
 		}
 	}
-	saved, err := h.analysisService.SaveAnalysisController(c.Request.Context(), &types.AnalysisControllerSaveInput{
-		RequestParam:        req.RequestParam,
-		ParseAnalysisResult: parseAnalysisResult,
-		DagRuntime:          nil,
-		IsRunNode:           req.IsSubmit,
-		IsReport:            req.IsReport,
-	})
-	if err != nil {
-		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
-		return
-	}
+
+	// if err != nil {
+	// 	c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
+	// 	return
+	// }
 
 	response := gin.H{
-		"analysis_id":           saved.AnalysisID,
+		// "":           saved.AnalysisID,
 		"parse_analysis_result": parseAnalysisResult,
 		"params":                parseAnalysisResult,
 		"submit_started":        req.IsSubmit,
 	}
 
 	if req.IsSubmit {
-		// if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
-		// 	c.Error(errors.NewInternalServerError("failed to start dynamic dag scheduler").WithDetails(err.Error()))
-		// 	return
-		// }
+
 	}
 	c.JSON(http.StatusOK, response)
 }

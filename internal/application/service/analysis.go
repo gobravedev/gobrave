@@ -53,21 +53,25 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	if analysisType == "" {
 		return nil, fmt.Errorf("request_param.analysis_type is required")
 	}
-	var workflowID string
-	switch analysisType {
-	case "workflow":
-		workflowID = strings.TrimSpace(toString(input.RequestParam["relation_id"]))
-		if workflowID == "" {
-			return nil, fmt.Errorf("request_param.relation_id is required")
-		}
-	case "script":
-		workflowID = strings.TrimSpace(toString(input.RequestParam["script_id"]))
-		if workflowID == "" {
-			return nil, fmt.Errorf("request_param.script_id is required")
-		}
-	default:
-		return nil, fmt.Errorf("request_param.relation_id or script_id is required")
+	workflowID := strings.TrimSpace(toString(input.RequestParam["relation_id"]))
+	if workflowID == "" {
+		return nil, fmt.Errorf("request_param.relation_id is required")
 	}
+	// var workflowID string
+	// switch analysisType {
+	// case "workflow":
+	// 	workflowID = strings.TrimSpace(toString(input.RequestParam["relation_id"]))
+	// 	if workflowID == "" {
+	// 		return nil, fmt.Errorf("request_param.relation_id is required")
+	// 	}
+	// case "script":
+	// 	workflowID = strings.TrimSpace(toString(input.RequestParam["script_id"]))
+	// 	if workflowID == "" {
+	// 		return nil, fmt.Errorf("request_param.script_id is required")
+	// 	}
+	// default:
+	// 	return nil, fmt.Errorf("request_param.relation_id or script_id is required")
+	// }
 
 	projectID := strings.TrimSpace(toString(input.RequestParam["project"]))
 	if projectID == "" {
@@ -159,7 +163,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 				"request_param": string(requestParamJSON),
 				"cache_type":    cacheType,
 				"relation_id":   workflowID,
-				"analysis_type": analysisType,
+				// "analysis_type": analysisType,
 				// "is_report":          input.IsReport,
 				"data_component_ids": dataComponentIDs,
 				"output_dir":         outputDir,
@@ -177,10 +181,10 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			}
 		} else {
 			newAnalysis := &types.Analysis{
-				ProjectID:       projectID,
-				AnalysisID:      analysisID,
-				WorkflowID:      workflowID,
-				AnalysisType:    analysisType,
+				ProjectID:  projectID,
+				AnalysisID: analysisID,
+				WorkflowID: workflowID,
+				// AnalysisType:    analysisType,
 				AnalysisName:    analysisName,
 				WorkDir:         workDir,
 				ParamsPath:      paramsPath,

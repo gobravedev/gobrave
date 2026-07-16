@@ -120,12 +120,12 @@ func normalizeJSONScanInput(value any) ([]byte, error) {
 
 // Analysis maps to Python brave's nextflow table.
 type Analysis struct {
-	ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ProjectID           string    `json:"project" gorm:"column:project;type:varchar(255)"`
-	AnalysisID          string    `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255)"`
-	ComponentID         string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
-	WorkflowID          string    `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
-	AnalysisType        string    `json:"analysis_type" gorm:"column:analysis_type;type:varchar(255)"`
+	ID          uint   `json:"id" gorm:"primaryKey;autoIncrement"`
+	ProjectID   string `json:"project" gorm:"column:project;type:varchar(255)"`
+	AnalysisID  string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255)"`
+	ComponentID string `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
+	WorkflowID  string `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
+	// AnalysisType        string    `json:"analysis_type" gorm:"column:analysis_type;type:varchar(255)"`
 	AnalysisName        string    `json:"analysis_name" gorm:"column:analysis_name;type:varchar(255)"`
 	InputFile           string    `json:"input_file" gorm:"column:input_file;type:varchar(255)"`
 	AnalysisMethod      string    `json:"analysis_method" gorm:"column:analysis_method;type:varchar(255)"`
