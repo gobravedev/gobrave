@@ -228,6 +228,7 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 }
 
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
+	r.POST("/workflow/createscript", handler.CreateScript)
 	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
 	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
 }

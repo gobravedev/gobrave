@@ -11,7 +11,9 @@ type WorkflowService interface {
 	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
+	GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error)
+	CreateScript(ctx context.Context, script *types.Script) error
 }
 
 type WorkflowRepository interface {
@@ -19,4 +21,5 @@ type WorkflowRepository interface {
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
 	FindScriptsByScriptIDs(ctx context.Context, scriptIDs []string) ([]*types.Script, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error)
+	CreateScript(ctx context.Context, script *types.Script) error
 }

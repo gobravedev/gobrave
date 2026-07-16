@@ -6,6 +6,7 @@ import (
 
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 )
 
 type workflowService struct {
@@ -99,8 +100,24 @@ func (s *workflowService) GetScriptByScriptID(ctx context.Context, scriptID stri
 	return s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 }
 
+func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error) {
+	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+	if err != nil {
+		return "", "", err
+	}
+	if script == nil {
+		return "", "", nil
+	}
+
+	return utils.GetScriptFile(script.ScriptType, scriptID)
+}
+
 func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error) {
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
+}
+
+func (s *workflowService) CreateScript(ctx context.Context, script *types.Script) error {
+	return s.workflowRepo.CreateScript(ctx, script)
 }
 
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {

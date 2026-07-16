@@ -74,3 +74,7 @@ func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Co
 
 	return item, nil
 }
+
+func (r *workflowRepository) CreateScript(ctx context.Context, script *types.Script) error {
+	return r.db.WithContext(ctx).Create(script).Error
+}

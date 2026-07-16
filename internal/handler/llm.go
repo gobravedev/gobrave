@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrs "errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1007,6 +1008,18 @@ func buildCopilotSessionID(userID string, sessionID int64) string {
 	return "gobrave-" + b.String() + "-" + strconv.FormatInt(sessionID, 10)
 }
 
+// Define the parameter type
+type WeatherParams struct {
+	City string `json:"city" jsonschema:"The city name"`
+}
+
+// Define the return type
+type WeatherResult struct {
+	City        string `json:"city"`
+	Temperature string `json:"temperature"`
+	Condition   string `json:"condition"`
+}
+
 func (h *LLMHandler) openOrResumeCopilotSession(
 	ctx context.Context,
 	client *copilot.Client,
@@ -1016,6 +1029,22 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 	providerCfg *copilot.ProviderConfig,
 	permissionHandler copilot.PermissionHandlerFunc,
 ) (*copilot.Session, bool, error) {
+	getWeather := copilot.DefineTool(
+		"get_weather",
+		"Get the current weather for a city",
+		func(params WeatherParams, inv copilot.ToolInvocation) (WeatherResult, error) {
+			// In a real app, you'd call a weather API here
+			conditions := []string{"sunny", "cloudy", "rainy", "partly cloudy"}
+			temp := rand.Intn(30) + 50
+			condition := conditions[rand.Intn(len(conditions))]
+			return WeatherResult{
+				City:        params.City,
+				Temperature: fmt.Sprintf("%d°F", temp),
+				Condition:   condition,
+			}, nil
+		},
+	)
+
 	resumeCfg := &copilot.ResumeSessionConfig{
 		Model:               model,
 		GitHubToken:         h.githubToken,
@@ -1023,6 +1052,7 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 		Provider:            providerCfg,
 		WorkingDirectory:    workingDir,
 		OnPermissionRequest: permissionHandler,
+		Tools:               []copilot.Tool{getWeather},
 	}
 
 	metadata, err := client.GetSessionMetadata(ctx, copilotSessionID)
@@ -1045,6 +1075,7 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 		Provider:            providerCfg,
 		WorkingDirectory:    workingDir,
 		OnPermissionRequest: permissionHandler,
+		Tools:               []copilot.Tool{getWeather},
 	}
 
 	s, createErr := client.CreateSession(ctx, createCfg)

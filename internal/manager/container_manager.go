@@ -23,21 +23,21 @@ import (
 )
 
 type ContainerManager struct {
-	repo         interfaces.ContainerRepository
-	analysisRepo interfaces.AnalysisRepository
-	workflowRepo interfaces.WorkflowRepository
-	reg          *containerruntime.Registry
-	bus          event.Bus
-	res          ContainerRuntimeResolver
-	img          *ImageManager
-	cfg          *config.Config
-	monitorOnce  sync.Once
+	repo            interfaces.ContainerRepository
+	analysisRepo    interfaces.AnalysisRepository
+	workflowService interfaces.WorkflowService
+	reg             *containerruntime.Registry
+	bus             event.Bus
+	res             ContainerRuntimeResolver
+	img             *ImageManager
+	cfg             *config.Config
+	monitorOnce     sync.Once
 }
 
 func NewContainerManager(
 	repo interfaces.ContainerRepository,
 	analysisRepo interfaces.AnalysisRepository,
-	workflowRepo interfaces.WorkflowRepository,
+	workflowService interfaces.WorkflowService,
 	reg *containerruntime.Registry,
 	bus event.Bus,
 	res ContainerRuntimeResolver,
@@ -50,7 +50,7 @@ func NewContainerManager(
 	if img == nil {
 		img = NewImageManager(repo, reg)
 	}
-	return &ContainerManager{repo: repo, analysisRepo: analysisRepo, workflowRepo: workflowRepo, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
+	return &ContainerManager{repo: repo, analysisRepo: analysisRepo, workflowService: workflowService, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
 }
 
 // func (m *ContainerManager) Create(ctx context.Context, spec Spec) error {
@@ -174,6 +174,7 @@ func (m *ContainerManager) CreateByTemplate(
 
 	resolveVars := m.buildRuntimeResolveVariables(ctx, m.cfg, img, templateID, ownerType, ownerID, name)
 	if ownerType == types.ContainerOwnerDagNode {
+		// 生成node需要运行的脚本
 		applyDagNodeRuntimeSpec(spec, resolveVars, runtimeName)
 	}
 
@@ -851,25 +852,13 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 			if analysisNodeID != 0 {
 				analysisNode, err := m.analysisRepo.GetAnalysisNodeByID(ctx, analysisNodeID)
 				if err == nil && analysisNode != nil {
-					script, err := m.workflowRepo.GetScriptByScriptID(ctx, analysisNode.ScriptID)
-					if err == nil && script != nil {
-						// /home/admin/.brave/pipeline/script/4a34dad8-7ad6-4daf-9cdb-5cfb8f64d611/main.R
-						var suffix = ""
-						switch script.ScriptType {
-						case "r":
-							suffix = "main.R"
-						case "python":
-							suffix = "main.py"
-						case "shell":
-							suffix = "main.sh"
-						case "jupyter":
-							suffix = "main.ipynb"
-						default:
-							suffix = "main.R"
+					if m.workflowService != nil {
+						scriptDir, mainFile, err := m.workflowService.GetScriptMainFileByScriptID(ctx, analysisNode.ScriptID)
+						if err == nil && strings.TrimSpace(mainFile) != "" && strings.TrimSpace(scriptDir) != "" {
+							// /home/admin/.brave/pipeline/script/4a34dad8-7ad6-4daf-9cdb-5cfb8f64d611/main.R
+							scriptFile := filepath.Join(baseDir, scriptDir, mainFile)
+							setRuntimeVar(vars, "SCRIPT_FILE", scriptFile)
 						}
-
-						scriptFile := fmt.Sprintf("%s/pipeline/script/%s/%s", baseDir, script.ScriptID, suffix)
-						setRuntimeVar(vars, "SCRIPT_FILE", scriptFile)
 					}
 
 				}
