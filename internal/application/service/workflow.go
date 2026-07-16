@@ -119,6 +119,39 @@ func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Conte
 func (s *workflowService) CreateScript(ctx context.Context, script *types.Script) error {
 	return s.workflowRepo.CreateScript(ctx, script)
 }
+func (s *workflowService) GetFormJSONByScriptID(ctx context.Context, scriptID string) ([]any, error) {
+	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+	if err != nil {
+		return nil, err
+	}
+
+	formJSONWrap := make([]interface{}, 0)
+
+	if script.IOSchema != "" {
+		ioSchema := make(map[string]interface{})
+		if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
+			return nil, err
+		}
+		if inputs, ok := ioSchema["inputs"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, inputs...)
+		}
+		if params, ok := ioSchema["params"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, params...)
+		}
+
+	}
+
+	if script.Content != "" {
+		content := make(map[string]interface{})
+		if err := json.Unmarshal([]byte(script.Content), &content); err != nil {
+			return nil, err
+		}
+		if contentFormJSON, ok := content["formJson"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, contentFormJSON...)
+		}
+	}
+	return formJSONWrap, err
+}
 
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {
 	findWorkflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)

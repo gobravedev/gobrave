@@ -231,6 +231,7 @@ func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler
 	r.POST("/workflow/createscript", handler.CreateScript)
 	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
 	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
+	r.GET("/script/:scriptId/form", handler.GetScriptForm)
 }
 
 func RegisterSettingRoutes(r *gin.RouterGroup, handler *handler.SettingHandler) {
@@ -241,6 +242,7 @@ func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler
 	r.POST("/analysis/parse-params", handler.ParseParams)
 	r.POST("/analysis/controller", handler.SaveAnalysisController)
 	r.POST("/analysis/controllerV2", handler.SaveAnalysisControllerV2)
+	r.POST("/analysis/controller-script", handler.SaveAnalysisControllerWithScript)
 	r.POST("/analysis/controllerV3", handler.SaveAnalysisControllerV3)
 	r.POST("/fast-api/analysis-controller", handler.SaveAnalysisController)
 	r.POST("/fast-api/analysis-controllerV2", handler.SaveAnalysisControllerV2)

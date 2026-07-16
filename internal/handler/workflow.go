@@ -20,6 +20,7 @@ import (
 type WorkflowHandler struct {
 	workflowService interfaces.WorkflowService
 	dataService     interfaces.DataService
+	projectService  interfaces.ProjectService
 	cfg             *config.Config
 }
 
@@ -32,10 +33,6 @@ type WorkflowFormResponse struct {
 	Type           string                 `json:"type"`
 	FormJSON       []interface{}          `json:"formJson"`
 	AnalysisResult map[string]interface{} `json:"analysis_result"`
-}
-
-type workflowProjectQuery struct {
-	ProjectID string `form:"projectId" binding:"required"`
 }
 
 type createScriptRequest struct {
@@ -61,8 +58,8 @@ type createScriptRequest struct {
 }
 
 func NewWorkflowHandler(workflowService interfaces.WorkflowService,
-	dataService interfaces.DataService, cfg *config.Config) *WorkflowHandler {
-	return &WorkflowHandler{workflowService: workflowService, dataService: dataService, cfg: cfg}
+	dataService interfaces.DataService, projectService interfaces.ProjectService, cfg *config.Config) *WorkflowHandler {
+	return &WorkflowHandler{workflowService: workflowService, dataService: dataService, projectService: projectService, cfg: cfg}
 }
 
 // CreateScript godoc
@@ -194,7 +191,6 @@ func (h *WorkflowHandler) GetFromJSONByWorlflow(c *gin.Context) {
 // @Tags         工作流
 // @Produce      json
 // @Param        workflowId  path      string                       true  "工作流 ID"
-// @Param        projectId   query     string                       true  "项目业务ID"
 // @Success      200         {object}  handler.WorkflowFormResponse
 // @Failure      400         {object}  errors.AppError
 // @Failure      401         {object}  errors.AppError
@@ -213,13 +209,65 @@ func (h *WorkflowHandler) GetWorkflowForm(c *gin.Context) {
 		return
 	}
 
-	var req workflowProjectQuery
-	if err := c.ShouldBindQuery(&req); err != nil {
-		c.Error(errors.NewValidationError("invalid query parameters").WithDetails(err.Error()))
+	userID, ok := getCurrentUserID(c)
+	if !ok {
 		return
 	}
 
-	formJSONWrap, analysisResult, err := buildWorkflowFormData(c.Request.Context(), h.workflowService, h.dataService, workflowID, req.ProjectID)
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+
+	formJSONWrap, analysisResult, err := buildWorkflowFormData(c.Request.Context(), h.workflowService, h.dataService, workflowID, project.ProjectID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("workflow not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get workflow form").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, WorkflowFormResponse{
+		Type:           "tools",
+		FormJSON:       formJSONWrap,
+		AnalysisResult: analysisResult,
+	})
+}
+
+func (h *WorkflowHandler) GetScriptForm(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	scriptID := c.Param("scriptId")
+	if scriptID == "" {
+		c.Error(errors.NewValidationError("scriptId is required"))
+		return
+	}
+
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+
+	formJSONWrap, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, scriptID, project.ProjectID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("workflow not found"))

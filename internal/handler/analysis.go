@@ -351,6 +351,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	}
 
 	formJSONWrap, err := h.workflowService.GetFormJSONByWorkflowID(c.Request.Context(), workflowID)
+
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to get form JSON").WithDetails(err.Error()))
 		return
@@ -422,6 +423,79 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 		"scheduler_mode":        "dynamic_v2",
 	}
 
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *AnalysisHandler) SaveAnalysisControllerWithScript(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req analysisControllerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request body").WithDetails(err.Error()))
+		return
+	}
+
+	scriptID, ok := req.RequestParam["script_id"].(string)
+	if !ok || strings.TrimSpace(scriptID) == "" {
+		c.Error(errors.NewValidationError("request_param.script_id is required and must be a string"))
+		return
+	}
+
+	formJSONWrap, err := h.workflowService.GetFormJSONByScriptID(c.Request.Context(), scriptID)
+
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get form JSON").WithDetails(err.Error()))
+		return
+	}
+
+	parseAnalysisResult, err := buildParseAnalysisResult(c.Request.Context(), h.dataService, req.RequestParam, formJSONWrap)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to build parse analysis result").WithDetails(err.Error()))
+		return
+	}
+	if !req.Save {
+		c.JSON(http.StatusOK, gin.H{
+			"params": parseAnalysisResult,
+		})
+		return
+	}
+
+	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == "" || analysisID == "<nil>" {
+		if req.Save {
+			analysisID = uuid.NewString()
+			req.RequestParam["analysis_id"] = analysisID
+		} else {
+			analysisID = "preview"
+		}
+	}
+	saved, err := h.analysisService.SaveAnalysisController(c.Request.Context(), &types.AnalysisControllerSaveInput{
+		RequestParam:        req.RequestParam,
+		ParseAnalysisResult: parseAnalysisResult,
+		DagRuntime:          nil,
+		IsRunNode:           req.IsSubmit,
+		IsReport:            req.IsReport,
+	})
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
+		return
+	}
+
+	response := gin.H{
+		"analysis_id":           saved.AnalysisID,
+		"parse_analysis_result": parseAnalysisResult,
+		"params":                parseAnalysisResult,
+		"submit_started":        req.IsSubmit,
+	}
+
+	if req.IsSubmit {
+		// if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
+		// 	c.Error(errors.NewInternalServerError("failed to start dynamic dag scheduler").WithDetails(err.Error()))
+		// 	return
+		// }
+	}
 	c.JSON(http.StatusOK, response)
 }
 
