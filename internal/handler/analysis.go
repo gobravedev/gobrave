@@ -507,12 +507,35 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	// 	}
 	// }
 
-	analysisNodeID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_node_id"]))
-	if analysisNodeID == "" || analysisNodeID == "<nil>" {
-		analysisNodeID = strings.TrimSpace(req.AnalysisNodeID)
+	requestedNodeID := parsePositiveInt64(req.RequestParam["analysis_node_id"])
+	if requestedNodeID <= 0 {
+		requestedNodeID = parsePositiveInt64(req.AnalysisNodeID)
 	}
-	if analysisNodeID == "" {
-		analysisNodeID = "node-" + uuid.NewString()
+
+	var existing *types.AnalysisNode
+	if requestedNodeID > 0 {
+		existing, err = h.analysisRepo.GetAnalysisNodeByID(c.Request.Context(), requestedNodeID)
+		if err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("analysis node not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to query analysis node").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	nodePrimaryID := requestedNodeID
+	if existing == nil {
+		nodePrimaryID = int64(utils.GenerateID())
+	}
+
+	analysisNodeKey := ""
+	if existing != nil {
+		analysisNodeKey = strings.TrimSpace(existing.AnalysisNodeID)
+	}
+	if analysisNodeKey == "" {
+		analysisNodeKey = fmt.Sprintf("node-%d", nodePrimaryID)
 	}
 
 	nodeID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["node_id"]))
@@ -525,9 +548,9 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		executorName = "local"
 	}
 
-	artifacts := h.buildStandaloneNodeArtifactPaths(projectID, analysisNodeID)
+	artifacts := h.buildStandaloneNodeArtifactPaths(projectID, nodePrimaryID)
 	// requestParam add AnalysisNodeID
-	req.RequestParam["analysis_node_id"] = analysisNodeID
+	req.RequestParam["analysis_node_id"] = nodePrimaryID
 
 	requestParamBytes, err := json.Marshal(req.RequestParam)
 	if err != nil {
@@ -536,8 +559,8 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 
 	node := &types.AnalysisNode{
-		ID:             utils.GenerateID(),
-		AnalysisNodeID: analysisNodeID,
+		ID:             nodePrimaryID,
+		AnalysisNodeID: analysisNodeKey,
 		ProjectID:      projectID,
 		// AnalysisID:             "-",
 		NodeID:                 nodeID,
@@ -569,14 +592,9 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		node.NodeName = scriptID
 	}
 
-	existing, err := h.analysisRepo.GetAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID)
-	if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
-		c.Error(errors.NewInternalServerError("failed to query analysis node").WithDetails(err.Error()))
-		return
-	}
 	if existing != nil {
 		node.ID = existing.ID
-		if err := h.analysisRepo.UpdateAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID, map[string]any{
+		if err := h.analysisRepo.UpdateAnalysisNodeByAnalysisNodeID(c.Request.Context(), node.AnalysisNodeID, map[string]any{
 			"project_id": node.ProjectID,
 			// "analysis_id":              node.AnalysisID,
 			"node_id":                  node.NodeID,
@@ -622,7 +640,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 
 	response := gin.H{
 		// "analysis_id":           analysisID,
-		"analysis_node_id":      analysisNodeID,
+		"analysis_node_id":      strconv.FormatInt(node.ID, 10),
 		"parse_analysis_result": parseAnalysisResult,
 		"params":                parseAnalysisResult,
 		"submit_started":        req.IsSubmit,
@@ -639,7 +657,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 			return
 		}
 
-		if err := h.nodeOrchestrator.StartAsync(c.Request.Context(), analysisNodeID); err != nil {
+		if err := h.nodeOrchestrator.StartAsync(c.Request.Context(), int64(node.ID)); err != nil {
 			c.Error(errors.NewInternalServerError("failed to submit analysis node").WithDetails(err.Error()))
 			return
 		}
@@ -657,7 +675,7 @@ type standaloneNodeArtifacts struct {
 
 func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 	projectID string,
-	analysisNodeID string,
+	analysisNodeID int64,
 ) *standaloneNodeArtifacts {
 	baseDir := "."
 	if h != nil && h.config != nil && h.config.Storage != nil {
@@ -666,7 +684,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 		}
 	}
 
-	workspaceDir := filepath.Join(baseDir, "data", projectID, "analysis_node", analysisNodeID)
+	workspaceDir := filepath.Join(baseDir, "data", projectID, "analysis_node", strconv.FormatInt(analysisNodeID, 10))
 	outputDir := filepath.Join(workspaceDir, "output")
 	paramsPath := filepath.Join(workspaceDir, "params.json")
 	commandPath := filepath.Join(workspaceDir, "run.sh")
@@ -764,6 +782,41 @@ func cloneAnyMapForNode(in map[string]interface{}) map[string]interface{} {
 		out[k] = v
 	}
 	return out
+}
+
+func parsePositiveInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case int:
+		if n > 0 {
+			return int64(n)
+		}
+	case int64:
+		if n > 0 {
+			return n
+		}
+	case int32:
+		if n > 0 {
+			return int64(n)
+		}
+	case float64:
+		if n > 0 {
+			return int64(n)
+		}
+	case float32:
+		if n > 0 {
+			return int64(n)
+		}
+	case string:
+		s := strings.TrimSpace(n)
+		if s == "" || s == "<nil>" {
+			return 0
+		}
+		parsed, err := strconv.ParseInt(s, 10, 64)
+		if err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return 0
 }
 
 // SaveAnalysisControllerV3 keeps the current request payload and persistence schema,
@@ -887,9 +940,15 @@ func (h *AnalysisHandler) StopAnalysisNode(c *gin.Context) {
 		return
 	}
 
-	analysisNodeID := strings.TrimSpace(c.Param("analysisNodeId"))
-	if analysisNodeID == "" {
+	analysisNodeIDParam := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeIDParam == "" {
 		c.Error(errors.NewValidationError("analysisNodeId is required"))
+		return
+	}
+
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDParam, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("analysisNodeId must be a positive integer"))
 		return
 	}
 
@@ -1061,13 +1120,19 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		return
 	}
 
-	analysisNodeID := c.Param("analysisNodeId")
-	if analysisNodeID == "" {
+	analysisNodeIDParam := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeIDParam == "" {
 		c.Error(errors.NewValidationError("analysisNodeId is required"))
 		return
 	}
 
-	analysisNode, err := h.analysisService.GetAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID)
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDParam, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("analysisNodeId must be a positive integer"))
+		return
+	}
+
+	analysisNode, err := h.analysisService.GetAnalysisNodeByID(c.Request.Context(), analysisNodeID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("analysis node not found"))
@@ -1094,6 +1159,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			return
 		}
 	}
+	requestParam["analysis_node_id"] = analysisNodeID
 
 	analysisName := analysisNode.NodeName
 	isReport := false
@@ -1149,7 +1215,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			IsReport:       isReport,
 			CacheType:      cacheType,
 			AnalysisID:     analysisIDValue,
-			AnalysisNodeID: analysisNode.AnalysisNodeID,
+			AnalysisNodeID: strconv.FormatInt(analysisNode.ID, 10),
 			Status:         analysisNode.Status,
 			ServerStatus:   serverStatus,
 			RequestParam:   requestParam,
@@ -1168,7 +1234,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			IsReport:       isReport,
 			CacheType:      cacheType,
 			AnalysisID:     analysisIDValue,
-			AnalysisNodeID: analysisNode.AnalysisNodeID,
+			AnalysisNodeID: strconv.FormatInt(analysisNode.ID, 10),
 			Status:         analysisNode.Status,
 			ServerStatus:   serverStatus,
 			RequestParam:   requestParam,

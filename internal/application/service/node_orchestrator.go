@@ -37,13 +37,12 @@ func NewNodeOrchestrator(
 
 // StartAsync submits one existing analysis_node to NodeDispatcher directly.
 // This is a bootstrap path that intentionally does not require analysis DAG scheduler wiring.
-func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID string) error {
-	analysisNodeID = strings.TrimSpace(analysisNodeID)
-	if analysisNodeID == "" {
-		return fmt.Errorf("analysis_node_id is required")
+func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID int64) error {
+	if analysisNodeID <= 0 {
+		return fmt.Errorf("analysis node id is required")
 	}
 
-	node, err := o.repo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+	node, err := o.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return err
 	}
@@ -101,7 +100,7 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID string
 
 	go func(nodeID int64, relationID string, runtimeNodeID string) {
 		if dispatchErr := dispatcher.Dispatch(context.Background(), nodeID); dispatchErr != nil {
-			logger.Warnf(context.Background(), "[NodeOrchestrator] dispatch failed, analysis_node_id=%s node_id=%s analysis_id=%s err=%v", analysisNodeID, runtimeNodeID, relationID, dispatchErr)
+			logger.Warnf(context.Background(), "[NodeOrchestrator] dispatch failed, analysis_node_db_id=%d node_id=%s analysis_id=%s err=%v", analysisNodeID, runtimeNodeID, relationID, dispatchErr)
 		}
 	}(node.ID, node.AnalysisID, node.NodeID)
 
@@ -111,13 +110,12 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID string
 // StopAsync requests stop for one analysis node.
 // It first marks node status as stopping, then delegates executor/container stop.
 // Final status transition to stopped is completed by NodeCompletionCoordinator.
-func (o *nodeOrchestrator) StopAsync(ctx context.Context, analysisNodeID string) error {
-	analysisNodeID = strings.TrimSpace(analysisNodeID)
-	if analysisNodeID == "" {
-		return fmt.Errorf("analysis_node_id is required")
+func (o *nodeOrchestrator) StopAsync(ctx context.Context, analysisNodeID int64) error {
+	if analysisNodeID <= 0 {
+		return fmt.Errorf("analysis node id is required")
 	}
 
-	node, err := o.repo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
+	node, err := o.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 	if err != nil {
 		return err
 	}

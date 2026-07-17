@@ -34,7 +34,7 @@ func TestNodeOrchestratorStartAsyncSingleNodeLifecycle(t *testing.T) {
 			}
 
 			o := NewNodeOrchestrator(repo, nil, nil, nil)
-			if err := o.StartAsync(context.Background(), node.AnalysisNodeID); err != nil {
+			if err := o.StartAsync(context.Background(), int64(node.ID)); err != nil {
 				t.Fatalf("start async failed: %v", err)
 			}
 

@@ -549,10 +549,15 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 		return
 	}
 
-	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
-	if err != nil {
-		handleDataError(c, err, "failed to get analysis")
-		return
+	projectID := analysisNode.ProjectID
+	if projectID == "" {
+		analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+		if err != nil {
+			handleDataError(c, err, "failed to get analysis")
+			return
+		}
+		projectID = analysisItem.ProjectID
+
 	}
 
 	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
@@ -568,7 +573,7 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 	item, err := h.containerService.CreateAppSessionByTemplateForAnalysisNode(
 		c.Request.Context(),
 		userID,
-		analysisItem.ProjectID,
+		projectID,
 		scriptItem.ContainerTemplateID,
 		req.Name,
 		int64(analysisNode.ID),

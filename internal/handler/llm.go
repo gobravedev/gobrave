@@ -729,11 +729,13 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		Connection: copilot.URIConnection{URL: h.cliURL},
 	})
 
-	workingDir, err := h.resolveWorkingDirectory(ctx, session.userID)
-	if err != nil {
-		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to resolve working directory", "detail": err.Error()})
-		return
-	}
+	// workingDir, err := h.resolveWorkingDirectory(ctx, session.userID)
+	// if err != nil {
+	// 	h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to resolve working directory", "detail": err.Error()})
+	// 	return
+	// }
+	// TODO
+	workingDir := "/data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/analysis_node/2077962373498408960"
 
 	eventCh := make(chan llmStreamEvent, 256)
 	idleCh := make(chan struct{}, 1)
