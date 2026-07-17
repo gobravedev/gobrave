@@ -746,6 +746,17 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 		scriptPath = filepath.Join(baseDir, scriptPath)
 	}
 
+	scriptWorkspaceDir := filepath.Join(artifacts.WorkspaceDir, scriptMainFile)
+	if _, err := os.Lstat(scriptWorkspaceDir); err != nil {
+		if os.IsNotExist(err) {
+			if err := os.Symlink(scriptPath, scriptWorkspaceDir); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
 	runScript := buildStandaloneRunScript(script.ScriptType, scriptPath, artifacts.ParamsPath, artifacts.OutputDir)
 	if err := os.WriteFile(artifacts.CommandPath, []byte(runScript), 0o755); err != nil {
 		return err
