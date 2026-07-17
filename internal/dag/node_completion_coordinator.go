@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/event"
@@ -31,6 +32,8 @@ type NodeCompletionCoordinator struct {
 	deleteOnSuccess bool
 	pollInterval    time.Duration
 	pollBatchLimit  int
+	reconcileMu     sync.Mutex
+	inFlight        map[int64]struct{}
 }
 
 type nodeOutputResolver interface {
@@ -74,6 +77,7 @@ func NewNodeCompletionCoordinator(
 		deleteOnSuccess: deleteOnSuccess,
 		pollInterval:    pollInterval,
 		pollBatchLimit:  0,
+		inFlight:        make(map[int64]struct{}),
 	}
 }
 
@@ -133,12 +137,39 @@ func (c *NodeCompletionCoordinator) pollOnce(ctx context.Context) {
 }
 
 func (c *NodeCompletionCoordinator) reconcileContainerByID(ctx context.Context, containerInstanceID int64, source string) {
+	if !c.beginReconcile(containerInstanceID) {
+		return
+	}
+	defer c.endReconcile(containerInstanceID)
+
 	inst, err := c.containerRepo.GetContainerInstanceByID(ctx, containerInstanceID)
 	if err != nil {
 		logger.Warnf(ctx, "[NodeCompletionCoordinator] load container instance failed, source=%s instance_id=%d err=%v", source, containerInstanceID, err)
 		return
 	}
 	c.reconcileContainer(ctx, inst, source)
+}
+
+func (c *NodeCompletionCoordinator) beginReconcile(containerInstanceID int64) bool {
+	if c == nil || containerInstanceID <= 0 {
+		return false
+	}
+	c.reconcileMu.Lock()
+	defer c.reconcileMu.Unlock()
+	if _, exists := c.inFlight[containerInstanceID]; exists {
+		return false
+	}
+	c.inFlight[containerInstanceID] = struct{}{}
+	return true
+}
+
+func (c *NodeCompletionCoordinator) endReconcile(containerInstanceID int64) {
+	if c == nil || containerInstanceID <= 0 {
+		return
+	}
+	c.reconcileMu.Lock()
+	delete(c.inFlight, containerInstanceID)
+	c.reconcileMu.Unlock()
 }
 
 func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst *types.ContainerInstance, source string) {

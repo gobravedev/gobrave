@@ -264,6 +264,28 @@ func (s *containerService) ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx conte
 	return s.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, ownerType, ownerIDs)
 }
 
+func (s *containerService) DeleteContainerInstancesByOwnerTypeAndOwnerIDs(ctx context.Context, ownerType types.ContainerOwnerType, ownerIDs []int64) error {
+	if len(ownerIDs) == 0 {
+		return nil
+	}
+	instances, err := s.containerRepo.ListContainerInstanceByOwnerTypeAndOwnerIDs(ctx, ownerType, ownerIDs)
+	if err != nil {
+		return err
+	}
+
+	var firstErr error
+	for _, inst := range instances {
+		if inst == nil || inst.ID == 0 {
+			continue
+		}
+		if err := s.containerMgr.Delete(ctx, inst.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
+}
+
 func (s *containerService) PageContainerInstance(ctx context.Context, pagination *types.Pagination) (*types.PageResult, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}

@@ -52,11 +52,13 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID string
 	}
 
 	status := strings.ToLower(strings.TrimSpace(node.Status))
+	shouldPublishSubmitted := false
 	switch status {
 	case dagruntime.StatusRunning, dagruntime.StatusDone, dagruntime.StatusFailed, dagruntime.StatusSkipped, dagruntime.StatusCached:
 		return nil
 	case dagruntime.StatusSubmitted:
 		// keep status as submitted
+		shouldPublishSubmitted = true
 	case dagruntime.StatusReady:
 		if err := o.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
 			"status":     dagruntime.StatusSubmitted,
@@ -64,8 +66,23 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID string
 		}); err != nil {
 			return err
 		}
+		shouldPublishSubmitted = true
 	default:
 		return fmt.Errorf("analysis node status must be ready/submitted, current=%s", node.Status)
+	}
+
+	if shouldPublishSubmitted && o.bus != nil {
+		o.bus.Publish(dagruntime.RuntimeEvent{
+			Name:           dagruntime.EventNodeSubmitted,
+			AnalysisID:     node.AnalysisID,
+			AnalysisNodeID: node.ID,
+			NodeID:         node.NodeID,
+			OccurredAt:     time.Now().UTC(),
+			Payload: map[string]any{
+				"status":           dagruntime.StatusSubmitted,
+				"analysis_node_id": node.AnalysisNodeID,
+			},
+		})
 	}
 
 	runtime := dagruntime.NewRuntimeEngine(o.repo)
@@ -128,6 +145,19 @@ func (o *nodeOrchestrator) StopAsync(ctx context.Context, analysisNodeID string)
 	if err := o.repo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, values); err != nil {
 		return err
 	}
+	// if o.bus != nil {
+	// 	o.bus.Publish(dagruntime.RuntimeEvent{
+	// 		Name:           dagruntime.EventNodeStateChange,
+	// 		AnalysisID:     node.AnalysisID,
+	// 		AnalysisNodeID: node.ID,
+	// 		NodeID:         node.NodeID,
+	// 		OccurredAt:     time.Now().UTC(),
+	// 		Payload: map[string]any{
+	// 			"status":           dagruntime.StatusStopping,
+	// 			"analysis_node_id": node.AnalysisNodeID,
+	// 		},
+	// 	})
+	// }
 
 	runtime := dagruntime.NewRuntimeEngine(o.repo)
 	preparer := dagruntime.NoopNodeRuntimePreparer{}

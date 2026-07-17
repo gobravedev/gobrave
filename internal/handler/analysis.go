@@ -497,15 +497,15 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 	projectID := strings.TrimSpace(activeProject.ProjectID)
 
-	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
-	if analysisID == "" || analysisID == "<nil>" {
-		if req.Save {
-			analysisID = uuid.NewString()
-			req.RequestParam["analysis_id"] = analysisID
-		} else {
-			analysisID = "preview"
-		}
-	}
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	// if analysisID == "" || analysisID == "<nil>" {
+	// 	if req.Save {
+	// 		analysisID = uuid.NewString()
+	// 		req.RequestParam["analysis_id"] = analysisID
+	// 	} else {
+	// 		analysisID = "preview"
+	// 	}
+	// }
 
 	analysisNodeID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_node_id"]))
 	if analysisNodeID == "" || analysisNodeID == "<nil>" {
@@ -525,7 +525,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		executorName = "local"
 	}
 
-	artifacts := h.buildStandaloneNodeArtifactPaths(analysisID, analysisNodeID)
+	artifacts := h.buildStandaloneNodeArtifactPaths(projectID, analysisNodeID)
 	// requestParam add AnalysisNodeID
 	req.RequestParam["analysis_node_id"] = analysisNodeID
 
@@ -536,10 +536,10 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 
 	node := &types.AnalysisNode{
-		ID:                     utils.GenerateID(),
-		AnalysisNodeID:         analysisNodeID,
-		ProjectID:              projectID,
-		AnalysisID:             analysisID,
+		ID:             utils.GenerateID(),
+		AnalysisNodeID: analysisNodeID,
+		ProjectID:      projectID,
+		// AnalysisID:             "-",
 		NodeID:                 nodeID,
 		NodeName:               strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["node_name"])),
 		ScriptID:               scriptID,
@@ -577,8 +577,8 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	if existing != nil {
 		node.ID = existing.ID
 		if err := h.analysisRepo.UpdateAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID, map[string]any{
-			"project_id":               node.ProjectID,
-			"analysis_id":              node.AnalysisID,
+			"project_id": node.ProjectID,
+			// "analysis_id":              node.AnalysisID,
 			"node_id":                  node.NodeID,
 			"node_name":                node.NodeName,
 			"script_id":                node.ScriptID,
@@ -621,7 +621,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 
 	response := gin.H{
-		"analysis_id":           analysisID,
+		// "analysis_id":           analysisID,
 		"analysis_node_id":      analysisNodeID,
 		"parse_analysis_result": parseAnalysisResult,
 		"params":                parseAnalysisResult,
@@ -630,6 +630,15 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
+		if err := h.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
+			c.Request.Context(),
+			types.ContainerOwnerDagNode,
+			[]int64{int64(node.ID)},
+		); err != nil {
+			c.Error(errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error()))
+			return
+		}
+
 		if err := h.nodeOrchestrator.StartAsync(c.Request.Context(), analysisNodeID); err != nil {
 			c.Error(errors.NewInternalServerError("failed to submit analysis node").WithDetails(err.Error()))
 			return
@@ -647,7 +656,7 @@ type standaloneNodeArtifacts struct {
 }
 
 func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
-	analysisID string,
+	projectID string,
 	analysisNodeID string,
 ) *standaloneNodeArtifacts {
 	baseDir := "."
@@ -657,7 +666,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 		}
 	}
 
-	workspaceDir := filepath.Join(baseDir, "analysis_node", analysisID, analysisNodeID)
+	workspaceDir := filepath.Join(baseDir, "data", projectID, "analysis_node", analysisNodeID)
 	outputDir := filepath.Join(workspaceDir, "output")
 	paramsPath := filepath.Join(workspaceDir, "params.json")
 	commandPath := filepath.Join(workspaceDir, "run.sh")

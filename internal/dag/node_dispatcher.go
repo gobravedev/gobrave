@@ -92,17 +92,17 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisNodeID int64) err
 		result = &executor.Result{Status: StatusDone, ExitCode: 0}
 	}
 	if result.Deferred {
-		d.publish(RuntimeEvent{
-			Name:           EventNodeStateChange,
-			AnalysisID:     analysisID,
-			AnalysisNodeID: node.ID,
-			NodeID:         node.NodeID,
-			OccurredAt:     time.Now().UTC(),
-			Payload: map[string]any{
-				"status":   StatusRunning,
-				"deferred": true,
-			},
-		})
+		// d.publish(RuntimeEvent{
+		// 	Name:           EventNodeStateChange,
+		// 	AnalysisID:     analysisID,
+		// 	AnalysisNodeID: node.ID,
+		// 	NodeID:         node.NodeID,
+		// 	OccurredAt:     time.Now().UTC(),
+		// 	Payload: map[string]any{
+		// 		"status":   StatusRunning,
+		// 		"deferred": true,
+		// 	},
+		// })
 		return nil
 	}
 	status := result.Status
