@@ -13,26 +13,32 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/compiler"
 	"github.com/gobravedev/gobrave/internal/config"
+	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type AnalysisHandler struct {
 	analysisService         interfaces.AnalysisService
+	projectService          interfaces.ProjectService
 	workflowService         interfaces.WorkflowService
 	dataService             interfaces.DataService
 	containerService        interfaces.ContainerService
+	analysisRepo            interfaces.AnalysisRepository
 	dagOrchestrator         interfaces.DagOrchestrator
 	dynamicDagOrchestrator  interfaces.DynamicDagOrchestrator
 	dataflowDagOrchestrator interfaces.DataflowDagOrchestrator
+	nodeOrchestrator        interfaces.NodeOrchestrator
 	config                  *config.Config
 }
 
@@ -49,14 +55,16 @@ type EditParamsV2Response struct {
 }
 
 type EditNodeParamsResponse struct {
-	AnalysisName string                 `json:"analysis_name"`
-	IsReport     bool                   `json:"is_report"`
-	CacheType    int                    `json:"cache_type"`
-	AnalysisID   string                 `json:"analysis_id"`
-	Status       string                 `json:"status"`
-	ServerStatus string                 `json:"server_status"`
-	RequestParam map[string]interface{} `json:"request_param"`
-	FormJSON     []interface{}          `json:"formJson"`
+	AnalysisName   string                 `json:"analysis_name"`
+	IsReport       bool                   `json:"is_report"`
+	CacheType      int                    `json:"cache_type"`
+	AnalysisID     string                 `json:"analysis_id"`
+	AnalysisNodeID string                 `json:"analysis_node_id"`
+	Status         string                 `json:"status"`
+	ServerStatus   string                 `json:"server_status"`
+	RequestParam   map[string]interface{} `json:"request_param"`
+	AnalysisResult map[string]interface{} `json:"analysis_result"`
+	FormJSON       []interface{}          `json:"formJson"`
 }
 
 type VisualizationResultResponse struct {
@@ -94,24 +102,35 @@ type analysisControllerRequest struct {
 	IsReport       bool                   `json:"is_report"`
 }
 
+type analysisNodeByProjectPageRequest struct {
+	types.Pagination
+	ScriptID string `json:"script_id"`
+}
+
 func NewAnalysisHandler(
 	analysisService interfaces.AnalysisService,
+	projectService interfaces.ProjectService,
 	workflowService interfaces.WorkflowService,
 	dataService interfaces.DataService,
 	containerService interfaces.ContainerService,
+	analysisRepo interfaces.AnalysisRepository,
 	dagOrchestrator interfaces.DagOrchestrator,
 	dynamicDagOrchestrator interfaces.DynamicDagOrchestrator,
 	dataflowDagOrchestrator interfaces.DataflowDagOrchestrator,
+	nodeOrchestrator interfaces.NodeOrchestrator,
 	cfg *config.Config,
 ) *AnalysisHandler {
 	return &AnalysisHandler{
 		analysisService:         analysisService,
+		projectService:          projectService,
 		workflowService:         workflowService,
 		dataService:             dataService,
 		containerService:        containerService,
+		analysisRepo:            analysisRepo,
 		dagOrchestrator:         dagOrchestrator,
 		dynamicDagOrchestrator:  dynamicDagOrchestrator,
 		dataflowDagOrchestrator: dataflowDagOrchestrator,
+		nodeOrchestrator:        nodeOrchestrator,
 		config:                  cfg,
 	}
 }
@@ -427,7 +446,8 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 }
 
 func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
 		return
 	}
 
@@ -462,6 +482,21 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		return
 	}
 
+	activeProject, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+	if activeProject == nil || strings.TrimSpace(activeProject.ProjectID) == "" {
+		c.Error(errors.NewValidationError("active project is required"))
+		return
+	}
+	projectID := strings.TrimSpace(activeProject.ProjectID)
+
 	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
 	if analysisID == "" || analysisID == "<nil>" {
 		if req.Save {
@@ -472,22 +507,254 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		}
 	}
 
-	// if err != nil {
-	// 	c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
-	// 	return
-	// }
+	analysisNodeID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_node_id"]))
+	if analysisNodeID == "" || analysisNodeID == "<nil>" {
+		analysisNodeID = strings.TrimSpace(req.AnalysisNodeID)
+	}
+	if analysisNodeID == "" {
+		analysisNodeID = "node-" + uuid.NewString()
+	}
+
+	nodeID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["node_id"]))
+	if nodeID == "" || nodeID == "<nil>" {
+		nodeID = "node-" + uuid.NewString()
+	}
+
+	executorName := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["executor"]))
+	if executorName == "" || executorName == "<nil>" {
+		executorName = "local"
+	}
+
+	artifacts := h.buildStandaloneNodeArtifactPaths(analysisID, analysisNodeID)
+	// requestParam add AnalysisNodeID
+	req.RequestParam["analysis_node_id"] = analysisNodeID
+
+	requestParamBytes, err := json.Marshal(req.RequestParam)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to serialize request_param").WithDetails(err.Error()))
+		return
+	}
+
+	node := &types.AnalysisNode{
+		ID:                     utils.GenerateID(),
+		AnalysisNodeID:         analysisNodeID,
+		ProjectID:              projectID,
+		AnalysisID:             analysisID,
+		NodeID:                 nodeID,
+		NodeName:               strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["node_name"])),
+		ScriptID:               scriptID,
+		InputsPatterns:         types.JSONMap{},
+		ResolvedInputs:         types.JSONMap(cloneAnyMapForNode(parseAnalysisResult)),
+		OutputPatterns:         types.JSONMap{},
+		ResolvedOutputs:        types.JSONMap{},
+		Params:                 types.JSONMap(cloneAnyMapForNode(parseAnalysisResult)),
+		RequestParam:           string(requestParamBytes),
+		Status:                 dagruntime.StatusReady,
+		Executor:               executorName,
+		Retry:                  0,
+		MaxRetry:               3,
+		CacheHit:               false,
+		UpstreamIDs:            types.JSONSlice{},
+		DownstreamIDs:          types.JSONSlice{},
+		InputValidationErrors:  types.JSONSlice{},
+		OutputValidationErrors: types.JSONSlice{},
+		LogPath:                artifacts.LogPath,
+		WorkspaceDir:           artifacts.WorkspaceDir,
+		OutputDir:              artifacts.OutputDir,
+		CommandPath:            artifacts.CommandPath,
+		ParamsPath:             artifacts.ParamsPath,
+		CreationSource:         "standalone",
+	}
+	if strings.TrimSpace(node.NodeName) == "" || strings.TrimSpace(node.NodeName) == "<nil>" {
+		node.NodeName = scriptID
+	}
+
+	existing, err := h.analysisRepo.GetAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID)
+	if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
+		c.Error(errors.NewInternalServerError("failed to query analysis node").WithDetails(err.Error()))
+		return
+	}
+	if existing != nil {
+		node.ID = existing.ID
+		if err := h.analysisRepo.UpdateAnalysisNodeByAnalysisNodeID(c.Request.Context(), analysisNodeID, map[string]any{
+			"project_id":               node.ProjectID,
+			"analysis_id":              node.AnalysisID,
+			"node_id":                  node.NodeID,
+			"node_name":                node.NodeName,
+			"script_id":                node.ScriptID,
+			"inputs_patterns":          node.InputsPatterns,
+			"resolved_inputs":          node.ResolvedInputs,
+			"output_patterns":          node.OutputPatterns,
+			"resolved_outputs":         node.ResolvedOutputs,
+			"params":                   node.Params,
+			"request_param":            node.RequestParam,
+			"status":                   node.Status,
+			"executor":                 node.Executor,
+			"retry":                    node.Retry,
+			"max_retry":                node.MaxRetry,
+			"cache_hit":                node.CacheHit,
+			"upstream_ids":             node.UpstreamIDs,
+			"downstream_ids":           node.DownstreamIDs,
+			"input_validation_errors":  node.InputValidationErrors,
+			"output_validation_errors": node.OutputValidationErrors,
+			"log_path":                 node.LogPath,
+			"workspace_dir":            node.WorkspaceDir,
+			"output_dir":               node.OutputDir,
+			"command_path":             node.CommandPath,
+			"params_path":              node.ParamsPath,
+			"creation_source":          node.CreationSource,
+			"updated_at":               time.Now().UTC(),
+		}); err != nil {
+			c.Error(errors.NewInternalServerError("failed to update analysis node").WithDetails(err.Error()))
+			return
+		}
+	} else {
+		if err := h.analysisRepo.CreateAnalysisNodes(c.Request.Context(), []*types.AnalysisNode{node}); err != nil {
+			c.Error(errors.NewInternalServerError("failed to create analysis node").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	if err := h.initializeStandaloneNodeArtifacts(c.Request.Context(), scriptID, artifacts, parseAnalysisResult); err != nil {
+		c.Error(errors.NewInternalServerError("failed to initialize node runtime files").WithDetails(err.Error()))
+		return
+	}
 
 	response := gin.H{
-		// "":           saved.AnalysisID,
+		"analysis_id":           analysisID,
+		"analysis_node_id":      analysisNodeID,
 		"parse_analysis_result": parseAnalysisResult,
 		"params":                parseAnalysisResult,
 		"submit_started":        req.IsSubmit,
+		"scheduler_mode":        "node_v1",
 	}
 
 	if req.IsSubmit {
-
+		if err := h.nodeOrchestrator.StartAsync(c.Request.Context(), analysisNodeID); err != nil {
+			c.Error(errors.NewInternalServerError("failed to submit analysis node").WithDetails(err.Error()))
+			return
+		}
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+type standaloneNodeArtifacts struct {
+	WorkspaceDir string
+	OutputDir    string
+	ParamsPath   string
+	CommandPath  string
+	LogPath      string
+}
+
+func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
+	analysisID string,
+	analysisNodeID string,
+) *standaloneNodeArtifacts {
+	baseDir := "."
+	if h != nil && h.config != nil && h.config.Storage != nil {
+		if v := strings.TrimSpace(h.config.Storage.BaseDir); v != "" {
+			baseDir = v
+		}
+	}
+
+	workspaceDir := filepath.Join(baseDir, "analysis_node", analysisID, analysisNodeID)
+	outputDir := filepath.Join(workspaceDir, "output")
+	paramsPath := filepath.Join(workspaceDir, "params.json")
+	commandPath := filepath.Join(workspaceDir, "run.sh")
+	logPath := filepath.Join(workspaceDir, "command.log")
+
+	return &standaloneNodeArtifacts{
+		WorkspaceDir: workspaceDir,
+		OutputDir:    outputDir,
+		ParamsPath:   paramsPath,
+		CommandPath:  commandPath,
+		LogPath:      logPath,
+	}
+}
+
+func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
+	ctx context.Context,
+	scriptID string,
+	artifacts *standaloneNodeArtifacts,
+	params map[string]interface{},
+) error {
+	if artifacts == nil {
+		return fmt.Errorf("artifacts is nil")
+	}
+
+	if err := os.MkdirAll(artifacts.OutputDir, 0o755); err != nil {
+		return err
+	}
+
+	paramsPayload := cloneAnyMapForNode(params)
+	paramsPayload["output_dir"] = artifacts.OutputDir
+	paramsBytes, err := json.MarshalIndent(paramsPayload, "", "  ")
+	if err != nil {
+		return err
+	}
+	paramsBytes = append(paramsBytes, '\n')
+	if err := os.WriteFile(artifacts.ParamsPath, paramsBytes, 0o644); err != nil {
+		return err
+	}
+
+	script, err := h.workflowService.GetScriptByScriptID(ctx, scriptID)
+	if err != nil {
+		return err
+	}
+	if script == nil {
+		return fmt.Errorf("script not found")
+	}
+	scriptDir, scriptMainFile, err := h.workflowService.GetScriptMainFileByScriptID(ctx, scriptID)
+	if err != nil {
+		return err
+	}
+	scriptPath := filepath.Join(scriptDir, scriptMainFile)
+	baseDir := "."
+	if h != nil && h.config != nil && h.config.Storage != nil {
+		if v := strings.TrimSpace(h.config.Storage.BaseDir); v != "" {
+			baseDir = v
+		}
+	}
+	if !filepath.IsAbs(scriptPath) {
+		scriptPath = filepath.Join(baseDir, scriptPath)
+	}
+
+	runScript := buildStandaloneRunScript(script.ScriptType, scriptPath, artifacts.ParamsPath, artifacts.OutputDir)
+	if err := os.WriteFile(artifacts.CommandPath, []byte(runScript), 0o755); err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(artifacts.LogPath); err != nil {
+		if os.IsNotExist(err) {
+			if err := os.WriteFile(artifacts.LogPath, []byte(""), 0o644); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func buildStandaloneRunScript(scriptType string, scriptPath string, paramsPath string, outputDir string) string {
+	base := "#!/usr/bin/env bash\nset -euo pipefail\n"
+	switch strings.ToLower(strings.TrimSpace(scriptType)) {
+	case "r":
+		return base + fmt.Sprintf("Rscript %q %q %q\n", scriptPath, paramsPath, outputDir)
+	case "python":
+		return base + fmt.Sprintf("python %q %q %q\n", scriptPath, paramsPath, outputDir)
+	default:
+		return base + fmt.Sprintf("bash %q %q %q\n", scriptPath, paramsPath, outputDir)
+	}
+}
+
+func cloneAnyMapForNode(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // SaveAnalysisControllerV3 keeps the current request payload and persistence schema,
@@ -606,6 +873,96 @@ func (h *AnalysisHandler) StopAnalysis(c *gin.Context) {
 	})
 }
 
+func (h *AnalysisHandler) StopAnalysisNode(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	analysisNodeID := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeID == "" {
+		c.Error(errors.NewValidationError("analysisNodeId is required"))
+		return
+	}
+
+	if err := h.nodeOrchestrator.StopAsync(c.Request.Context(), analysisNodeID); err != nil {
+		c.Error(errors.NewInternalServerError("failed to stop analysis node").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"analysis_node_id": analysisNodeID,
+		"job_status":       "stopping",
+		"stop_started":     true,
+	})
+}
+
+// PageAnalysisNodeByProject godoc
+// @Summary      按当前项目分页查询分析节点
+// @Description  默认按当前用户 active project 的 project_id 过滤，支持可选 script_id
+// @Tags         分析
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handler.analysisNodeByProjectPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /analysis/node/list-by-project-page [post]
+func (h *AnalysisHandler) PageAnalysisNodeByProject(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req analysisNodeByProjectPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	activeProject, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+	if activeProject == nil || strings.TrimSpace(activeProject.ProjectID) == "" {
+		c.Error(errors.NewValidationError("active project is required"))
+		return
+	}
+
+	projectID := strings.TrimSpace(activeProject.ProjectID)
+	scriptID := strings.TrimSpace(req.ScriptID)
+	items, total, err := h.analysisRepo.PageAnalysisNodesByProjectID(c.Request.Context(), &req.Pagination, projectID, scriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to page analysis nodes by project").WithDetails(err.Error()))
+		return
+	}
+
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PageSize < 1 {
+		req.PageSize = 20
+	}
+	if req.PageSize > 10 {
+		req.PageSize = 10
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":       items,
+		"total":      total,
+		"page":       req.Page,
+		"page_size":  req.PageSize,
+		"project_id": projectID,
+	})
+}
+
 // EditParamsV2 godoc
 // @Summary      编辑分析参数（V2）
 // @Description  查询 analysis 基础信息，并按 workflowId 复用工作流表单逻辑返回 formJson 与 analysis_result
@@ -711,26 +1068,6 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		return
 	}
 
-	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
-	if err != nil {
-		if stderrs.Is(err, gorm.ErrRecordNotFound) {
-			c.Error(errors.NewNotFoundError("analysis not found"))
-			return
-		}
-		c.Error(errors.NewInternalServerError("failed to get analysis").WithDetails(err.Error()))
-		return
-	}
-
-	workflowItem, err := h.workflowService.GetWorkflowByWorkflowID(c.Request.Context(), analysisItem.WorkflowID)
-	if err != nil {
-		if stderrs.Is(err, gorm.ErrRecordNotFound) {
-			c.Error(errors.NewNotFoundError("workflow not found"))
-			return
-		}
-		c.Error(errors.NewInternalServerError("failed to get workflow").WithDetails(err.Error()))
-		return
-	}
-
 	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
@@ -741,30 +1078,96 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		return
 	}
 
-	formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, scriptItem, analysisNode.ScriptID)
-	if err != nil {
-		c.Error(errors.NewInternalServerError("failed to build node form json").WithDetails(err.Error()))
-		return
-	}
-
 	requestParam := make(map[string]interface{})
-	if analysisItem.RequestParam != "" {
-		if err := json.Unmarshal([]byte(analysisItem.RequestParam), &requestParam); err != nil {
-			c.Error(errors.NewInternalServerError("failed to parse request_param").WithDetails(err.Error()))
+	if strings.TrimSpace(analysisNode.RequestParam) != "" {
+		if err := json.Unmarshal([]byte(analysisNode.RequestParam), &requestParam); err != nil {
+			c.Error(errors.NewInternalServerError("failed to parse analysis node request_param").WithDetails(err.Error()))
 			return
 		}
 	}
 
-	c.JSON(http.StatusOK, EditNodeParamsResponse{
-		AnalysisName: analysisItem.AnalysisName,
-		IsReport:     analysisItem.IsReport,
-		CacheType:    analysisItem.CacheType,
-		AnalysisID:   analysisItem.AnalysisID,
-		Status:       analysisNode.Status,
-		ServerStatus: analysisItem.ServerStatus,
-		RequestParam: requestParam,
-		FormJSON:     formJSON,
-	})
+	analysisName := analysisNode.NodeName
+	isReport := false
+	cacheType := types.CacheTypeRerunAll
+	analysisIDValue := analysisNode.AnalysisID
+	serverStatus := analysisNode.ServerStatus
+
+	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+	if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
+		c.Error(errors.NewInternalServerError("failed to get analysis").WithDetails(err.Error()))
+		return
+	}
+
+	if analysisItem != nil {
+		if strings.TrimSpace(analysisItem.AnalysisName) != "" {
+			analysisName = analysisItem.AnalysisName
+		}
+		isReport = analysisItem.IsReport
+		cacheType = analysisItem.CacheType
+		if strings.TrimSpace(analysisItem.AnalysisID) != "" {
+			analysisIDValue = analysisItem.AnalysisID
+		}
+		if strings.TrimSpace(analysisItem.ServerStatus) != "" {
+			serverStatus = analysisItem.ServerStatus
+		}
+		if len(requestParam) == 0 && strings.TrimSpace(analysisItem.RequestParam) != "" {
+			if err := json.Unmarshal([]byte(analysisItem.RequestParam), &requestParam); err != nil {
+				c.Error(errors.NewInternalServerError("failed to parse request_param").WithDetails(err.Error()))
+				return
+			}
+		}
+	}
+
+	// formJSON := make([]interface{}, 0)
+	if analysisItem != nil && strings.TrimSpace(analysisItem.WorkflowID) != "" {
+		workflowItem, err := h.workflowService.GetWorkflowByWorkflowID(c.Request.Context(), analysisItem.WorkflowID)
+		if err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("workflow not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to get workflow").WithDetails(err.Error()))
+			return
+		}
+
+		formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, scriptItem, analysisNode.ScriptID)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to build node form json").WithDetails(err.Error()))
+			return
+		}
+		c.JSON(http.StatusOK, EditNodeParamsResponse{
+			AnalysisName:   analysisName,
+			IsReport:       isReport,
+			CacheType:      cacheType,
+			AnalysisID:     analysisIDValue,
+			AnalysisNodeID: analysisNode.AnalysisNodeID,
+			Status:         analysisNode.Status,
+			ServerStatus:   serverStatus,
+			RequestParam:   requestParam,
+			FormJSON:       formJSON,
+		})
+	} else {
+		formJSON, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, analysisNode.ScriptID, analysisNode.ProjectID)
+
+		// formJSON, err = h.workflowService.GetFormJSONByScriptID(c.Request.Context(), analysisNode.ScriptID)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to get form json by script").WithDetails(err.Error()))
+			return
+		}
+		c.JSON(http.StatusOK, EditNodeParamsResponse{
+			AnalysisName:   analysisName,
+			IsReport:       isReport,
+			CacheType:      cacheType,
+			AnalysisID:     analysisIDValue,
+			AnalysisNodeID: analysisNode.AnalysisNodeID,
+			Status:         analysisNode.Status,
+			ServerStatus:   serverStatus,
+			RequestParam:   requestParam,
+			FormJSON:       formJSON,
+			AnalysisResult: analysisResult,
+		})
+	}
+
 }
 
 // VisualizationNodeFile godoc

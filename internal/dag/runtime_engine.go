@@ -201,6 +201,11 @@ func (e *RuntimeEngine) CompleteNode(
 			errorMessage = "node execution failed"
 		}
 		updates["error_message"] = errorMessage
+	} else if status == StatusStopped {
+		if strings.TrimSpace(errorMessage) == "" {
+			errorMessage = "node stopped by user"
+		}
+		updates["error_message"] = errorMessage
 	}
 
 	if IsSuccessStatus(status) {

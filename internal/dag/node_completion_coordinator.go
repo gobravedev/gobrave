@@ -164,11 +164,11 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 	if IsTerminalStatus(nodeStatus) {
 		return
 	}
-	if nodeStatus != StatusRunning && nodeStatus != StatusSubmitted {
+	if nodeStatus != StatusRunning && nodeStatus != StatusSubmitted && nodeStatus != StatusStopping {
 		return
 	}
 
-	finalStatus, exitCode, errorMessage, shouldComplete := c.resolveNodeStatus(inst)
+	finalStatus, exitCode, errorMessage, shouldComplete := c.resolveNodeStatus(node, inst)
 	if !shouldComplete {
 		return
 	}
@@ -478,7 +478,7 @@ func cloneMap(src map[string]any) map[string]any {
 	return cloned
 }
 
-func (c *NodeCompletionCoordinator) resolveNodeStatus(inst *types.ContainerInstance) (string, int, string, bool) {
+func (c *NodeCompletionCoordinator) resolveNodeStatus(node *types.AnalysisNode, inst *types.ContainerInstance) (string, int, string, bool) {
 	if inst == nil {
 		return "", 0, "", false
 	}
@@ -495,6 +495,9 @@ func (c *NodeCompletionCoordinator) resolveNodeStatus(inst *types.ContainerInsta
 		}
 		return StatusFailed, exitCode, fmt.Sprintf("container execution failed (exit_code=%d)", exitCode), true
 	case string(types.ContainerStopped), string(types.ContainerExited):
+		if node != nil && strings.EqualFold(strings.TrimSpace(node.Status), StatusStopping) {
+			return StatusStopped, 0, "node stopped by user", true
+		}
 		if exitCode == 0 {
 			return StatusDone, 0, "", true
 		}

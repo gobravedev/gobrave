@@ -10,6 +10,8 @@ const (
 	StatusReady     = "ready"
 	StatusSubmitted = "submitted"
 	StatusRunning   = "running"
+	StatusStopping  = "stopping"
+	StatusStopped   = "stopped"
 	StatusDone      = "done"
 	StatusFailed    = "failed"
 	StatusCached    = "cached"
@@ -17,6 +19,7 @@ const (
 )
 
 var terminalStatuses = map[string]struct{}{
+	StatusStopped: {},
 	StatusDone:    {},
 	StatusFailed:  {},
 	StatusCached:  {},
@@ -31,21 +34,29 @@ var successStatuses = map[string]struct{}{
 var allowedTransitions = map[string]map[string]struct{}{
 	StatusPending: {
 		StatusReady:   {},
+		StatusStopping: {},
 		StatusFailed:  {},
 		StatusSkipped: {},
 	},
 	StatusReady: {
 		StatusSubmitted: {},
+		StatusStopping:  {},
 		StatusFailed:    {},
 	},
 	StatusSubmitted: {
-		StatusRunning: {},
-		StatusFailed:  {},
+		StatusRunning:  {},
+		StatusStopping: {},
+		StatusFailed:   {},
 	},
 	StatusRunning: {
-		StatusDone:   {},
-		StatusFailed: {},
-		StatusCached: {},
+		StatusStopping: {},
+		StatusDone:     {},
+		StatusFailed:   {},
+		StatusCached:   {},
+	},
+	StatusStopping: {
+		StatusStopped: {},
+		StatusFailed:  {},
 	},
 }
 

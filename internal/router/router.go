@@ -248,8 +248,10 @@ func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler
 	r.POST("/fast-api/analysis-controllerV2", handler.SaveAnalysisControllerV2)
 	r.POST("/fast-api/analysis-controllerV3", handler.SaveAnalysisControllerV3)
 	r.POST("/analysis/stop/:analysisId", handler.StopAnalysis)
+	r.POST("/analysis/node/stop/:analysisNodeId", handler.StopAnalysisNode)
 	r.POST("/analysis/edit-params-v2/:analysisId", handler.EditParamsV2)
 	r.POST("/analysis/edit-node-params/:analysisNodeId", handler.EditNodeParams)
+	r.POST("/analysis/node/list-by-project-page", handler.PageAnalysisNodeByProject)
 	r.GET("/analysis/visualization-node-file/:analysisNodeId", handler.VisualizationNodeFile)
 	r.GET("/analysis/visualization-node-tree/:analysisId", handler.VisualizationNodeTree)
 }

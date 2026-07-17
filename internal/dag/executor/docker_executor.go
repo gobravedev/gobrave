@@ -29,6 +29,19 @@ func NewDockerExecutor(
 }
 
 func (e *DockerExecutor) Execute(ctx context.Context, node *types.AnalysisNode) (*Result, error) {
+	if ActionFromContext(ctx) == ActionStop {
+		if e.containerMgr == nil {
+			return nil, fmt.Errorf("docker executor stop requires container manager")
+		}
+		if node == nil || node.ID == 0 {
+			return nil, fmt.Errorf("docker executor stop requires persisted analysis node id")
+		}
+		if err := e.containerMgr.StopByOwner(ctx, types.ContainerOwnerDagNode, int64(node.ID)); err != nil {
+			return nil, fmt.Errorf("stop dag node container failed: %w", err)
+		}
+		return &Result{Status: "stopping", ExitCode: 0}, nil
+	}
+
 	if e.containerMgr == nil || e.workflowRepo == nil {
 		return e.fallback.Execute(ctx, node)
 	}

@@ -104,6 +104,33 @@ func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, 
 	return items, nil
 }
 
+func (r *analysisRepository) PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, scriptID string) ([]*types.AnalysisNode, int64, error) {
+	items := make([]*types.AnalysisNode, 0)
+	query := r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("project_id = ?", strings.TrimSpace(projectID))
+	if script := strings.TrimSpace(scriptID); script != "" {
+		query = query.Where("script_id = ?", script)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	err := query.Order("updated_at DESC").Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return items, total, nil
+}
+
 func (r *analysisRepository) ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error) {
 	items := make([]*types.AnalysisEdge, 0)
 	err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Find(&items).Error

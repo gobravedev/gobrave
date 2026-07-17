@@ -174,6 +174,7 @@ type AnalysisNode struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
 	AnalysisNodeID         string     `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
+	ProjectID              string     `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
 	AnalysisID             string     `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
 	NodeID                 string     `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
 	NodeName               string     `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
@@ -184,6 +185,7 @@ type AnalysisNode struct {
 	OutputPatterns         JSONMap    `json:"output_patterns" gorm:"column:output_patterns;type:json"`
 	ResolvedOutputs        JSONMap    `json:"resolved_outputs" gorm:"column:resolved_outputs;type:json"`
 	Params                 JSONMap    `json:"params" gorm:"column:params;type:json"`
+	RequestParam           string     `json:"request_param" gorm:"column:request_param;type:longtext"`
 	CPU                    int        `json:"cpu" gorm:"column:cpu"`
 	Memory                 string     `json:"memory" gorm:"column:memory;type:varchar(64)"`
 	Disk                   string     `json:"disk" gorm:"column:disk;type:varchar(64)"`
@@ -211,6 +213,7 @@ type AnalysisNode struct {
 	CommandMD5             string     `json:"command_md5" gorm:"column:command_md5;type:varchar(64)"`
 	ParamsPath             string     `json:"params_path" gorm:"column:params_path;type:varchar(255)"`
 	ParamsMD5              string     `json:"params_md5" gorm:"column:params_md5;type:varchar(64)"`
+	CreationSource         string     `json:"creation_source" gorm:"column:creation_source;type:varchar(32)"`
 	StartedAt              *time.Time `json:"started_at" gorm:"column:started_at"`
 	FinishedAt             *time.Time `json:"finished_at" gorm:"column:finished_at"`
 	CreatedAt              time.Time  `json:"created_at" gorm:"column:created_at"`

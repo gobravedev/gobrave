@@ -868,6 +868,7 @@ func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
 		ParamsPath:             paramsPath,
 		ErrorMessage:           errorMessage,
 		RerunReason:            dynamicToString(row["rerun_reason"]),
+		CreationSource:         "scheduler",
 		FinishedAt:             finishedAt,
 	}, nil
 }

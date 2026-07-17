@@ -662,6 +662,43 @@ func (r *inMemoryAnalysisRepo) ListAnalysisNodesByAnalysisID(_ context.Context, 
 	return out, nil
 }
 
+func (r *inMemoryAnalysisRepo) PageAnalysisNodesByProjectID(_ context.Context, pagination *types.Pagination, projectID string, scriptID string) ([]*types.AnalysisNode, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	projectID = strings.TrimSpace(projectID)
+	scriptID = strings.TrimSpace(scriptID)
+	filtered := make([]*types.AnalysisNode, 0)
+	for _, node := range r.nodesByID {
+		if node == nil {
+			continue
+		}
+		if strings.TrimSpace(node.ProjectID) != projectID {
+			continue
+		}
+		if scriptID != "" && strings.TrimSpace(node.ScriptID) != scriptID {
+			continue
+		}
+		cloned := *node
+		filtered = append(filtered, &cloned)
+	}
+
+	total := int64(len(filtered))
+	if pagination == nil {
+		return filtered, total, nil
+	}
+
+	start := pagination.Offset()
+	if start >= len(filtered) {
+		return []*types.AnalysisNode{}, total, nil
+	}
+	end := start + pagination.Limit()
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[start:end], total, nil
+}
+
 func (r *inMemoryAnalysisRepo) ListAnalysisEdgesByAnalysisID(_ context.Context, _ string) ([]*types.AnalysisEdge, error) {
 	return nil, nil
 }

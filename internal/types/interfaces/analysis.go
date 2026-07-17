@@ -26,6 +26,7 @@ type AnalysisRepository interface {
 	TryMarkAnalysisRunning(ctx context.Context, analysisID string, now time.Time, staleBefore time.Time) (bool, error)
 	UpdateAnalysisByAnalysisID(ctx context.Context, analysisID string, values map[string]any) error
 	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error)
+	PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, scriptID string) ([]*types.AnalysisNode, int64, error)
 	ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error)
 	UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error
 	ClaimNextReadyNode(ctx context.Context, analysisID string, fromStatus string, toStatus string) (*types.AnalysisNode, error)

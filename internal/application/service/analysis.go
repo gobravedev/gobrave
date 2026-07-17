@@ -333,6 +333,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			OutputDir:              outputDir,
 			CommandPath:            commandPath,
 			ParamsPath:             paramsPath,
+			CreationSource:         "scheduler",
 		}
 		if strings.TrimSpace(node.Status) == "" {
 			node.Status = dagruntime.StatusPending

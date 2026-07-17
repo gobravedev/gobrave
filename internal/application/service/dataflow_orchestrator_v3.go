@@ -570,6 +570,7 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 		CommandPath:            strings.TrimSpace(payload.CommandPath),
 		ParamsPath:             strings.TrimSpace(payload.ParamsPath),
 		LogPath:                strings.TrimSpace(payload.LogPath),
+		CreationSource:         "scheduler",
 	}
 }
 

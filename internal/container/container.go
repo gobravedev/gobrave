@@ -229,6 +229,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDataService))
 	must(container.Provide(service.NewAnalysisService))
 	must(container.Provide(service.NewDagOrchestrator))
+	must(container.Provide(service.NewNodeOrchestrator))
 	must(container.Provide(service.NewDynamicDagOrchestratorV2))
 	must(container.Provide(service.NewDataflowDagOrchestratorV3))
 	must(container.Provide(service.NewWorkflowService))

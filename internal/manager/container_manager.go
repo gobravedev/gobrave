@@ -20,6 +20,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"gorm.io/gorm"
 )
 
 type ContainerManager struct {
@@ -300,6 +301,24 @@ func (m *ContainerManager) Stop(ctx context.Context, id int64) error {
 		return err
 	}
 	return nil
+}
+
+func (m *ContainerManager) StopByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) error {
+	inst, err := m.repo.GetContainerInstanceByOwner(ctx, ownerType, ownerID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if inst == nil || inst.ID == 0 {
+		return nil
+	}
+	switch strings.TrimSpace(strings.ToLower(string(inst.Status))) {
+	case string(types.ContainerStopped), string(types.ContainerFailed), string(types.ContainerExited):
+		return nil
+	}
+	return m.Stop(ctx, inst.ID)
 }
 
 func (m *ContainerManager) Delete(ctx context.Context, id int64) error {

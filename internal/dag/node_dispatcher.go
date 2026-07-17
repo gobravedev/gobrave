@@ -139,6 +139,18 @@ func (d *NodeDispatcher) Dispatch(ctx context.Context, analysisNodeID int64) err
 	return nil
 }
 
+func (d *NodeDispatcher) Stop(ctx context.Context, node *types.AnalysisNode) (*executor.Result, error) {
+	if node == nil {
+		return nil, fmt.Errorf("analysis node is required")
+	}
+	if d.factory == nil {
+		return nil, fmt.Errorf("executor factory is required")
+	}
+	stopCtx := executor.WithAction(ctx, executor.ActionStop)
+	ex := d.factory.Resolve(node.Executor)
+	return ex.Execute(stopCtx, node)
+}
+
 func (d *NodeDispatcher) publish(evt RuntimeEvent) {
 	if d.bus == nil {
 		return
