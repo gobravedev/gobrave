@@ -1001,6 +1001,21 @@ func (h *AnalysisHandler) PageAnalysisNodeByProject(c *gin.Context) {
 		return
 	}
 
+	// TODO 后续需要将 AnalysisNode 的ScriptID变成 int64
+	if req.ScriptID != "" {
+		scriptIDInt64, err := strconv.ParseInt(req.ScriptID, 10, 64)
+		if err != nil {
+			c.Error(errors.NewValidationError("scriptId must be a positive integer"))
+			return
+		}
+		script, err := h.workflowService.GetScriptByID(c.Request.Context(), scriptIDInt64) // Validate script existence
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to get script by ID").WithDetails(err.Error()))
+			return
+		}
+		req.ScriptID = script.ScriptID // Convert back to string representation
+	}
+
 	activeProject, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
@@ -1233,7 +1248,18 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			FormJSON:       formJSON,
 		})
 	} else {
-		formJSON, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, analysisNode.ScriptID, analysisNode.ProjectID)
+		// TODO analysisNode 的 scriptID 后续变成 int64，直接使用 scriptID 查询 formJSON
+		script, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+		if err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("script not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to get script").WithDetails(err.Error()))
+			return
+		}
+
+		formJSON, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, script.ID, analysisNode.ProjectID)
 
 		// formJSON, err = h.workflowService.GetFormJSONByScriptID(c.Request.Context(), analysisNode.ScriptID)
 		if err != nil {

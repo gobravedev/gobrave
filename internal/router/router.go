@@ -228,10 +228,13 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 }
 
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
-	r.POST("/workflow/createscript", handler.CreateScript)
+	r.POST("/workflow/save-script", handler.SaveScript)
+	r.GET("/find-script/:id", handler.FindScript)
+	r.POST("/page-script", handler.PageScript)
 	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
 	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
 	r.GET("/script/:scriptId/form", handler.GetScriptForm)
+	r.GET("/script/:scriptId/content", handler.GetScriptContent)
 }
 
 func RegisterSettingRoutes(r *gin.RouterGroup, handler *handler.SettingHandler) {

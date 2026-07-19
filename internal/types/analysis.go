@@ -173,13 +173,14 @@ type AnalysisNode struct {
 	// ID                     uint       `json:"id" gorm:"primaryKey;autoIncrement"`
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
-	AnalysisNodeID         string     `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
-	ProjectID              string     `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
-	AnalysisID             string     `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
-	NodeID                 string     `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
-	NodeName               string     `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
-	SampleID               string     `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`
-	ScriptID               string     `json:"script_id" gorm:"column:script_id;type:varchar(255)"`
+	AnalysisNodeID string `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
+	ProjectID      string `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
+	AnalysisID     string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
+	NodeID         string `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
+	NodeName       string `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
+	SampleID       string `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`
+	ScriptID       string `json:"script_id" gorm:"column:script_id;type:varchar(255)"`
+	// ScriptID               int64      `json:"script_id,string" gorm:"column:script_id;type:bigint"`
 	InputsPatterns         JSONMap    `json:"inputs_patterns" gorm:"column:inputs_patterns;type:json"`
 	ResolvedInputs         JSONMap    `json:"resolved_inputs" gorm:"column:resolved_inputs;type:json"`
 	OutputPatterns         JSONMap    `json:"output_patterns" gorm:"column:output_patterns;type:json"`

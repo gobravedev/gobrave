@@ -1,9 +1,15 @@
 package types
 
-import "time"
+import (
+	"time"
+
+	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/gorm"
+)
 
 type Script struct {
-	ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	// ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID                  int64     `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 	ScriptID            string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	InstallKey          string    `json:"install_key" gorm:"type:varchar(255)"`
 	ComponentType       string    `json:"component_type" gorm:"type:varchar(255)"`
@@ -30,6 +36,12 @@ type Script struct {
 
 func (Script) TableName() string {
 	return "pipeline_components"
+}
+func (t *Script) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
 }
 
 type Workflow struct {

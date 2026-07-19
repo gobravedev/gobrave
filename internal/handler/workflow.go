@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/config"
@@ -18,10 +19,11 @@ import (
 )
 
 type WorkflowHandler struct {
-	workflowService interfaces.WorkflowService
-	dataService     interfaces.DataService
-	projectService  interfaces.ProjectService
-	cfg             *config.Config
+	workflowService  interfaces.WorkflowService
+	containerService interfaces.ContainerService
+	dataService      interfaces.DataService
+	projectService   interfaces.ProjectService
+	cfg              *config.Config
 }
 
 type WorkflowFormJSONResponse struct {
@@ -36,6 +38,7 @@ type WorkflowFormResponse struct {
 }
 
 type createScriptRequest struct {
+	ID                  int64  `json:"id,string"`
 	ScriptID            string `json:"component_id"`
 	InstallKey          string `json:"install_key"`
 	ComponentName       string `json:"component_name"`
@@ -57,14 +60,26 @@ type createScriptRequest struct {
 	Edges               string `json:"edges"`
 }
 
-func NewWorkflowHandler(workflowService interfaces.WorkflowService,
-	dataService interfaces.DataService, projectService interfaces.ProjectService, cfg *config.Config) *WorkflowHandler {
-	return &WorkflowHandler{workflowService: workflowService, dataService: dataService, projectService: projectService, cfg: cfg}
+type pageScriptRequest struct {
+	types.Pagination
+	Query types.ScriptPageQuery `json:"query"`
 }
 
-// CreateScript godoc
-// @Summary      创建脚本组件
-// @Description  在 pipeline_components 中创建 script 组件（兼容 Python save-pipeline 的 script 语义）
+func NewWorkflowHandler(workflowService interfaces.WorkflowService,
+	containerService interfaces.ContainerService,
+	dataService interfaces.DataService, projectService interfaces.ProjectService, cfg *config.Config) *WorkflowHandler {
+	return &WorkflowHandler{
+		workflowService:  workflowService,
+		containerService: containerService,
+		dataService:      dataService,
+		projectService:   projectService,
+		cfg:              cfg,
+	}
+}
+
+// SaveScript godoc
+// @Summary      保存脚本组件
+// @Description  保存 script 组件：当请求包含 id 时更新记录，否则创建新记录
 // @Tags         工作流
 // @Accept       json
 // @Produce      json
@@ -74,8 +89,8 @@ func NewWorkflowHandler(workflowService interfaces.WorkflowService,
 // @Failure      401      {object}  errors.AppError
 // @Failure      500      {object}  errors.AppError
 // @Security     Bearer
-// @Router       /workflow/createscript [post]
-func (h *WorkflowHandler) CreateScript(c *gin.Context) {
+// @Router       /save-script [post]
+func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 	if _, ok := getCurrentUserID(c); !ok {
 		return
 	}
@@ -95,12 +110,30 @@ func (h *WorkflowHandler) CreateScript(c *gin.Context) {
 		return
 	}
 
-	scriptID := req.ScriptID
-	if scriptID == "" {
-		scriptID = uuid.NewString()
+	var scriptID string
+	if req.ID != 0 {
+		existing, err := h.workflowService.GetScriptByID(c.Request.Context(), req.ID)
+		if err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("script component not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to query script component").WithDetails(err.Error()))
+			return
+		}
+		scriptID = req.ScriptID
+		if scriptID == "" {
+			scriptID = existing.ScriptID
+		}
+	} else {
+		scriptID = req.ScriptID
+		if scriptID == "" {
+			scriptID = uuid.NewString()
+		}
 	}
 
 	item := &types.Script{
+		ID:                  req.ID,
 		ScriptID:            scriptID,
 		InstallKey:          req.InstallKey,
 		ComponentType:       "script",
@@ -123,9 +156,20 @@ func (h *WorkflowHandler) CreateScript(c *gin.Context) {
 		Edges:               req.Edges,
 	}
 
-	if err := h.workflowService.CreateScript(c.Request.Context(), item); err != nil {
-		c.Error(errors.NewInternalServerError("failed to create script").WithDetails(err.Error()))
-		return
+	if req.ID != 0 {
+		if err := h.workflowService.UpdateScript(c.Request.Context(), item); err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("script component not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to update script").WithDetails(err.Error()))
+			return
+		}
+	} else {
+		if err := h.workflowService.CreateScript(c.Request.Context(), item); err != nil {
+			c.Error(errors.NewInternalServerError("failed to create script").WithDetails(err.Error()))
+			return
+		}
 	}
 
 	scriptDir, _, _ := utils.GetScriptFile(item.ScriptType, item.ScriptID)
@@ -143,6 +187,106 @@ func (h *WorkflowHandler) CreateScript(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, item)
+}
+
+// FindScript godoc
+// @Summary      查询组件
+// @Description  查询 script：按主键 ID 查询并附带容器模板名称
+// @Tags         工作流
+// @Produce      json
+// @Param        id  path      string  true  "Script 主键 ID"
+// @Success      200      {object}  map[string]any
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /find-script/{id} [get]
+func (h *WorkflowHandler) FindScript(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	idStr := c.Param("id")
+	if idStr == "" {
+		c.Error(errors.NewValidationError("id is required"))
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id == 0 {
+		c.Error(errors.NewValidationError("id must be a valid integer"))
+		return
+	}
+
+	item, err := h.workflowService.GetScriptByID(c.Request.Context(), id)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("script component not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to find script component").WithDetails(err.Error()))
+		return
+	}
+
+	result := map[string]any{}
+	b, err := json.Marshal(item)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to serialize script component").WithDetails(err.Error()))
+		return
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		c.Error(errors.NewInternalServerError("failed to format script component").WithDetails(err.Error()))
+		return
+	}
+
+	if item.ContainerTemplateID != 0 {
+		containerTemplate, containerErr := h.containerService.GetContainerTemplateByID(c.Request.Context(), item.ContainerTemplateID)
+		if containerErr == nil && containerTemplate != nil {
+			result["continername"] = containerTemplate.Name
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// PageScript godoc
+// @Summary      分页查询脚本组件
+// @Description  分页查询 script，支持 query 条件过滤与排序；后续扩展字段仅需新增 query 字段并补充仓储过滤逻辑
+// @Tags         工作流
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handler.pageScriptRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /page-script [post]
+func (h *WorkflowHandler) PageScript(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req pageScriptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	items, total, err := h.workflowService.PageScript(c.Request.Context(), &req.Pagination, &req.Query)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to page scripts").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      items,
+		"total":     total,
+		"page":      req.GetPage(),
+		"page_size": req.GetPageSize(),
+		"query":     req.Query,
+	})
 }
 
 // GetFromJSONByRelationID godoc
@@ -251,6 +395,12 @@ func (h *WorkflowHandler) GetScriptForm(c *gin.Context) {
 		c.Error(errors.NewValidationError("scriptId is required"))
 		return
 	}
+	// 使用 int64 类型的 scriptID 进行查询
+	scriptIDInt, err := strconv.ParseInt(scriptID, 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("scriptId must be a valid integer"))
+		return
+	}
 
 	userID, ok := getCurrentUserID(c)
 	if !ok {
@@ -267,13 +417,13 @@ func (h *WorkflowHandler) GetScriptForm(c *gin.Context) {
 		return
 	}
 
-	formJSONWrap, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, scriptID, project.ProjectID)
+	formJSONWrap, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, scriptIDInt, project.ProjectID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
-			c.Error(errors.NewNotFoundError("workflow not found"))
+			c.Error(errors.NewNotFoundError("script not found"))
 			return
 		}
-		c.Error(errors.NewInternalServerError("failed to get workflow form").WithDetails(err.Error()))
+		c.Error(errors.NewInternalServerError("failed to get script form").WithDetails(err.Error()))
 		return
 	}
 
@@ -281,6 +431,67 @@ func (h *WorkflowHandler) GetScriptForm(c *gin.Context) {
 		Type:           "tools",
 		FormJSON:       formJSONWrap,
 		AnalysisResult: analysisResult,
+	})
+}
+
+// GetScriptContent godoc
+// @Summary      获取脚本文件内容
+// @Description  基于 scriptId 查询脚本主文件，返回绝对路径 path 与文件内容 content
+// @Tags         工作流
+// @Produce      json
+// @Param        scriptId  path      string                 true  "脚本 ID"
+// @Success      200       {object}  map[string]interface{}
+// @Failure      400       {object}  errors.AppError
+// @Failure      401       {object}  errors.AppError
+// @Failure      404       {object}  errors.AppError
+// @Failure      500       {object}  errors.AppError
+// @Security     Bearer
+// @Router       /script/{scriptId}/content [get]
+func (h *WorkflowHandler) GetScriptContent(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	scriptID := c.Param("scriptId")
+	if scriptID == "" {
+		c.Error(errors.NewValidationError("scriptId is required"))
+		return
+	}
+	// 使用 int64 类型的 scriptID 进行查询
+	scriptIDInt, err := strconv.ParseInt(scriptID, 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("scriptId must be a valid integer"))
+		return
+	}
+
+	scriptDir, scriptMainFile, err := h.workflowService.GetScriptFileByScriptID(c.Request.Context(), scriptIDInt)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("script not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get script main file").WithDetails(err.Error()))
+		return
+	}
+
+	path := filepath.Join(scriptDir, scriptMainFile)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(h.cfg.Storage.BaseDir, path)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.Error(errors.NewNotFoundError("script file not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to read script file").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"path":    path,
+		"content": string(content),
 	})
 }
 

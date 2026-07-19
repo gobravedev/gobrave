@@ -10,10 +10,10 @@ import (
 func buildScriptFormData(ctx context.Context,
 	workflowService interfaces.WorkflowService,
 	dataService interfaces.DataService,
-	scriptID string,
+	scriptID int64,
 	projectID string) ([]interface{}, map[string]interface{}, error) {
 
-	formJSONWrap, err := workflowService.GetFormJSONByScriptID(ctx, scriptID)
+	formJSONWrap, err := workflowService.GetScriptFormJSONByID(ctx, scriptID)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -21,6 +21,14 @@ func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowI
 	return s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
 }
 
+func (s *workflowService) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
+	return s.workflowRepo.PageScript(ctx, pagination, query)
+}
+
+func (s *workflowService) GetScriptByID(ctx context.Context, id int64) (*types.Script, error) {
+	return s.workflowRepo.GetScriptByID(ctx, id)
+}
+
 func (s *workflowService) GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error) {
 	findWorkflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
 	if err != nil {
@@ -100,6 +108,18 @@ func (s *workflowService) GetScriptByScriptID(ctx context.Context, scriptID stri
 	return s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 }
 
+func (s *workflowService) GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error) {
+	script, err := s.workflowRepo.GetScriptByID(ctx, scriptID)
+	if err != nil {
+		return "", "", err
+	}
+	if script == nil {
+		return "", "", nil
+	}
+
+	return utils.GetScriptFile(script.ScriptType, script.ScriptID)
+}
+
 func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error) {
 	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 	if err != nil {
@@ -119,6 +139,45 @@ func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Conte
 func (s *workflowService) CreateScript(ctx context.Context, script *types.Script) error {
 	return s.workflowRepo.CreateScript(ctx, script)
 }
+
+func (s *workflowService) UpdateScript(ctx context.Context, script *types.Script) error {
+	return s.workflowRepo.UpdateScript(ctx, script)
+}
+func (s *workflowService) GetScriptFormJSONByID(ctx context.Context, scriptID int64) ([]any, error) {
+	script, err := s.workflowRepo.GetScriptByID(ctx, scriptID)
+	if err != nil {
+		return nil, err
+	}
+
+	formJSONWrap := make([]interface{}, 0)
+
+	if script.IOSchema != "" {
+		ioSchema := make(map[string]interface{})
+		if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
+			return nil, err
+		}
+		if inputs, ok := ioSchema["inputs"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, inputs...)
+		}
+		if params, ok := ioSchema["params"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, params...)
+		}
+
+	}
+
+	if script.Content != "" {
+		content := make(map[string]interface{})
+		if err := json.Unmarshal([]byte(script.Content), &content); err != nil {
+			return nil, err
+		}
+		if contentFormJSON, ok := content["formJson"].([]interface{}); ok {
+			formJSONWrap = append(formJSONWrap, contentFormJSON...)
+		}
+	}
+	return formJSONWrap, err
+}
+
+// 后续废除
 func (s *workflowService) GetFormJSONByScriptID(ctx context.Context, scriptID string) ([]any, error) {
 	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
 	if err != nil {
