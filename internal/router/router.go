@@ -243,6 +243,8 @@ func RegisterSettingRoutes(r *gin.RouterGroup, handler *handler.SettingHandler) 
 
 func RegisterAnalysisRoutes(r *gin.RouterGroup, handler *handler.AnalysisHandler) {
 	r.POST("/analysis/parse-params", handler.ParseParams)
+	r.GET("/analysis/:analysisNodeId/node-params", handler.AnalysisNodeParams)
+	r.GET("/analysis/:analysisNodeId/node-logs", handler.AnalysisNodeLogs)
 	r.POST("/analysis/controller", handler.SaveAnalysisController)
 	r.POST("/analysis/controllerV2", handler.SaveAnalysisControllerV2)
 	r.POST("/analysis/controller-script", handler.SaveAnalysisNodeControllerWithScript)

@@ -19,7 +19,7 @@ type WorkflowService interface {
 	// 后续废除
 	GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error)
 	GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error)
-	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error)
+	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
 	CreateScript(ctx context.Context, script *types.Script) error
 	UpdateScript(ctx context.Context, script *types.Script) error
 }
@@ -30,7 +30,7 @@ type WorkflowRepository interface {
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
 	FindScriptsByScriptIDs(ctx context.Context, scriptIDs []string) ([]*types.Script, error)
-	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error)
+	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
 	CreateScript(ctx context.Context, script *types.Script) error
 	UpdateScript(ctx context.Context, script *types.Script) error
 }

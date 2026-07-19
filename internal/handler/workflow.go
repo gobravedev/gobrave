@@ -457,6 +457,7 @@ func (h *WorkflowHandler) GetScriptContent(c *gin.Context) {
 		c.Error(errors.NewValidationError("scriptId is required"))
 		return
 	}
+
 	// 使用 int64 类型的 scriptID 进行查询
 	scriptIDInt, err := strconv.ParseInt(scriptID, 10, 64)
 	if err != nil {

@@ -1341,6 +1341,88 @@ func (h *AnalysisHandler) VisualizationNodeFile(c *gin.Context) {
 		ServerStatus: analysisNode.ServerStatus,
 	})
 }
+func (h *AnalysisHandler) GetAnalysisNode(c *gin.Context) *types.AnalysisNode {
+	if _, ok := getCurrentUserID(c); !ok {
+		return nil
+	}
+
+	analysisNodeIDParam := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeIDParam == "" {
+		c.Error(errors.NewValidationError("analysisNodeId is required"))
+		return nil
+	}
+
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDParam, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("analysisNodeId must be a positive integer"))
+		return nil
+	}
+
+	analysisNode, err := h.analysisService.GetAnalysisNodeByID(c.Request.Context(), analysisNodeID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("analysis node not found"))
+			return nil
+		}
+		c.Error(errors.NewInternalServerError("failed to get analysis node").WithDetails(err.Error()))
+		return nil
+	}
+	return analysisNode
+
+}
+
+func (h *AnalysisHandler) AnalysisNodeLogs(c *gin.Context) {
+	analysisNode := h.GetAnalysisNode(c)
+	if analysisNode == nil {
+		return
+	}
+	logPath := strings.TrimSpace(analysisNode.LogPath)
+	if logPath == "" {
+		c.Error(errors.NewNotFoundError("log_path is empty"))
+		return
+	}
+
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.Error(errors.NewNotFoundError("log file not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to read log file").WithDetails(err.Error()))
+		return
+	}
+
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", logBytes)
+}
+
+func (h *AnalysisHandler) AnalysisNodeParams(c *gin.Context) {
+	analysisNode := h.GetAnalysisNode(c)
+	if analysisNode == nil {
+		return
+	}
+	paramsPath := strings.TrimSpace(analysisNode.ParamsPath)
+	if paramsPath == "" {
+		c.Error(errors.NewNotFoundError("params_path is empty"))
+		return
+	}
+
+	paramsBytes, err := os.ReadFile(paramsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.Error(errors.NewNotFoundError("params file not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to read params file").WithDetails(err.Error()))
+		return
+	}
+
+	var params map[string]interface{}
+	if err := json.Unmarshal(paramsBytes, &params); err != nil {
+		c.Error(errors.NewInternalServerError("failed to parse params file").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, params)
+}
 
 // VisualizationNodeTree godoc
 // @Summary      分析节点树可视化
@@ -1480,14 +1562,23 @@ func (h *AnalysisHandler) buildVisualizationNodePayload(c *gin.Context, analysis
 	nodeMap["status"] = analysisNode.Status
 	nodeMap["server_status"] = analysisNode.ServerStatus
 	nodeMap["analysis_id"] = analysisNode.AnalysisID
-	nodeMap["script_id"] = analysisNode.ScriptID
+
+	// TODO
+	script, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.NewNotFoundError("script not found")
+		}
+		return nil, errors.NewInternalServerError("failed to get script").WithDetails(err.Error())
+	}
+	nodeMap["script_id"] = script.ID
 
 	return h.attachContainerInfoToNode(c, nodeMap)
 }
 
 func (h *AnalysisHandler) attachContainerInfoToNode(c *gin.Context, node map[string]interface{}) (map[string]interface{}, error) {
-	scriptID, _ := node["script_id"].(string)
-	if scriptID == "" {
+	scriptID, _ := node["script_id"].(int64)
+	if scriptID == 0 {
 		return node, nil
 	}
 

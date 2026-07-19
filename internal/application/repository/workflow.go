@@ -148,7 +148,7 @@ func (r *workflowRepository) FindScriptsByScriptIDs(ctx context.Context, scriptI
 	return items, nil
 }
 
-func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error) {
+func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error) {
 	item := &types.ScriptContainerSnapshot{}
 
 	err := r.db.WithContext(ctx).
@@ -165,7 +165,7 @@ func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Co
 		`).
 		Joins("LEFT JOIN go_container_template AS ct ON pc.container_template_id = ct.id").
 		Joins("LEFT JOIN go_container_image AS ci ON ct.image_id = ci.id").
-		Where("pc.component_id = ?", scriptID).
+		Where("pc.id = ?", scriptID).
 		Limit(1).
 		Scan(item).Error
 	if err != nil {

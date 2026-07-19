@@ -132,7 +132,7 @@ func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scrip
 	return utils.GetScriptFile(script.ScriptType, scriptID)
 }
 
-func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID string) (*types.ScriptContainerSnapshot, error) {
+func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error) {
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
 }
 
