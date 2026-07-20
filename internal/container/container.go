@@ -110,6 +110,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(repository.NewProjectRepository))
 	must(container.Provide(repository.NewDataRepository))
+	must(container.Provide(repository.NewStoreRepository))
 	must(container.Provide(repository.NewAnalysisRepository))
 	must(container.Provide(repository.NewWorkflowRepository))
 	must(container.Provide(repository.NewContainerRepository))
@@ -227,6 +228,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewProjectService))
 	must(container.Provide(service.NewDataService))
+	must(container.Provide(service.NewStoreService))
 	must(container.Provide(service.NewAnalysisService))
 	must(container.Provide(service.NewDagOrchestrator))
 	must(container.Provide(service.NewNodeOrchestrator))
@@ -257,6 +259,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewAuthHandler))
 	must(container.Provide(handler.NewProjectHandler))
 	must(container.Provide(handler.NewDataHandler))
+	must(container.Provide(handler.NewStoreHandler))
 	must(container.Provide(handler.NewContainerHandler))
 	must(container.Provide(handler.NewAnalysisHandler))
 	must(container.Provide(handler.NewWorkflowHandler))
@@ -496,6 +499,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&types.Sample{},
 		&types.SampleFile{},
 		&types.DatasetSample{},
+		&types.Store{},
 		&types.Script{},
 		&types.Workflow{},
 		&types.Analysis{},

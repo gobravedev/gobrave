@@ -4,12 +4,15 @@ import (
 	"time"
 
 	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 type Script struct {
 	// ID                  uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	ID                  int64     `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+	StoreID             int64     `json:"store_id,string" gorm:"column:store_id;type:bigint"`
+	ProjectID           int64     `json:"project_id,string" gorm:"column:project_id;type:bigint"`
 	ScriptID            string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	InstallKey          string    `json:"install_key" gorm:"type:varchar(255)"`
 	ComponentType       string    `json:"component_type" gorm:"type:varchar(255)"`
@@ -45,28 +48,30 @@ func (t *Script) BeforeCreate(_ *gorm.DB) error {
 }
 
 type Workflow struct {
-	ID                 uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name               string    `json:"name" gorm:"type:varchar(255)"`
-	Img                string    `json:"img" gorm:"type:varchar(255)"`
-	Tags               string    `json:"tags" gorm:"type:json"`
-	URL                string    `json:"url" gorm:"column:url;type:varchar(255)"`
-	Category           string    `json:"category" gorm:"type:varchar(255);default:default"`
-	Description        string    `json:"description" gorm:"type:longtext"`
-	Prompt             string    `json:"prompt" gorm:"type:longtext"`
-	DagDefinition      string    `json:"dag_definition" gorm:"column:dag_definition;type:longtext"`
-	WorkflowID         string    `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
-	RelationType       string    `json:"relation_type" gorm:"type:varchar(255)"`
-	InstallKey         string    `json:"install_key" gorm:"type:varchar(255)"`
-	ModuleID           string    `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
-	ContainerID        string    `json:"container_id" gorm:"type:varchar(255)"`
-	ParentComponentID  string    `json:"parent_component_id" gorm:"type:varchar(255)"`
-	InputComponentIDs  string    `json:"input_component_ids" gorm:"type:json"`
-	OutputComponentIDs string    `json:"output_component_ids" gorm:"type:json"`
-	OrderIndex         int       `json:"order_index"`
-	Version            string    `json:"version" gorm:"type:varchar(255)"`
-	UpdateInfo         string    `json:"update_info" gorm:"type:longtext"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 uint           `json:"id" gorm:"primaryKey;autoIncrement"`
+	ProjectID          int64          `json:"project_id,string" gorm:"column:project_id;type:bigint"`
+	StoreID            int64          `json:"store_id,string" gorm:"column:store_id;type:bigint"`
+	Name               string         `json:"name" gorm:"type:varchar(255)"`
+	Img                string         `json:"img" gorm:"type:varchar(255)"`
+	Tags               datatypes.JSON `json:"tags" gorm:"type:json"`
+	URL                string         `json:"url" gorm:"column:url;type:varchar(255)"`
+	Category           string         `json:"category" gorm:"type:varchar(255);default:default"`
+	Description        string         `json:"description" gorm:"type:longtext"`
+	Prompt             string         `json:"prompt" gorm:"type:longtext"`
+	DagDefinition      string         `json:"dag_definition" gorm:"column:dag_definition;type:longtext"`
+	WorkflowID         string         `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
+	RelationType       string         `json:"relation_type" gorm:"type:varchar(255)"`
+	InstallKey         string         `json:"install_key" gorm:"type:varchar(255)"`
+	ModuleID           string         `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
+	ContainerID        string         `json:"container_id" gorm:"type:varchar(255)"`
+	ParentComponentID  string         `json:"parent_component_id" gorm:"type:varchar(255)"`
+	InputComponentIDs  datatypes.JSON `json:"input_component_ids" gorm:"type:json"`
+	OutputComponentIDs datatypes.JSON `json:"output_component_ids" gorm:"type:json"`
+	OrderIndex         int            `json:"order_index"`
+	Version            string         `json:"version" gorm:"type:varchar(255)"`
+	UpdateInfo         string         `json:"update_info" gorm:"type:longtext"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 func (Workflow) TableName() string {

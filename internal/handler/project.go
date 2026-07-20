@@ -30,7 +30,7 @@ func NewProjectHandler(projectService interfaces.ProjectService) *ProjectHandler
 
 // ProjectListItem godoc
 type projectListItem struct {
-	ID           uint        `json:"id"`
+	ID           int64       `json:"id,string"`
 	ProjectID    string      `json:"project_id"`
 	ProjectName  string      `json:"project_name"`
 	MetadataForm interface{} `json:"metadata_form"`

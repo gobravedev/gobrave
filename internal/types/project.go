@@ -10,7 +10,8 @@ import (
 
 // Project maps to Python brave's t_project table.
 type Project struct {
-	ID           uint           `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+	// ID           uint           `json:"id" gorm:"primaryKey;autoIncrement"`
 	ProjectID    string         `json:"project_id" gorm:"type:varchar(255);uniqueIndex;not null"`
 	ProjectName  string         `json:"project_name" gorm:"type:varchar(255)"`
 	MetadataForm string         `json:"metadata_form" gorm:"type:text"`
@@ -25,6 +26,12 @@ type Project struct {
 
 func (Project) TableName() string {
 	return "t_project"
+}
+func (t *Project) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
 }
 
 // UserProject is a manual many-to-many mapping table between users and projects.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gobravedev/gobrave/internal/config"
@@ -15,6 +16,7 @@ import (
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -60,9 +62,37 @@ type createScriptRequest struct {
 	Edges               string `json:"edges"`
 }
 
+type createWorkflowRequest struct {
+	ID                 uint   `json:"id"`
+	Name               string `json:"name"`
+	Img                string `json:"img"`
+	Tags               string `json:"tags"`
+	URL                string `json:"url"`
+	Category           string `json:"category"`
+	Description        string `json:"description"`
+	Prompt             string `json:"prompt"`
+	DagDefinition      string `json:"dag_definition"`
+	WorkflowID         string `json:"relation_id"`
+	RelationType       string `json:"relation_type"`
+	InstallKey         string `json:"install_key"`
+	ModuleID           string `json:"component_id"`
+	ContainerID        string `json:"container_id"`
+	ParentComponentID  string `json:"parent_component_id"`
+	InputComponentIDs  string `json:"input_component_ids"`
+	OutputComponentIDs string `json:"output_component_ids"`
+	OrderIndex         int    `json:"order_index"`
+	Version            string `json:"version"`
+	UpdateInfo         string `json:"update_info"`
+}
+
 type pageScriptRequest struct {
 	types.Pagination
 	Query types.ScriptPageQuery `json:"query"`
+}
+
+type pageWorkflowRequest struct {
+	types.Pagination
+	Query types.WorkflowPageQuery `json:"query"`
 }
 
 func NewWorkflowHandler(workflowService interfaces.WorkflowService,
@@ -89,12 +119,23 @@ func NewWorkflowHandler(workflowService interfaces.WorkflowService,
 // @Failure      401      {object}  errors.AppError
 // @Failure      500      {object}  errors.AppError
 // @Security     Bearer
-// @Router       /save-script [post]
+// @Router       /workflow/save-script [post]
 func (h *WorkflowHandler) SaveScript(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
 		return
 	}
 
+	projectID := project.ID
 	var req createScriptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
@@ -135,6 +176,7 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 	item := &types.Script{
 		ID:                  req.ID,
 		ScriptID:            scriptID,
+		ProjectID:           projectID,
 		InstallKey:          req.InstallKey,
 		ComponentType:       "script",
 		ComponentName:       req.ComponentName,
@@ -182,6 +224,123 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 		}
 		if err := os.WriteFile(ioSchemaFile, []byte(item.IOSchema), 0o644); err != nil {
 			c.Error(errors.NewInternalServerError("failed to write io_schema file").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, item)
+}
+
+// SaveWorkflow godoc
+// @Summary      保存工作流
+// @Description  保存 workflow 组件：当请求包含 id 时更新记录，否则创建新记录
+// @Tags         工作流
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handler.createWorkflowRequest  true  "请求参数"
+// @Success      200      {object}  types.Workflow
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /workflow/save-workflow [post]
+func (h *WorkflowHandler) SaveWorkflow(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+
+	projectID := project.ID
+	var req createWorkflowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	req.Tags = normalizeJSONOrDefault(req.Tags, "[]")
+	req.InputComponentIDs = normalizeJSONOrDefault(req.InputComponentIDs, "[]")
+	req.OutputComponentIDs = normalizeJSONOrDefault(req.OutputComponentIDs, "[]")
+
+	if req.DagDefinition != "" && !json.Valid([]byte(req.DagDefinition)) {
+		c.Error(errors.NewValidationError("dag_definition is not valid JSON format"))
+		return
+	}
+	if req.Tags != "" && !json.Valid([]byte(req.Tags)) {
+		c.Error(errors.NewValidationError("tags is not valid JSON format"))
+		return
+	}
+	if req.InputComponentIDs != "" && !json.Valid([]byte(req.InputComponentIDs)) {
+		c.Error(errors.NewValidationError("input_component_ids is not valid JSON format"))
+		return
+	}
+	if req.OutputComponentIDs != "" && !json.Valid([]byte(req.OutputComponentIDs)) {
+		c.Error(errors.NewValidationError("output_component_ids is not valid JSON format"))
+		return
+	}
+
+	workflowID := req.WorkflowID
+	if req.ID != 0 {
+		existing, err := h.workflowService.GetWorkflowByID(c.Request.Context(), req.ID)
+		if err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("workflow not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to query workflow").WithDetails(err.Error()))
+			return
+		}
+		if workflowID == "" {
+			workflowID = existing.WorkflowID
+		}
+	} else if workflowID == "" {
+		workflowID = uuid.NewString()
+	}
+
+	item := &types.Workflow{
+		ID:                 req.ID,
+		ProjectID:          projectID,
+		Name:               req.Name,
+		Img:                req.Img,
+		Tags:               datatypes.JSON([]byte(req.Tags)),
+		URL:                req.URL,
+		Category:           req.Category,
+		Description:        req.Description,
+		Prompt:             req.Prompt,
+		DagDefinition:      req.DagDefinition,
+		WorkflowID:         workflowID,
+		RelationType:       req.RelationType,
+		InstallKey:         req.InstallKey,
+		ModuleID:           req.ModuleID,
+		ContainerID:        req.ContainerID,
+		ParentComponentID:  req.ParentComponentID,
+		InputComponentIDs:  datatypes.JSON([]byte(req.InputComponentIDs)),
+		OutputComponentIDs: datatypes.JSON([]byte(req.OutputComponentIDs)),
+		OrderIndex:         req.OrderIndex,
+		Version:            req.Version,
+		UpdateInfo:         req.UpdateInfo,
+	}
+
+	if req.ID != 0 {
+		if err := h.workflowService.UpdateWorkflow(c.Request.Context(), item); err != nil {
+			if stderrs.Is(err, gorm.ErrRecordNotFound) {
+				c.Error(errors.NewNotFoundError("workflow not found"))
+				return
+			}
+			c.Error(errors.NewInternalServerError("failed to update workflow").WithDetails(err.Error()))
+			return
+		}
+	} else {
+		if err := h.workflowService.CreateWorkflow(c.Request.Context(), item); err != nil {
+			c.Error(errors.NewInternalServerError("failed to create workflow").WithDetails(err.Error()))
 			return
 		}
 	}
@@ -262,9 +421,10 @@ func (h *WorkflowHandler) FindScript(c *gin.Context) {
 // @Failure      401      {object}  errors.AppError
 // @Failure      500      {object}  errors.AppError
 // @Security     Bearer
-// @Router       /page-script [post]
+// @Router       /workflow/page-script [post]
 func (h *WorkflowHandler) PageScript(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
 		return
 	}
 
@@ -273,10 +433,85 @@ func (h *WorkflowHandler) PageScript(c *gin.Context) {
 		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
 		return
 	}
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+	if project == nil || project.ID == 0 {
+		c.Error(errors.NewValidationError("active project is required"))
+		return
+	}
+
+	req.Query.ProjectID = project.ID
 
 	items, total, err := h.workflowService.PageScript(c.Request.Context(), &req.Pagination, &req.Query)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to page scripts").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":      items,
+		"total":     total,
+		"page":      req.GetPage(),
+		"page_size": req.GetPageSize(),
+		"query":     req.Query,
+	})
+}
+
+// PageWorkflow godoc
+// @Summary      分页查询工作流
+// @Description  分页查询 workflow，支持 query 条件过滤与排序；后续扩展字段仅需新增 query 字段并补充仓储过滤逻辑
+// @Tags         工作流
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handler.pageWorkflowRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /workflow/page-workflow [post]
+func (h *WorkflowHandler) PageWorkflow(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	var req pageWorkflowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+	if project == nil || project.ID == 0 {
+		c.Error(errors.NewValidationError("active project is required"))
+		return
+	}
+
+	req.Query.ProjectID = project.ID
+
+	items, total, err := h.workflowService.PageWorkflow(c.Request.Context(), &req.Pagination, &req.Query)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to page workflows").WithDetails(err.Error()))
 		return
 	}
 
@@ -341,7 +576,7 @@ func (h *WorkflowHandler) GetFromJSONByWorlflow(c *gin.Context) {
 // @Failure      404         {object}  errors.AppError
 // @Failure      500         {object}  errors.AppError
 // @Security     Bearer
-// @Router       /workflows/{workflowId}/form [get]
+// @Router       /workflow/{workflowId}/form [get]
 func (h *WorkflowHandler) GetWorkflowForm(c *gin.Context) {
 	if _, ok := getCurrentUserID(c); !ok {
 		return
@@ -534,4 +769,11 @@ func extractStringList(v interface{}) []string {
 		}
 	}
 	return result
+}
+
+func normalizeJSONOrDefault(raw string, defaultJSON string) string {
+	if strings.TrimSpace(raw) == "" {
+		return defaultJSON
+	}
+	return raw
 }

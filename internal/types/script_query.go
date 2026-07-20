@@ -9,6 +9,8 @@ type ScriptPageQuery struct {
 
 	ID *int64 `json:"id,string,omitempty"`
 
+	ProjectID int64 `json:"project_id,string,omitempty"`
+
 	ScriptID string `json:"script_id,omitempty"`
 
 	ComponentName string `json:"component_name,omitempty"`

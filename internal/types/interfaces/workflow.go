@@ -11,8 +11,10 @@ type WorkflowService interface {
 	GetScriptFormJSONByID(ctx context.Context, scriptID int64) ([]any, error)
 	// 后续废除
 	GetFormJSONByScriptID(ctx context.Context, scriptID string) ([]any, error)
+	GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error)
 	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
+	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
@@ -20,17 +22,23 @@ type WorkflowService interface {
 	GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error)
 	GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
+	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error
+	UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	CreateScript(ctx context.Context, script *types.Script) error
 	UpdateScript(ctx context.Context, script *types.Script) error
 }
 
 type WorkflowRepository interface {
+	GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
+	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
 	FindScriptsByScriptIDs(ctx context.Context, scriptIDs []string) ([]*types.Script, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
+	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error
+	UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	CreateScript(ctx context.Context, script *types.Script) error
 	UpdateScript(ctx context.Context, script *types.Script) error
 }

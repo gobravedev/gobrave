@@ -17,12 +17,118 @@ func NewWorkflowRepository(db *gorm.DB) interfaces.WorkflowRepository {
 	return &workflowRepository{db: db}
 }
 
+func (r *workflowRepository) GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error) {
+	item := &types.Workflow{}
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *workflowRepository) GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error) {
 	item := &types.Workflow{}
 	if err := r.db.WithContext(ctx).Where("relation_id = ?", workflowID).Take(item).Error; err != nil {
 		return nil, err
 	}
 	return item, nil
+}
+
+func (r *workflowRepository) PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.Workflow, 0)
+	var total int64
+
+	buildQuery := func() *gorm.DB {
+		return r.db.WithContext(ctx).Model(&types.Workflow{})
+	}
+
+	applyFilters := func(db *gorm.DB) *gorm.DB {
+		if query == nil {
+			return db
+		}
+
+		if query.ProjectID != 0 {
+			db = db.Where("project_id = ?", query.ProjectID)
+		}
+
+		if query.ID != nil {
+			db = db.Where("id = ?", *query.ID)
+		}
+
+		if len(query.IDs) > 0 {
+			db = db.Where("id IN ?", query.IDs)
+		}
+
+		if workflowID := query.GetWorkflowID(); workflowID != "" {
+			db = db.Where("relation_id = ?", workflowID)
+		}
+
+		if name := query.GetName(); name != "" {
+			db = db.Where("name LIKE ?", "%"+name+"%")
+		}
+
+		if category := query.GetCategory(); category != "" {
+			db = db.Where("category = ?", category)
+		}
+
+		if installKey := query.GetInstallKey(); installKey != "" {
+			db = db.Where("install_key = ?", installKey)
+		}
+
+		if moduleID := query.GetModuleID(); moduleID != "" {
+			db = db.Where("component_id = ?", moduleID)
+		}
+
+		if relationType := query.GetRelationType(); relationType != "" {
+			db = db.Where("relation_type = ?", relationType)
+		}
+
+		if tags := query.GetTags(); tags != "" {
+			db = db.Where("tags LIKE ?", "%"+tags+"%")
+		}
+
+		if keywords := query.GetKeywords(); keywords != "" {
+			like := "%" + keywords + "%"
+			db = db.Where(
+				r.db.WithContext(ctx).Where("name LIKE ?", like).
+					Or("description LIKE ?", like).
+					Or("tags LIKE ?", like).
+					Or("relation_id LIKE ?", like).
+					Or("component_id LIKE ?", like),
+			)
+		}
+
+		return db
+	}
+
+	if err := applyFilters(buildQuery()).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	sortColumn := "id"
+	sortOrder := "DESC"
+	if query != nil {
+		sortColumn = query.GetSortColumn()
+		sortOrder = query.GetSortOrder()
+	}
+
+	err := applyFilters(buildQuery()).
+		Order(fmt.Sprintf("%s %s", sortColumn, sortOrder)).
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(items) == 0 {
+		return []*types.Workflow{}, total, nil
+	}
+
+	return items, total, nil
 }
 
 func (r *workflowRepository) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
@@ -42,6 +148,10 @@ func (r *workflowRepository) PageScript(ctx context.Context, pagination *types.P
 	applyFilters := func(db *gorm.DB) *gorm.DB {
 		if query == nil {
 			return db
+		}
+
+		if query.ProjectID != 0 {
+			db = db.Where("project_id = ?", query.ProjectID)
 		}
 
 		if query.ID != nil {
@@ -177,6 +287,48 @@ func (r *workflowRepository) GetScriptContainerSnapshotByScriptID(ctx context.Co
 	}
 
 	return item, nil
+}
+
+func (r *workflowRepository) CreateWorkflow(ctx context.Context, workflow *types.Workflow) error {
+	return r.db.WithContext(ctx).Create(workflow).Error
+}
+
+func (r *workflowRepository) UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error {
+	if workflow == nil || workflow.ID == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	updates := map[string]any{
+		"project_id":           workflow.ProjectID,
+		"name":                 workflow.Name,
+		"img":                  workflow.Img,
+		"tags":                 workflow.Tags,
+		"url":                  workflow.URL,
+		"category":             workflow.Category,
+		"description":          workflow.Description,
+		"prompt":               workflow.Prompt,
+		"dag_definition":       workflow.DagDefinition,
+		"relation_id":          workflow.WorkflowID,
+		"relation_type":        workflow.RelationType,
+		"install_key":          workflow.InstallKey,
+		"component_id":         workflow.ModuleID,
+		"container_id":         workflow.ContainerID,
+		"parent_component_id":  workflow.ParentComponentID,
+		"input_component_ids":  workflow.InputComponentIDs,
+		"output_component_ids": workflow.OutputComponentIDs,
+		"order_index":          workflow.OrderIndex,
+		"version":              workflow.Version,
+		"update_info":          workflow.UpdateInfo,
+	}
+
+	result := r.db.WithContext(ctx).Model(&types.Workflow{}).Where("id = ?", workflow.ID).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *workflowRepository) CreateScript(ctx context.Context, script *types.Script) error {

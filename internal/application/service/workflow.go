@@ -17,8 +17,16 @@ func NewWorkflowService(workflowRepo interfaces.WorkflowRepository) interfaces.W
 	return &workflowService{workflowRepo: workflowRepo}
 }
 
+func (s *workflowService) GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error) {
+	return s.workflowRepo.GetWorkflowByID(ctx, id)
+}
+
 func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error) {
 	return s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
+}
+
+func (s *workflowService) PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error) {
+	return s.workflowRepo.PageWorkflow(ctx, pagination, query)
 }
 
 func (s *workflowService) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
@@ -134,6 +142,14 @@ func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scrip
 
 func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error) {
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
+}
+
+func (s *workflowService) CreateWorkflow(ctx context.Context, workflow *types.Workflow) error {
+	return s.workflowRepo.CreateWorkflow(ctx, workflow)
+}
+
+func (s *workflowService) UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error {
+	return s.workflowRepo.UpdateWorkflow(ctx, workflow)
 }
 
 func (s *workflowService) CreateScript(ctx context.Context, script *types.Script) error {

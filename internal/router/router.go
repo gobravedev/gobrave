@@ -30,6 +30,7 @@ type RouterParams struct {
 	AuthHandler      *handler.AuthHandler
 	ProjectHandler   *handler.ProjectHandler
 	DataHandler      *handler.DataHandler
+	StoreHandler     *handler.StoreHandler
 	ContainerHandler *handler.ContainerHandler
 	AnalysisHandler  *handler.AnalysisHandler
 	WorkflowHandler  *handler.WorkflowHandler
@@ -88,6 +89,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAuthRoutes(v1, params.AuthHandler)
 		RegisterProjectRoutes(v1, params.ProjectHandler, params.UploadHandler)
 		RegisterDataRoutes(v1, params.DataHandler)
+		RegisterStoreRoutes(v1, params.StoreHandler)
 		RegisterContainerRoutes(v1, params.ContainerHandler)
 		RegisterAnalysisRoutes(v1, params.AnalysisHandler)
 		RegisterWorkflowRoutes(v1, params.WorkflowHandler)
@@ -227,12 +229,24 @@ func RegisterContainerRoutes(r *gin.RouterGroup, handler *handler.ContainerHandl
 	r.POST("/container/outbox/list-by-page", handler.PageOutboxEvent)
 }
 
+func RegisterStoreRoutes(r *gin.RouterGroup, handler *handler.StoreHandler) {
+	r.POST("/store/create", handler.CreateStore)
+	r.GET("/store/get", handler.GetStore)
+	r.GET("/store/get-by-store-id", handler.GetStoreByStoreID)
+	r.POST("/store/update", handler.UpdateStore)
+	r.POST("/store/delete", handler.DeleteStore)
+	r.GET("/store/list", handler.ListStore)
+	r.POST("/store/list-by-page", handler.PageStore)
+}
+
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
 	r.POST("/workflow/save-script", handler.SaveScript)
+	r.POST("/workflow/save-workflow", handler.SaveWorkflow)
 	r.GET("/find-script/:id", handler.FindScript)
-	r.POST("/page-script", handler.PageScript)
+	r.POST("/workflow/page-script", handler.PageScript)
+	r.POST("/workflow/page-workflow", handler.PageWorkflow)
 	r.GET("/workflow/tools/get-from-json/:workflowId", handler.GetFromJSONByWorlflow)
-	r.GET("/workflows/:workflowId/form", handler.GetWorkflowForm)
+	r.GET("/workflow/:workflowId/form", handler.GetWorkflowForm)
 	r.GET("/script/:scriptId/form", handler.GetScriptForm)
 	r.GET("/script/:scriptId/content", handler.GetScriptContent)
 }
