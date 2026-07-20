@@ -17,7 +17,7 @@ func NewWorkflowService(workflowRepo interfaces.WorkflowRepository) interfaces.W
 	return &workflowService{workflowRepo: workflowRepo}
 }
 
-func (s *workflowService) GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error) {
+func (s *workflowService) GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error) {
 	return s.workflowRepo.GetWorkflowByID(ctx, id)
 }
 

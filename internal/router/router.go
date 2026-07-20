@@ -242,6 +242,7 @@ func RegisterStoreRoutes(r *gin.RouterGroup, handler *handler.StoreHandler) {
 func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler) {
 	r.POST("/workflow/save-script", handler.SaveScript)
 	r.POST("/workflow/save-workflow", handler.SaveWorkflow)
+	r.POST("/workflow/:workflowId/generate-workflow-json", handler.GenerateWorkflowJSON)
 	r.GET("/find-script/:id", handler.FindScript)
 	r.POST("/workflow/page-script", handler.PageScript)
 	r.POST("/workflow/page-workflow", handler.PageWorkflow)

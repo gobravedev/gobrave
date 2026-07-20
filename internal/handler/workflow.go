@@ -39,6 +39,14 @@ type WorkflowFormResponse struct {
 	AnalysisResult map[string]interface{} `json:"analysis_result"`
 }
 
+type WorkflowJSONExportResponse struct {
+	Path               string           `json:"path"`
+	WorkflowID         string           `json:"workflow_id"`
+	Workflow           map[string]any   `json:"workflow"`
+	Scripts            []map[string]any `json:"scripts"`
+	ContainerTemplates []map[string]any `json:"container_templates"`
+}
+
 type createScriptRequest struct {
 	ID                  int64  `json:"id,string"`
 	ScriptID            string `json:"component_id"`
@@ -63,7 +71,7 @@ type createScriptRequest struct {
 }
 
 type createWorkflowRequest struct {
-	ID                 uint   `json:"id"`
+	ID                 int64  `json:"id,string"`
 	Name               string `json:"name"`
 	Img                string `json:"img"`
 	Tags               string `json:"tags"`
@@ -620,6 +628,149 @@ func (h *WorkflowHandler) GetWorkflowForm(c *gin.Context) {
 	})
 }
 
+// GenerateWorkflowJSON godoc
+// @Summary      生成工作流 JSON
+// @Description  根据 workflowId 读取工作流、脚本与 ContainerTemplateID，导出可落盘的 workflow.json
+// @Tags         工作流
+// @Produce      json
+// @Param        workflowId  path      string  true  "工作流 ID"
+// @Success      200         {object}  handler.WorkflowJSONExportResponse
+// @Failure      400         {object}  errors.AppError
+// @Failure      401         {object}  errors.AppError
+// @Failure      404         {object}  errors.AppError
+// @Failure      500         {object}  errors.AppError
+// @Security     Bearer
+// @Router       /workflow/{workflowId}/generate-workflow-json [post]
+func (h *WorkflowHandler) GenerateWorkflowJSON(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	workflowID := c.Param("workflowId")
+	if workflowID == "" {
+		c.Error(errors.NewValidationError("workflowId is required"))
+		return
+	}
+
+	if h.cfg == nil || strings.TrimSpace(h.cfg.Storage.BaseDir) == "" {
+		c.Error(errors.NewInternalServerError("storage base dir is not configured"))
+		return
+	}
+
+	workflow, err := h.workflowService.GetWorkflowByWorkflowID(c.Request.Context(), workflowID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("workflow not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to load workflow").WithDetails(err.Error()))
+		return
+	}
+
+	workflowMap, err := structToMap(workflow)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to format workflow").WithDetails(err.Error()))
+		return
+	}
+
+	var dagDefinition map[string]any
+	if workflow.DagDefinition != "" {
+		if !json.Valid([]byte(workflow.DagDefinition)) {
+			c.Error(errors.NewValidationError("dag_definition is not valid JSON format"))
+			return
+		}
+		if err := json.Unmarshal([]byte(workflow.DagDefinition), &dagDefinition); err != nil {
+			c.Error(errors.NewInternalServerError("failed to parse dag_definition").WithDetails(err.Error()))
+			return
+		}
+		workflowMap["dag_definition"] = dagDefinition
+	}
+
+	nodeItems, _ := dagDefinition["nodes"].([]any)
+	scriptIDs := make([]string, 0, len(nodeItems))
+	seenScriptIDs := make(map[string]struct{})
+	for _, nodeAny := range nodeItems {
+		node, ok := nodeAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		scriptID, _ := node["script_id"].(string)
+		if scriptID == "" {
+			continue
+		}
+		if _, exists := seenScriptIDs[scriptID]; exists {
+			continue
+		}
+		seenScriptIDs[scriptID] = struct{}{}
+		scriptIDs = append(scriptIDs, scriptID)
+	}
+
+	scripts := make([]map[string]any, 0, len(scriptIDs))
+	containerTemplates := make([]map[string]any, 0)
+	seenTemplateIDs := make(map[int64]struct{})
+	for _, scriptID := range scriptIDs {
+		script, scriptErr := h.workflowService.GetScriptByScriptID(c.Request.Context(), scriptID)
+		if scriptErr != nil {
+			if stderrs.Is(scriptErr, gorm.ErrRecordNotFound) {
+				continue
+			}
+			c.Error(errors.NewInternalServerError("failed to load script").WithDetails(scriptErr.Error()))
+			return
+		}
+
+		scriptMap, scriptMapErr := structToMap(script)
+		if scriptMapErr != nil {
+			c.Error(errors.NewInternalServerError("failed to format script").WithDetails(scriptMapErr.Error()))
+			return
+		}
+
+		if script.ContainerTemplateID != 0 {
+			template, templateErr := h.containerService.GetContainerTemplateByID(c.Request.Context(), script.ContainerTemplateID)
+			if templateErr == nil && template != nil {
+				templateMap, templateMapErr := structToMap(template)
+				if templateMapErr != nil {
+					c.Error(errors.NewInternalServerError("failed to format container template").WithDetails(templateMapErr.Error()))
+					return
+				}
+				scriptMap["container_template"] = templateMap
+				if _, exists := seenTemplateIDs[template.ID]; !exists {
+					seenTemplateIDs[template.ID] = struct{}{}
+					containerTemplates = append(containerTemplates, templateMap)
+				}
+			}
+		}
+
+		scripts = append(scripts, scriptMap)
+	}
+
+	exportPayload := WorkflowJSONExportResponse{
+		WorkflowID:         workflowID,
+		Workflow:           workflowMap,
+		Scripts:            scripts,
+		ContainerTemplates: containerTemplates,
+	}
+
+	exportDir := filepath.Join(h.cfg.Storage.BaseDir, "pipeline", "tools", workflowID)
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		c.Error(errors.NewInternalServerError("failed to create export directory").WithDetails(err.Error()))
+		return
+	}
+
+	exportPath := filepath.Join(exportDir, "workflow.json")
+	exportBytes, err := json.MarshalIndent(exportPayload, "", "  ")
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to encode workflow export").WithDetails(err.Error()))
+		return
+	}
+	if err := os.WriteFile(exportPath, exportBytes, 0o644); err != nil {
+		c.Error(errors.NewInternalServerError("failed to write workflow export").WithDetails(err.Error()))
+		return
+	}
+
+	exportPayload.Path = exportPath
+	c.JSON(http.StatusOK, exportPayload)
+}
+
 func (h *WorkflowHandler) GetScriptForm(c *gin.Context) {
 	if _, ok := getCurrentUserID(c); !ok {
 		return
@@ -776,4 +927,18 @@ func normalizeJSONOrDefault(raw string, defaultJSON string) string {
 		return defaultJSON
 	}
 	return raw
+}
+
+func structToMap(value any) (map[string]any, error) {
+	content, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]any)
+	if err := json.Unmarshal(content, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }

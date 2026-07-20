@@ -11,7 +11,7 @@ type WorkflowService interface {
 	GetScriptFormJSONByID(ctx context.Context, scriptID int64) ([]any, error)
 	// 后续废除
 	GetFormJSONByScriptID(ctx context.Context, scriptID string) ([]any, error)
-	GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error)
+	GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error)
 	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
@@ -29,7 +29,7 @@ type WorkflowService interface {
 }
 
 type WorkflowRepository interface {
-	GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error)
+	GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)

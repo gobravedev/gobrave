@@ -48,7 +48,8 @@ func (t *Script) BeforeCreate(_ *gorm.DB) error {
 }
 
 type Workflow struct {
-	ID                 uint           `json:"id" gorm:"primaryKey;autoIncrement"`
+	// ID                 uint           `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID                 int64          `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 	ProjectID          int64          `json:"project_id,string" gorm:"column:project_id;type:bigint"`
 	StoreID            int64          `json:"store_id,string" gorm:"column:store_id;type:bigint"`
 	Name               string         `json:"name" gorm:"type:varchar(255)"`
@@ -74,6 +75,12 @@ type Workflow struct {
 	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
+func (t *Workflow) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
+}
 func (Workflow) TableName() string {
 	return "pipeline_components_relation"
 }

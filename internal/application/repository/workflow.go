@@ -17,7 +17,7 @@ func NewWorkflowRepository(db *gorm.DB) interfaces.WorkflowRepository {
 	return &workflowRepository{db: db}
 }
 
-func (r *workflowRepository) GetWorkflowByID(ctx context.Context, id uint) (*types.Workflow, error) {
+func (r *workflowRepository) GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error) {
 	item := &types.Workflow{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
 		return nil, err
