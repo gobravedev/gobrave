@@ -41,9 +41,13 @@ type LLMHandler struct {
 
 	bridgeMu       sync.RWMutex
 	bridgeSessions map[string]*llmBridgeSession
+	workflowSvc    interfaces.WorkflowService
 }
 
-func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService, llmSvc interfaces.LLMService) *LLMHandler {
+func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService,
+	llmSvc interfaces.LLMService,
+	workflowSvc interfaces.WorkflowService,
+) *LLMHandler {
 	cliURL := ""
 	if cfg != nil && cfg.LLM != nil {
 		cliURL = strings.TrimSpace(cfg.LLM.CLIURL)
@@ -75,6 +79,7 @@ func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.
 		projectSvc:     projectSvc,
 		llmSvc:         llmSvc,
 		bridgeSessions: make(map[string]*llmBridgeSession),
+		workflowSvc:    workflowSvc,
 	}
 	h.hub.SubscribeInbound(h.onBridgeInboundMessage)
 	return h
@@ -132,10 +137,11 @@ type llmStreamEvent struct {
 }
 
 type copilotWSStartRequest struct {
-	Type      string `json:"type"`
-	Prompt    string `json:"prompt"`
-	Model     string `json:"model"`
-	SessionID int64  `json:"session_id"`
+	Type      string         `json:"type"`
+	Prompt    string         `json:"prompt"`
+	Model     string         `json:"model"`
+	SessionID int64          `json:"session_id"`
+	Env       map[string]any `json:"env"`
 }
 
 type copilotWSPermissionDecision struct {
@@ -626,6 +632,7 @@ func (h *LLMHandler) onBridgeInboundMessage(msg realtime.InboundMessage) {
 			Prompt:    toString(msg.Payload["prompt"]),
 			Model:     toString(msg.Payload["model"]),
 			SessionID: toInt64(msg.Payload["session_id"]),
+			Env:       toMapStringAny(msg.Payload["env"]),
 		}
 
 		sessionID := startReq.SessionID
@@ -634,7 +641,7 @@ func (h *LLMHandler) onBridgeInboundMessage(msg realtime.InboundMessage) {
 			return
 		}
 
-		if err := h.startBridgeSession(context.Background(), msg.UserID, sessionID, startReq.Prompt, startReq.Model); err != nil {
+		if err := h.startBridgeSession(context.Background(), msg.UserID, sessionID, startReq.Prompt, startReq.Model, startReq.Env); err != nil {
 			h.pushBridgeEvent(msg.UserID, sessionID, "error", gin.H{"error": "failed to start llm session", "detail": err.Error()})
 			return
 		}
@@ -653,7 +660,11 @@ func (h *LLMHandler) onBridgeInboundMessage(msg realtime.InboundMessage) {
 	}
 }
 
-func (h *LLMHandler) startBridgeSession(parent context.Context, userID string, sessionID int64, prompt, model string) error {
+func (h *LLMHandler) startBridgeSession(parent context.Context,
+	userID string,
+	sessionID int64,
+	prompt, model string,
+	env map[string]any) error {
 	userID = strings.TrimSpace(userID)
 	prompt = strings.TrimSpace(prompt)
 	model = strings.TrimSpace(model)
@@ -694,11 +705,11 @@ func (h *LLMHandler) startBridgeSession(parent context.Context, userID string, s
 		return err
 	}
 
-	go h.runBridgeSession(ctx, session, prompt, model)
+	go h.runBridgeSession(ctx, session, prompt, model, env)
 	return nil
 }
 
-func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSession, prompt, model string) {
+func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSession, prompt, model string, env map[string]any) {
 	defer h.removeBridgeSession(session.userID, session.sessionID)
 
 	streamCtx, streamCancel := context.WithCancel(context.Background())
@@ -729,7 +740,8 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		Connection: copilot.URIConnection{URL: h.cliURL},
 	})
 
-	workingDir, err := h.resolveWorkingDirectory(ctx, session.userID)
+	workingDir, err := h.resolveWorkingDirectory(ctx, session.userID, env)
+
 	if err != nil {
 		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to resolve working directory", "detail": err.Error()})
 		return
@@ -937,11 +949,40 @@ func (h *LLMHandler) stopBridgeSession(userID string, sessionID int64) {
 	session.cancel()
 }
 
-func (h *LLMHandler) resolveWorkingDirectory(ctx context.Context, userID string) (string, error) {
+func (h *LLMHandler) resolveWorkingDirectory(ctx context.Context, userID string, env map[string]any) (string, error) {
 	if h.projectSvc == nil {
 		return "", fmt.Errorf("project service is not initialized")
 	}
 
+	if env != nil {
+		envType, ok := env["type"].(string)
+		if !ok || strings.TrimSpace(envType) == "" {
+			// return "", fmt.Errorf("env.type is required")
+			return h.resolveDefaultWorkingDirectory(ctx, userID)
+		}
+		switch strings.TrimSpace(envType) {
+		case "script":
+			scriptID, ok := env["script_id"]
+			if !ok {
+				return "", fmt.Errorf("env.script_id is required for script type")
+			}
+			scriptIDInt64, err := strconv.ParseInt(fmt.Sprintf("%v", scriptID), 10, 64)
+			if err != nil {
+				return "", fmt.Errorf("invalid env.script_id: %w", err)
+			}
+			scriptDir, _, err := h.workflowSvc.GetScriptFileByScriptID(ctx, scriptIDInt64)
+			if err != nil {
+				return "", fmt.Errorf("failed to get script file by script id: %w", err)
+			}
+			workingDir := filepath.Join(h.cfg.Storage.BaseDir, scriptDir)
+			return workingDir, nil
+		}
+	}
+	return h.resolveDefaultWorkingDirectory(ctx, userID)
+
+}
+
+func (h *LLMHandler) resolveDefaultWorkingDirectory(ctx context.Context, userID string) (string, error) {
 	project, err := h.projectSvc.GetActiveProjectByUserID(ctx, strings.TrimSpace(userID))
 	if err != nil {
 		return "", err
@@ -1148,7 +1189,12 @@ func toBool(v any) bool {
 	b, ok := v.(bool)
 	return ok && b
 }
-
+func toMapStringAny(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
 func toInt64(v any) int64 {
 	switch value := v.(type) {
 	case int:
