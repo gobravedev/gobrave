@@ -1956,13 +1956,20 @@ func buildAnalysisFileURL(path string, cfg *config.Config) string {
 	if base != "" {
 		base = filepath.Clean(base)
 		base = filepath.ToSlash(base)
-		base = fmt.Sprintf("%s/analysis", base)
-		if strings.HasPrefix(p, base) {
-			rel := strings.TrimPrefix(p, base)
+		analysisBaseDir := fmt.Sprintf("%s/analysis", base)
+		dataBaseDir := fmt.Sprintf("%s/data", base)
+		if strings.HasPrefix(p, analysisBaseDir) {
+			rel := strings.TrimPrefix(p, analysisBaseDir)
 			if !strings.HasPrefix(rel, "/") {
 				rel = "/" + rel
 			}
 			return "/images-analysis" + rel
+		} else if strings.HasPrefix(p, dataBaseDir) {
+			rel := strings.TrimPrefix(p, dataBaseDir)
+			if !strings.HasPrefix(rel, "/") {
+				rel = "/" + rel
+			}
+			return "/data-analysis" + rel
 		}
 	}
 

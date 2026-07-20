@@ -312,16 +312,18 @@ func serveStatic(r *gin.Engine, cfg *config.Config) {
 
 	dataDir, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "data"))
 	if err != nil {
-		logger.Warnf(context.Background(), "[Router] Skip serving /images-data: invalid base_dir/data path: base_dir=%s err=%v", baseDir, err)
+		logger.Warnf(context.Background(), "[Router] invalid base_dir/data path: base_dir=%s err=%v", baseDir, err)
 		return
 	}
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		logger.Warnf(context.Background(), "[Router] Skip serving /images-data: create dir failed: data_dir=%s err=%v", dataDir, err)
+		logger.Warnf(context.Background(), "[Router]  create dir failed: data_dir=%s err=%v", dataDir, err)
 		return
 	}
 
 	logger.Infof(context.Background(), "[Router] Serving data files from %s at /images-data", dataDir)
 	r.StaticFS("/images-data", http.Dir(dataDir))
+	logger.Infof(context.Background(), "[Router] Serving data files form %s at /data-analysis", dataDir)
+	r.StaticFS("/data-analysis", http.Dir(dataDir))
 
 	analysisDir, err := utils.SafePathUnderBase(baseDir, filepath.Join(baseDir, "analysis"))
 	if err != nil {
@@ -335,6 +337,7 @@ func serveStatic(r *gin.Engine, cfg *config.Config) {
 
 	logger.Infof(context.Background(), "[Router] Serving analysis files from %s at /images-analysis", analysisDir)
 	r.StaticFS("/images-analysis", http.Dir(analysisDir))
+
 }
 
 func serveFrontendStatic(r *gin.Engine, cfg *config.Config) {
