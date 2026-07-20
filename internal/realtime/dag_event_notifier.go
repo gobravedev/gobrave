@@ -41,19 +41,27 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 	}
 
 	ctx := context.Background()
-
-	analsyisNode, err := n.analysisRepo.GetAnalysisNodeByID(ctx, runtimeEvent.AnalysisNodeID)
-	if err != nil {
-		return
-	}
-	projectID := analsyisNode.ProjectID
-	if strings.TrimSpace(projectID) == "" {
+	var projectID string
+	if runtimeEvent.AnalysisNodeID == 0 {
 		analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
 		if err != nil {
-			logger.Warnf(ctx, "[Realtime] skip dag event notify: load analysis failed analysis_id=%s event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.Name, err)
 			return
 		}
-		projectID = analysis.ProcessID
+		projectID = analysis.ProjectID
+	} else {
+		analsyisNode, err := n.analysisRepo.GetAnalysisNodeByID(ctx, runtimeEvent.AnalysisNodeID)
+		if err != nil {
+			return
+		}
+		projectID = analsyisNode.ProjectID
+		if strings.TrimSpace(projectID) == "" {
+			analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
+			if err != nil {
+				logger.Warnf(ctx, "[Realtime] skip dag event notify: load analysis failed analysis_id=%s event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.Name, err)
+				return
+			}
+			projectID = analysis.ProjectID
+		}
 	}
 
 	if strings.TrimSpace(projectID) == "" {
