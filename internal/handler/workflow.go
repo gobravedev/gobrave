@@ -1105,7 +1105,7 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 	installWorkflow.ID = 0
 	installWorkflow.ProjectID = project.ID
 	installWorkflow.StoreID = store.ID
-	installWorkflow.WorkflowID = payload.WorkflowID
+	// installWorkflow.WorkflowID = payload.WorkflowID
 	if strings.TrimSpace(store.URL) != "" {
 		installWorkflow.URL = store.URL
 	}
