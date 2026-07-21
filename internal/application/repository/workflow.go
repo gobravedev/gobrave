@@ -131,6 +131,18 @@ func (r *workflowRepository) PageWorkflow(ctx context.Context, pagination *types
 	return items, total, nil
 }
 
+func (r *workflowRepository) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&types.Workflow{}).
+		Where("project_id = ? AND relation_id = ?", projectID, workflowID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (r *workflowRepository) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
 	if pagination == nil {
 		pagination = &types.Pagination{}
@@ -300,6 +312,7 @@ func (r *workflowRepository) UpdateWorkflow(ctx context.Context, workflow *types
 
 	updates := map[string]any{
 		"project_id":           workflow.ProjectID,
+		"store_id":             workflow.StoreID,
 		"name":                 workflow.Name,
 		"img":                  workflow.Img,
 		"tags":                 workflow.Tags,

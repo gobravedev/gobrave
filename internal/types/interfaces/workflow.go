@@ -2,9 +2,12 @@ package interfaces
 
 import (
 	"context"
+	stderrs "errors"
 
 	"github.com/gobravedev/gobrave/internal/types"
 )
+
+var ErrInvalidDagDefinitionJSON = stderrs.New("dag_definition is not valid JSON format")
 
 type WorkflowService interface {
 	GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error)
@@ -15,6 +18,7 @@ type WorkflowService interface {
 	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
+	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
@@ -22,6 +26,7 @@ type WorkflowService interface {
 	GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error)
 	GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
+	GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID string, storageBaseDir string) (*types.WorkflowJSONExportResponse, error)
 	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	CreateScript(ctx context.Context, script *types.Script) error
@@ -32,6 +37,7 @@ type WorkflowRepository interface {
 	GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
+	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)

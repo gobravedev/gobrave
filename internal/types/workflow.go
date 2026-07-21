@@ -97,3 +97,11 @@ type ScriptContainerSnapshot struct {
 	ImageTag       string `json:"image_tag" gorm:"column:image_tag"`
 	ImageStatus    string `json:"image_status" gorm:"column:image_status"`
 }
+
+type WorkflowJSONExportResponse struct {
+	Path               string           `json:"path"`
+	WorkflowID         string           `json:"workflow_id"`
+	Workflow           map[string]any   `json:"workflow"`
+	Scripts            []map[string]any `json:"scripts"`
+	ContainerTemplates []map[string]any `json:"container_templates"`
+}

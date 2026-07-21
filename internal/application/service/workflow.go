@@ -3,18 +3,24 @@ package service
 import (
 	"context"
 	"encoding/json"
+	stderrs "errors"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/gorm"
 )
 
 type workflowService struct {
-	workflowRepo interfaces.WorkflowRepository
+	workflowRepo  interfaces.WorkflowRepository
+	containerRepo interfaces.ContainerRepository
 }
 
-func NewWorkflowService(workflowRepo interfaces.WorkflowRepository) interfaces.WorkflowService {
-	return &workflowService{workflowRepo: workflowRepo}
+func NewWorkflowService(workflowRepo interfaces.WorkflowRepository, containerRepo interfaces.ContainerRepository) interfaces.WorkflowService {
+	return &workflowService{workflowRepo: workflowRepo, containerRepo: containerRepo}
 }
 
 func (s *workflowService) GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error) {
@@ -27,6 +33,10 @@ func (s *workflowService) GetWorkflowByWorkflowID(ctx context.Context, workflowI
 
 func (s *workflowService) PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error) {
 	return s.workflowRepo.PageWorkflow(ctx, pagination, query)
+}
+
+func (s *workflowService) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error) {
+	return s.workflowRepo.ExistsWorkflowInProjectByWorkflowID(ctx, projectID, workflowID)
 }
 
 func (s *workflowService) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
@@ -142,6 +152,111 @@ func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scrip
 
 func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error) {
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
+}
+
+func (s *workflowService) GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID string, storageBaseDir string) (*types.WorkflowJSONExportResponse, error) {
+	if strings.TrimSpace(storageBaseDir) == "" {
+		return nil, os.ErrInvalid
+	}
+
+	workflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowMap, err := structToMap(workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	var dagDefinition map[string]any
+	if workflow.DagDefinition != "" {
+		if !json.Valid([]byte(workflow.DagDefinition)) {
+			return nil, interfaces.ErrInvalidDagDefinitionJSON
+		}
+		if err := json.Unmarshal([]byte(workflow.DagDefinition), &dagDefinition); err != nil {
+			return nil, err
+		}
+		workflowMap["dag_definition"] = dagDefinition
+	}
+
+	nodeItems, _ := dagDefinition["nodes"].([]any)
+	scriptIDs := make([]string, 0, len(nodeItems))
+	seenScriptIDs := make(map[string]struct{})
+	for _, nodeAny := range nodeItems {
+		node, ok := nodeAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		scriptID, _ := node["script_id"].(string)
+		if scriptID == "" {
+			continue
+		}
+		if _, exists := seenScriptIDs[scriptID]; exists {
+			continue
+		}
+		seenScriptIDs[scriptID] = struct{}{}
+		scriptIDs = append(scriptIDs, scriptID)
+	}
+
+	scripts := make([]map[string]any, 0, len(scriptIDs))
+	containerTemplates := make([]map[string]any, 0)
+	seenTemplateIDs := make(map[int64]struct{})
+	for _, scriptID := range scriptIDs {
+		script, scriptErr := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+		if scriptErr != nil {
+			if stderrs.Is(scriptErr, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return nil, scriptErr
+		}
+
+		scriptMap, scriptMapErr := structToMap(script)
+		if scriptMapErr != nil {
+			return nil, scriptMapErr
+		}
+
+		if script.ContainerTemplateID != 0 {
+			template, templateErr := s.containerRepo.GetContainerTemplateByID(ctx, script.ContainerTemplateID)
+			if templateErr == nil && template != nil {
+				templateMap, templateMapErr := structToMap(template)
+				if templateMapErr != nil {
+					return nil, templateMapErr
+				}
+				scriptMap["container_template"] = templateMap
+				if _, exists := seenTemplateIDs[template.ID]; !exists {
+					seenTemplateIDs[template.ID] = struct{}{}
+					containerTemplates = append(containerTemplates, templateMap)
+				}
+			}
+		}
+
+		scripts = append(scripts, scriptMap)
+	}
+
+	exportPayload := &types.WorkflowJSONExportResponse{
+		WorkflowID:         workflowID,
+		Workflow:           workflowMap,
+		Scripts:            scripts,
+		ContainerTemplates: containerTemplates,
+	}
+
+	exportDir := filepath.Join(storageBaseDir, "pipeline", "tools", workflowID)
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	exportPath := filepath.Join(exportDir, "workflow.json")
+	exportBytes, err := json.MarshalIndent(exportPayload, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(exportPath, exportBytes, 0o644); err != nil {
+		return nil, err
+	}
+
+	exportPayload.Path = exportPath
+	return exportPayload, nil
 }
 
 func (s *workflowService) CreateWorkflow(ctx context.Context, workflow *types.Workflow) error {
@@ -371,6 +486,20 @@ func getInputNames(ioSchema map[string]any) map[string]struct{} {
 	}
 
 	return result
+}
+
+func structToMap(value any) (map[string]any, error) {
+	content, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]any)
+	if err := json.Unmarshal(content, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func filterInputs(items []any, inputNames map[string]struct{}) []any {
