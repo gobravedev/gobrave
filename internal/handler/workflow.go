@@ -93,7 +93,7 @@ type createWorkflowRequest struct {
 	OutputComponentIDs string `json:"output_component_ids"`
 	OrderIndex         int    `json:"order_index"`
 	Version            string `json:"version"`
-	UpdateInfo         string `json:"update_info"`
+	Message            string `json:"message"`
 }
 
 type pageScriptRequest struct {
@@ -340,7 +340,7 @@ func (h *WorkflowHandler) SaveWorkflow(c *gin.Context) {
 		OutputComponentIDs: datatypes.JSON([]byte(req.OutputComponentIDs)),
 		OrderIndex:         req.OrderIndex,
 		Version:            req.Version,
-		UpdateInfo:         req.UpdateInfo,
+		Message:            req.Message,
 	}
 
 	if req.ID != 0 {
@@ -443,6 +443,7 @@ func (h *WorkflowHandler) PageScript(c *gin.Context) {
 	}
 
 	var req pageScriptRequest
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
 		return
@@ -745,6 +746,74 @@ func (h *WorkflowHandler) GetScriptContent(c *gin.Context) {
 	})
 }
 
+func (h *WorkflowHandler) GetWorkflowById(c *gin.Context) {
+	workflowId := c.Param("workflowId")
+	if workflowId == "" {
+		c.Error(errors.NewValidationError("workflowId is required"))
+		return
+	}
+	workflowIDInt, err := strconv.ParseInt(workflowId, 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("workflowId must be a valid integer"))
+		return
+	}
+	workflow, err := h.workflowService.GetWorkflowByID(c.Request.Context(), workflowIDInt)
+
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("workflow not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get workflow").WithDetails(err.Error()))
+		return
+	}
+
+	storeVersion := ""
+
+	storeID := workflow.StoreID
+	if storeID != 0 {
+		store, err := h.storeService.GetStoreByID(c.Request.Context(), storeID)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to get store").WithDetails(err.Error()))
+			return
+		}
+		if store != nil {
+			storeVersion = store.Version
+		}
+
+	}
+	workflowVersion := &types.WorkflowVersion{
+		// ID:                 workflow.ID,
+		// ProjectID:          workflow.ProjectID,
+		// StoreID:            workflow.StoreID,
+		// Name:               workflow.Name,
+		// Img:                workflow.Img,
+		// Tags:               workflow.Tags,
+		// URL:                workflow.URL,
+		// Category:           workflow.Category,
+		// Description:        workflow.Description,
+		// Prompt:             workflow.Prompt,
+		// DagDefinition:      workflow.DagDefinition,
+		// WorkflowID:         workflow.WorkflowID,
+		// RelationType:       workflow.RelationType,
+		// InstallKey:         workflow.InstallKey,
+		// ModuleID:           workflow.ModuleID,
+		// ContainerID:        workflow.ContainerID,
+		// ParentComponentID:  workflow.ParentComponentID,
+		// InputComponentIDs:  workflow.InputComponentIDs,
+		// OutputComponentIDs: workflow.OutputComponentIDs,
+		// OrderIndex:         workflow.OrderIndex,
+		// Version:            workflow.Version,
+		// UpdateInfo:         workflow.UpdateInfo,
+		// CreatedAt:          workflow.CreatedAt,
+		// UpdatedAt:          workflow.UpdatedAt,
+		Workflow:     *workflow,
+		StoreVersion: storeVersion,
+	}
+
+	c.JSON(http.StatusOK, workflowVersion)
+}
+
 // GenerateWorkflowJSON godoc
 // @Summary      生成工作流 JSON
 // @Description  根据 workflowId 读取工作流、脚本与 ContainerTemplateID，导出可落盘的 workflow.json
@@ -768,13 +837,19 @@ func (h *WorkflowHandler) GenerateWorkflowJSON(c *gin.Context) {
 		c.Error(errors.NewValidationError("workflowId is required"))
 		return
 	}
+	// 使用 int64 类型的 workflowID 进行查询
+	workflowIDInt, err := strconv.ParseInt(workflowID, 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("workflowId must be a valid integer"))
+		return
+	}
 
 	if h.cfg == nil || strings.TrimSpace(h.cfg.Storage.BaseDir) == "" {
 		c.Error(errors.NewInternalServerError("storage base dir is not configured"))
 		return
 	}
 
-	exportPayload, err := h.workflowService.GenerateWorkflowJSONByWorkflowID(c.Request.Context(), workflowID, h.cfg.Storage.BaseDir)
+	exportPayload, err := h.workflowService.GenerateWorkflowJSONByWorkflowID(c.Request.Context(), workflowIDInt, h.cfg.Storage.BaseDir)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("workflow not found"))
@@ -819,7 +894,7 @@ func (h *WorkflowHandler) PublishWorkflow(c *gin.Context) {
 		return
 	}
 
-	exportPayload, err := h.workflowService.GenerateWorkflowJSONByWorkflowID(c.Request.Context(), workflow.WorkflowID, h.cfg.Storage.BaseDir)
+	exportPayload, err := h.workflowService.GenerateWorkflowJSONByWorkflowID(c.Request.Context(), workflow.ID, h.cfg.Storage.BaseDir)
 	if err != nil {
 		if stderrs.Is(err, interfaces.ErrInvalidDagDefinitionJSON) {
 			c.Error(errors.NewValidationError("dag_definition is not valid JSON format"))
@@ -842,7 +917,7 @@ func (h *WorkflowHandler) PublishWorkflow(c *gin.Context) {
 	}
 
 	store := &types.Store{
-		StoreID:     workflow.WorkflowID,
+		// StoreID:     workflow.WorkflowID,
 		StoreType:   "workflow",
 		Name:        workflow.Name,
 		Origin:      "local",
@@ -855,7 +930,7 @@ func (h *WorkflowHandler) PublishWorkflow(c *gin.Context) {
 		Img:         workflow.Img,
 		PublishURLs: publishURLsJSON,
 		Version:     req.Version,
-		UpdateInfo:  req.Message,
+		Message:     req.Message,
 	}
 
 	if err := os.MkdirAll(storePath, 0o755); err != nil {
@@ -884,7 +959,7 @@ func (h *WorkflowHandler) PublishWorkflow(c *gin.Context) {
 				}
 			}
 			store.ID = existingStore.ID
-			store.StoreID = existingStore.StoreID
+			// store.StoreID = existingStore.StoreID
 		}
 
 		if err := h.storeService.UpdateStore(c.Request.Context(), store); err != nil {
@@ -901,7 +976,7 @@ func (h *WorkflowHandler) PublishWorkflow(c *gin.Context) {
 
 	workflow.URL = req.Url
 	workflow.Version = req.Version
-	workflow.UpdateInfo = req.Message
+	workflow.Message = req.Message
 	if err := h.workflowService.UpdateWorkflow(c.Request.Context(), workflow); err != nil {
 		c.Error(errors.NewInternalServerError("failed to update workflow publish info").WithDetails(err.Error()))
 		return
@@ -1011,6 +1086,10 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 		c.Error(errors.NewValidationError("workflow_id is required in workflow.json"))
 		return
 	}
+	if err := normalizeInstalledWorkflowMap(payload.Workflow); err != nil {
+		c.Error(errors.NewValidationError("workflow.json contains invalid workflow fields").WithDetails(err.Error()))
+		return
+	}
 
 	wfBytes, err := json.Marshal(payload.Workflow)
 	if err != nil {
@@ -1033,23 +1112,27 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 	if strings.TrimSpace(store.Version) != "" {
 		installWorkflow.Version = store.Version
 	}
-	if strings.TrimSpace(store.UpdateInfo) != "" {
-		installWorkflow.UpdateInfo = store.UpdateInfo
+	if strings.TrimSpace(store.Message) != "" {
+		installWorkflow.Message = store.Message
 	}
 
-	exists, err := h.workflowService.ExistsWorkflowInProjectByWorkflowID(c.Request.Context(), project.ID, payload.WorkflowID)
+	existingWorkflow, err := h.workflowService.ExistsWorkflowInProjectByWorkflowID(c.Request.Context(), project.ID, payload.WorkflowID)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to check existing workflow").WithDetails(err.Error()))
 		return
 	}
-	if exists {
-		c.Error(errors.NewValidationError("workflow already installed in active project"))
-		return
-	}
+	if existingWorkflow != nil {
+		installWorkflow.ID = existingWorkflow.ID
+		if err := h.workflowService.UpdateWorkflow(c.Request.Context(), installWorkflow); err != nil {
+			c.Error(errors.NewInternalServerError("failed to update installed workflow").WithDetails(err.Error()))
+			return
+		}
+	} else {
 
-	if err := h.workflowService.CreateWorkflow(c.Request.Context(), installWorkflow); err != nil {
-		c.Error(errors.NewInternalServerError("failed to install workflow").WithDetails(err.Error()))
-		return
+		if err := h.workflowService.CreateWorkflow(c.Request.Context(), installWorkflow); err != nil {
+			c.Error(errors.NewInternalServerError("failed to install workflow").WithDetails(err.Error()))
+			return
+		}
 	}
 
 	installedScriptCount := 0
@@ -1072,9 +1155,23 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 			installScript.ComponentType = "script"
 		}
 
-		if err := h.workflowService.CreateScript(c.Request.Context(), installScript); err != nil {
-			c.Error(errors.NewInternalServerError("failed to install script").WithDetails(err.Error()))
+		existingScript, err := h.workflowService.ExistsScriptInProjectByScriptID(c.Request.Context(), project.ID, installScript.ScriptID)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to check existing script").WithDetails(err.Error()))
 			return
+		}
+
+		if existingScript != nil {
+			installScript.ID = existingScript.ID
+			if err := h.workflowService.UpdateScript(c.Request.Context(), installScript); err != nil {
+				c.Error(errors.NewInternalServerError("failed to update installed script").WithDetails(err.Error()))
+				return
+			}
+		} else {
+			if err := h.workflowService.CreateScript(c.Request.Context(), installScript); err != nil {
+				c.Error(errors.NewInternalServerError("failed to install script").WithDetails(err.Error()))
+				return
+			}
 		}
 
 		scriptID := strings.TrimSpace(installScript.ScriptID)
@@ -1262,6 +1359,29 @@ func scriptIDFromExportScript(item map[string]any) string {
 	return ""
 }
 
+func normalizeInstalledWorkflowMap(workflow map[string]any) error {
+	if workflow == nil {
+		return nil
+	}
+
+	dagDefinition, exists := workflow["dag_definition"]
+	if !exists || dagDefinition == nil {
+		return nil
+	}
+
+	switch value := dagDefinition.(type) {
+	case string:
+		return nil
+	default:
+		b, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		workflow["dag_definition"] = string(b)
+		return nil
+	}
+}
+
 func buildCompatSampleItem(item interface{}) (map[string]interface{}, error) {
 	b, err := json.Marshal(item)
 	if err != nil {
@@ -1307,18 +1427,4 @@ func normalizeJSONOrDefault(raw string, defaultJSON string) string {
 		return defaultJSON
 	}
 	return raw
-}
-
-func structToMap(value any) (map[string]any, error) {
-	content, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]any)
-	if err := json.Unmarshal(content, &result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }

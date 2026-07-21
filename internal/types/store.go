@@ -9,7 +9,7 @@ import (
 type Store struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;autoIncrement"`
 
-	StoreID string `json:"store_id" gorm:"type:varchar(255);index"`
+	// StoreID string `json:"store_id" gorm:"type:varchar(255);index"`
 	// AppID       string         `json:"app_id" gorm:"type:varchar(255);index"`
 	// workflow script
 	StoreType   string         `json:"store_type" gorm:"type:varchar(255);index"`
@@ -25,8 +25,8 @@ type Store struct {
 	PublishURLs datatypes.JSON `json:"publish_urls" gorm:"column:publish_urls;type:json"`
 	Log         string         `json:"log" gorm:"type:longtext"`
 
-	Version    string `json:"version" gorm:"type:varchar(255)"`
-	UpdateInfo string `json:"update_info" gorm:"type:longtext"`
+	Version string `json:"version" gorm:"type:varchar(255)"`
+	Message string `json:"message" gorm:"type:longtext"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -70,7 +70,7 @@ type Workflow struct {
 	OutputComponentIDs datatypes.JSON `json:"output_component_ids" gorm:"type:json"`
 	OrderIndex         int            `json:"order_index"`
 	Version            string         `json:"version" gorm:"type:varchar(255)"`
-	UpdateInfo         string         `json:"update_info" gorm:"type:longtext"`
+	Message            string         `json:"message" gorm:"type:longtext"`
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 }
@@ -99,9 +99,38 @@ type ScriptContainerSnapshot struct {
 }
 
 type WorkflowJSONExportResponse struct {
-	Path               string           `json:"path"`
+	// Path               string           `json:"path"`
 	WorkflowID         string           `json:"workflow_id"`
 	Workflow           map[string]any   `json:"workflow"`
 	Scripts            []map[string]any `json:"scripts"`
 	ContainerTemplates []map[string]any `json:"container_templates"`
+}
+
+type WorkflowVersion struct {
+	// ID                 int64          `json:"id,string"`
+	// ProjectID          int64          `json:"project_id,string"`
+	// StoreID            int64          `json:"store_id,string"`
+	// Name               string         `json:"name"`
+	// Img                string         `json:"img"`
+	// Tags               datatypes.JSON `json:"tags"`
+	// URL                string         `json:"url"`
+	// Category           string         `json:"category"`
+	// Description        string         `json:"description"`
+	// Prompt             string         `json:"prompt"`
+	// DagDefinition      string         `json:"dag_definition"`
+	// WorkflowID         string         `json:"relation_id"`
+	// RelationType       string         `json:"relation_type"`
+	// InstallKey         string         `json:"install_key"`
+	// ModuleID           string         `json:"component_id"`
+	// ContainerID        string         `json:"container_id"`
+	// ParentComponentID  string         `json:"parent_component_id"`
+	// InputComponentIDs  datatypes.JSON `json:"input_component_ids"`
+	// OutputComponentIDs datatypes.JSON `json:"output_component_ids"`
+	// OrderIndex         int            `json:"order_index"`
+	// Version            string         `json:"version"`
+	// UpdateInfo         string         `json:"update_info"`
+	// CreatedAt          time.Time      `json:"created_at"`
+	// UpdatedAt          time.Time      `json:"updated_at"`
+	Workflow
+	StoreVersion string `json:"store_version"`
 }

@@ -39,7 +39,7 @@ func (r *storeRepository) GetStoreByStoreID(ctx context.Context, storeID string)
 
 func (r *storeRepository) UpdateStore(ctx context.Context, item *types.Store) error {
 	return r.db.WithContext(ctx).Model(&types.Store{}).Where("id = ?", item.ID).Updates(map[string]interface{}{
-		"store_id":     item.StoreID,
+		// "store_id":     item.StoreID,
 		"store_type":   item.StoreType,
 		"name":         item.Name,
 		"origin":       item.Origin,
@@ -53,7 +53,7 @@ func (r *storeRepository) UpdateStore(ctx context.Context, item *types.Store) er
 		"publish_urls": item.PublishURLs,
 		"log":          item.Log,
 		"version":      item.Version,
-		"update_info":  item.UpdateInfo,
+		"message":      item.Message,
 	}).Error
 }
 

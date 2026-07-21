@@ -35,7 +35,7 @@ func (s *workflowService) PageWorkflow(ctx context.Context, pagination *types.Pa
 	return s.workflowRepo.PageWorkflow(ctx, pagination, query)
 }
 
-func (s *workflowService) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error) {
+func (s *workflowService) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (*types.Workflow, error) {
 	return s.workflowRepo.ExistsWorkflowInProjectByWorkflowID(ctx, projectID, workflowID)
 }
 
@@ -45,6 +45,10 @@ func (s *workflowService) PageScript(ctx context.Context, pagination *types.Pagi
 
 func (s *workflowService) GetScriptByID(ctx context.Context, id int64) (*types.Script, error) {
 	return s.workflowRepo.GetScriptByID(ctx, id)
+}
+
+func (s *workflowService) ExistsScriptInProjectByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error) {
+	return s.workflowRepo.ExistsScriptInProjectByScriptID(ctx, projectID, scriptID)
 }
 
 func (s *workflowService) GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error) {
@@ -154,12 +158,12 @@ func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Conte
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
 }
 
-func (s *workflowService) GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID string, storageBaseDir string) (*types.WorkflowJSONExportResponse, error) {
+func (s *workflowService) GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID int64, storageBaseDir string) (*types.WorkflowJSONExportResponse, error) {
 	if strings.TrimSpace(storageBaseDir) == "" {
 		return nil, os.ErrInvalid
 	}
 
-	workflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)
+	workflow, err := s.workflowRepo.GetWorkflowByID(ctx, workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -235,27 +239,27 @@ func (s *workflowService) GenerateWorkflowJSONByWorkflowID(ctx context.Context, 
 	}
 
 	exportPayload := &types.WorkflowJSONExportResponse{
-		WorkflowID:         workflowID,
+		WorkflowID:         workflow.WorkflowID,
 		Workflow:           workflowMap,
 		Scripts:            scripts,
 		ContainerTemplates: containerTemplates,
 	}
 
-	exportDir := filepath.Join(storageBaseDir, "pipeline", "tools", workflowID)
+	exportDir := filepath.Join(storageBaseDir, "pipeline", "tools", workflow.WorkflowID)
 	if err := os.MkdirAll(exportDir, 0o755); err != nil {
 		return nil, err
 	}
 
-	exportPath := filepath.Join(exportDir, "workflow.json")
-	exportBytes, err := json.MarshalIndent(exportPayload, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(exportPath, exportBytes, 0o644); err != nil {
-		return nil, err
-	}
+	// exportPath := filepath.Join(exportDir, "workflow.json")
+	// exportBytes, err := json.MarshalIndent(exportPayload, "", "  ")
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if err := os.WriteFile(exportPath, exportBytes, 0o644); err != nil {
+	// 	return nil, err
+	// }
 
-	exportPayload.Path = exportPath
+	// exportPayload.Path = exportPath
 	return exportPayload, nil
 }
 

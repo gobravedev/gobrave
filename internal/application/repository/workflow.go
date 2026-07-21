@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	stderrs "errors"
 	"fmt"
 
 	"github.com/gobravedev/gobrave/internal/types"
@@ -131,16 +132,18 @@ func (r *workflowRepository) PageWorkflow(ctx context.Context, pagination *types
 	return items, total, nil
 }
 
-func (r *workflowRepository) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error) {
-	var count int64
+func (r *workflowRepository) ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (*types.Workflow, error) {
+	item := &types.Workflow{}
 	err := r.db.WithContext(ctx).
-		Model(&types.Workflow{}).
 		Where("project_id = ? AND relation_id = ?", projectID, workflowID).
-		Count(&count).Error
+		Take(item).Error
 	if err != nil {
-		return false, err
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
 	}
-	return count > 0, nil
+	return item, nil
 }
 
 func (r *workflowRepository) PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error) {
@@ -250,6 +253,20 @@ func (r *workflowRepository) GetScriptByID(ctx context.Context, id int64) (*type
 	return item, nil
 }
 
+func (r *workflowRepository) ExistsScriptInProjectByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error) {
+	item := &types.Script{}
+	err := r.db.WithContext(ctx).
+		Where("project_id = ? AND component_id = ? AND component_type = ?", projectID, scriptID, "script").
+		Take(item).Error
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
 func (r *workflowRepository) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
 	item := &types.Script{}
 	if err := r.db.WithContext(ctx).Where("component_id = ?", scriptID).Take(item).Error; err != nil {
@@ -331,7 +348,7 @@ func (r *workflowRepository) UpdateWorkflow(ctx context.Context, workflow *types
 		"output_component_ids": workflow.OutputComponentIDs,
 		"order_index":          workflow.OrderIndex,
 		"version":              workflow.Version,
-		"update_info":          workflow.UpdateInfo,
+		"message":              workflow.Message,
 	}
 
 	result := r.db.WithContext(ctx).Model(&types.Workflow{}).Where("id = ?", workflow.ID).Updates(updates)

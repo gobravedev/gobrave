@@ -18,15 +18,16 @@ type WorkflowService interface {
 	GetWorkflowVisByWorkflowID(ctx context.Context, workflowID string) (map[string]any, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
-	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error)
+	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (*types.Workflow, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
+	ExistsScriptInProjectByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error)
 	// 后续废除
 	GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error)
 	GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
-	GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID string, storageBaseDir string) (*types.WorkflowJSONExportResponse, error)
+	GenerateWorkflowJSONByWorkflowID(ctx context.Context, workflowID int64, storageBaseDir string) (*types.WorkflowJSONExportResponse, error)
 	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	UpdateWorkflow(ctx context.Context, workflow *types.Workflow) error
 	CreateScript(ctx context.Context, script *types.Script) error
@@ -37,10 +38,11 @@ type WorkflowRepository interface {
 	GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error)
 	GetWorkflowByWorkflowID(ctx context.Context, workflowID string) (*types.Workflow, error)
 	PageWorkflow(ctx context.Context, pagination *types.Pagination, query *types.WorkflowPageQuery) ([]*types.Workflow, int64, error)
-	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (bool, error)
+	ExistsWorkflowInProjectByWorkflowID(ctx context.Context, projectID int64, workflowID string) (*types.Workflow, error)
 	PageScript(ctx context.Context, pagination *types.Pagination, query *types.ScriptPageQuery) ([]*types.Script, int64, error)
 	GetScriptByID(ctx context.Context, id int64) (*types.Script, error)
 	GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error)
+	ExistsScriptInProjectByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error)
 	FindScriptsByScriptIDs(ctx context.Context, scriptIDs []string) ([]*types.Script, error)
 	GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error)
 	CreateWorkflow(ctx context.Context, workflow *types.Workflow) error

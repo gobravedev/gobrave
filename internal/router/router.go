@@ -244,7 +244,7 @@ func RegisterWorkflowRoutes(r *gin.RouterGroup, handler *handler.WorkflowHandler
 	r.POST("/workflow/save-workflow", handler.SaveWorkflow)
 	r.POST("/workflow/publish-workflow", handler.PublishWorkflow)
 	r.POST("/workflow/install-workflow/:storeId", handler.InstallWorkflow)
-
+	r.GET("/workflow/:workflowId/get-workflow", handler.GetWorkflowById)
 	r.POST("/workflow/:workflowId/generate-workflow-json", handler.GenerateWorkflowJSON)
 	r.GET("/find-script/:id", handler.FindScript)
 	r.POST("/workflow/page-script", handler.PageScript)
