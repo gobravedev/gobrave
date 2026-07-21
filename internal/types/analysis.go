@@ -187,8 +187,9 @@ type AnalysisNode struct {
 
 	AnalysisNodeID string `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
 	// ProjectID      string `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
-	ProjectID  int64  `json:"project_id,string" gorm:"column:project_id;type:bigint"`
-	AnalysisID string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
+	ProjectID int64 `json:"project_id,string" gorm:"column:project_id;type:bigint"`
+	// AnalysisID string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
+	AnalysisID int64  `json:"analysis_id,string" gorm:"column:analysis_id;type:bigint"`
 	NodeID     string `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
 	NodeName   string `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
 	SampleID   string `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`

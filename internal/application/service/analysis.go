@@ -88,8 +88,14 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	if parseResult == nil {
 		parseResult = map[string]any{}
 	}
-
-	analysisID := strings.TrimSpace(toString(input.RequestParam["analysis_id"]))
+	analysisIDStr := strings.TrimSpace(toString(input.RequestParam["analysis_id"]))
+	// analysisIDStr 转 int64
+	analysisID, err := strconv.ParseInt(analysisIDStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid analysis_id: %v", err)
+	}
+	// analysisID := 0
+	// sessionID, err := strconv.ParseInt(sessionIDParam, 0, 64)
 
 	cacheType := intFromAny(input.RequestParam["cache_type"], types.CacheTypeRerunAll)
 	if _, ok := input.RequestParam["cache_type"]; !ok {
@@ -104,10 +110,10 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	dataComponentIDs := toString(input.RequestParam["data_component_ids"])
 
 	var saved *types.Analysis
-	err := s.analysisRepo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
+	saveErr := s.analysisRepo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
 		var existing *types.Analysis
-		if analysisID != "" {
-			item, err := tx.GetAnalysisByAnalysisID(ctx, analysisID)
+		if analysisID != 0 {
+			item, err := tx.GetAnalysisByID(ctx, analysisID)
 			if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
@@ -117,15 +123,16 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 		}
 
 		baseDir := s.resolveStorageBaseDir()
-		if existing == nil && analysisID == "" {
-			analysisID = uuid.NewString()
+		if existing == nil && analysisID == 0 {
+			analysisID = utils.GenerateID()
 		}
 
 		analsyisDir := utils.GetAnalysisDir(baseDir, input.Project.ProjectID)
-		outputDir := filepath.Join(analsyisDir, analysisID)
-		workDir := filepath.Join(analsyisDir, analysisID)
+
+		outputDir := filepath.Join(analsyisDir, fmt.Sprintf("%d", analysisID))
+		workDir := filepath.Join(analsyisDir, fmt.Sprintf("%d", analysisID))
 		if existing != nil {
-			analysisID = existing.AnalysisID
+			analysisID = existing.ID
 			if strings.TrimSpace(existing.OutputDir) != "" {
 				outputDir = existing.OutputDir
 			}
@@ -149,7 +156,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 		executorLogFile := filepath.Join(outputDir, ".nextflow.log")
 
 		parseResult["tools_output_dir"] = outputDir
-		input.RequestParam["analysis_id"] = analysisID
+		input.RequestParam["analysis_id"] = fmt.Sprintf("%d", analysisID)
 
 		if err := writeJSONFile(paramsPath, parseResult); err != nil {
 			return err
@@ -180,13 +187,13 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			if strings.TrimSpace(existing.JobStatus) != "running" {
 				updateValues["job_status"] = "updated"
 			}
-			if err := tx.UpdateAnalysisByAnalysisID(ctx, analysisID, updateValues); err != nil {
+			if err := tx.UpdateAnalysisByID(ctx, analysisID, updateValues); err != nil {
 				return err
 			}
 		} else {
 			newAnalysis := &types.Analysis{
 				ProjectID:  input.Project.ID,
-				AnalysisID: analysisID,
+				AnalysisID: uuid.NewString(),
 				WorkflowID: workflowID,
 				// AnalysisType:    analysisType,
 				AnalysisName:    analysisName,
@@ -211,7 +218,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			}
 		}
 
-		savedAnalysis, err := tx.GetAnalysisByAnalysisID(ctx, analysisID)
+		savedAnalysis, err := tx.GetAnalysisByID(ctx, analysisID)
 		if err != nil {
 			return err
 		}
@@ -225,8 +232,8 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 		saved = savedAnalysis
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	if saveErr != nil {
+		return nil, saveErr
 	}
 
 	return saved, nil

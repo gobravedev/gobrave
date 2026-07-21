@@ -50,7 +50,19 @@ func (r *analysisRepository) UpdateAnalysisByAnalysisID(ctx context.Context, ana
 	}
 	return r.db.WithContext(ctx).Model(&types.Analysis{}).Where("analysis_id = ?", analysisID).Updates(values).Error
 }
-
+func (r *analysisRepository) UpdateAnalysisByID(ctx context.Context, analysisID int64, values map[string]any) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&types.Analysis{}).Where("id = ?", analysisID).Updates(values).Error
+}
+func (r *analysisRepository) GetAnalysisByID(ctx context.Context, analysisID int64) (*types.Analysis, error) {
+	item := &types.Analysis{}
+	if err := r.db.WithContext(ctx).Where("id = ?", analysisID).Take(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
+}
 func (r *analysisRepository) GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error) {
 	item := &types.Analysis{}
 	if err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Take(item).Error; err != nil {

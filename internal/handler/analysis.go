@@ -399,14 +399,16 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("failed to get workflow visualization").WithDetails(err.Error()))
 		return
 	}
-
-	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
-	if analysisID == "" || analysisID == "<nil>" {
+	analysisIDStr := strings.TrimSpace(toString(req.RequestParam["analysis_id"]))
+	// analysisIDStr 转 int64
+	analysisID, err := strconv.ParseInt(analysisIDStr, 10, 64)
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == 0 {
 		if req.Save {
-			analysisID = uuid.NewString()
+			analysisID = utils.GenerateID()
 			req.RequestParam["analysis_id"] = analysisID
 		} else {
-			analysisID = "preview"
+			analysisID = 0
 		}
 	}
 
@@ -1108,6 +1110,7 @@ func (h *AnalysisHandler) EditParamsV2(c *gin.Context) {
 		}
 	}
 	requestParam["analysis_type"] = "workflow"
+	requestParam["analysis_id"] = fmt.Sprintf("%d", analysisItem.ID)
 
 	// TODO data的projectId 没有修改
 	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisItem.ProjectID)
@@ -1200,8 +1203,9 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			return
 		}
 	}
-	requestParam["analysis_node_id"] = analysisNodeID
-
+	// requestParam["analysis_node_id"] = analysisNodeID
+	requestParam["analysis_type"] = "workflow"
+	requestParam["analysis_node_id"] = fmt.Sprintf("%d", analysisNode.ID)
 	analysisName := analysisNode.NodeName
 	isReport := false
 	cacheType := types.CacheTypeRerunAll

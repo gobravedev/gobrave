@@ -16,6 +16,7 @@ type AnalysisService interface {
 }
 
 type AnalysisRepository interface {
+	GetAnalysisByID(ctx context.Context, analysisID int64) (*types.Analysis, error)
 	GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error)
 	ListAnalysisByJobStatus(ctx context.Context, jobStatus string) ([]*types.Analysis, error)
 	GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error)
@@ -25,8 +26,10 @@ type AnalysisRepository interface {
 	CreateAnalysis(ctx context.Context, item *types.Analysis) error
 	TryMarkAnalysisRunning(ctx context.Context, analysisID string, now time.Time, staleBefore time.Time) (bool, error)
 	UpdateAnalysisByAnalysisID(ctx context.Context, analysisID string, values map[string]any) error
+	UpdateAnalysisByID(ctx context.Context, analysisID int64, values map[string]any) error
+
 	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error)
-	PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID,scriptID int64) ([]*types.AnalysisNode, int64, error)
+	PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID, scriptID int64) ([]*types.AnalysisNode, int64, error)
 	ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error)
 	UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error
 	ClaimNextReadyNode(ctx context.Context, analysisID string, fromStatus string, toStatus string) (*types.AnalysisNode, error)

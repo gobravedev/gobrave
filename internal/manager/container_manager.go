@@ -246,7 +246,7 @@ func (m *ContainerManager) resolveProjectIDByOwner(ctx context.Context, ownerTyp
 		if err != nil || node == nil {
 			return 0
 		}
-		analysis, err := m.analysisRepo.GetAnalysisByAnalysisID(ctx, node.AnalysisID)
+		analysis, err := m.analysisRepo.GetAnalysisByID(ctx, node.AnalysisID)
 		if err != nil || analysis == nil {
 			return 0
 		}
@@ -893,7 +893,7 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 	if ownerType == types.ContainerOwnerDagNode && ownerID > 0 && m.analysisRepo != nil {
 		if node, err := m.analysisRepo.GetAnalysisNodeByID(ctx, ownerID); err == nil && node != nil {
 			setRuntimeVar(vars, "ANALYSIS_NODE_ID", strconv.FormatUint(uint64(node.ID), 10))
-			setRuntimeVar(vars, "ANALYSIS_ID", node.AnalysisID)
+			setRuntimeVar(vars, "ANALYSIS_ID", strconv.FormatInt(node.AnalysisID, 10))
 			setRuntimeVar(vars, "NODE_ID", node.NodeID)
 			setRuntimeVar(vars, "WORKSPACE_PATH", node.WorkspaceDir)
 			setRuntimeVar(vars, "WORKSPACE_DIR", node.WorkspaceDir)
