@@ -57,6 +57,8 @@ type dynamicDagOrchestratorV2 struct {
 	// containerRepo is reserved for future V2 node/container lifecycle enhancements.
 	containerRepo interfaces.ContainerRepository
 	// containerMgr is passed into executor factory so container-backed executors are reused.
+
+	projectRepo  interfaces.ProjectRepository
 	containerMgr *manager.ContainerManager
 	// cfg provides storage roots and runtime options.
 	cfg *config.Config
@@ -65,6 +67,8 @@ type dynamicDagOrchestratorV2 struct {
 
 	// registry tracks in-memory running tasks for fast duplicate-run checks and stop state.
 	registry *dagruntime.RunningRegistry
+
+	projectID int64
 	// mu is reserved for future critical sections in V2 orchestration state transitions.
 	mu sync.Mutex
 }
@@ -76,6 +80,7 @@ func NewDynamicDagOrchestratorV2(
 	workflowRepo interfaces.WorkflowRepository,
 	containerRepo interfaces.ContainerRepository,
 	containerMgr *manager.ContainerManager,
+	projectRepo interfaces.ProjectRepository,
 	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DynamicDagOrchestrator {
@@ -84,6 +89,7 @@ func NewDynamicDagOrchestratorV2(
 		workflowRepo:  workflowRepo,
 		containerRepo: containerRepo,
 		containerMgr:  containerMgr,
+		projectRepo:   projectRepo,
 		cfg:           cfg,
 		bus:           bus,
 		registry:      dagruntime.NewRunningRegistry(),
@@ -98,7 +104,7 @@ func NewDynamicDagOrchestratorV2(
 // 3) Compile templates from current JSON dag_definition.
 // 4) Register running state + heartbeat renewer.
 // 5) Spawn run loop goroutine that performs dynamic materialization and dispatch.
-func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
 	analysisID = strings.TrimSpace(analysisID)
 	if analysisID == "" {
 		return fmt.Errorf("analysis_id is required")
@@ -361,7 +367,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
 	dispatcher := dagruntime.NewNodeDispatcher(
 		runtime,
 		o.repo,
@@ -606,8 +612,13 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		} else {
 			continue
 		}
+		scriptId := dynamicToString(row["script_id"])
+		script, err := o.workflowRepo.GetScriptByScriptID(ctx, analysis.ProjectID, scriptId)
+		if err != nil {
+			return err
+		}
 
-		node, buildErr := o.buildDynamicAnalysisNode(analysis, nodeID, row, incoming[nodeID], existingByNodeID, status, errorMessage)
+		node, buildErr := o.buildDynamicAnalysisNode(script, analysis, nodeID, row, incoming[nodeID], existingByNodeID, status, errorMessage)
 		if buildErr != nil {
 			return buildErr
 		}
@@ -652,14 +663,19 @@ func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByCacheType(
 	if dep != nil && dep.IsBlocked(nodeID) {
 		return nil
 	}
+	scriptId := dynamicToString(row["script_id"])
+	script, err := o.workflowRepo.GetScriptByScriptID(ctx, analysis.ProjectID, scriptId)
+	if err != nil {
+		return err
+	}
 
 	switch analysis.CacheType {
 	case types.CacheTypeReuseExistingNode:
 		return nil
 	case types.CacheTypeReuseWhenScriptUnchanged:
-		return o.reconcileExistingNodeByMD5Policy(ctx, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, false)
+		return o.reconcileExistingNodeByMD5Policy(ctx, script, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, false)
 	case types.CacheTypeReuseWhenScriptAndParamsUnchanged:
-		return o.reconcileExistingNodeByMD5Policy(ctx, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, true)
+		return o.reconcileExistingNodeByMD5Policy(ctx, script, existingNode, row, incomingEdges, existingByNodeID, dep, preparer, true)
 	default:
 		return nil
 	}
@@ -667,6 +683,7 @@ func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByCacheType(
 
 func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByMD5Policy(
 	ctx context.Context,
+	script *types.Script,
 	existingNode *types.AnalysisNode,
 	row map[string]any,
 	incomingEdges []*types.AnalysisEdge,
@@ -699,9 +716,10 @@ func (o *dynamicDagOrchestratorV2) reconcileExistingNodeByMD5Policy(
 	probe.NodeName = dynamicToString(row["node_name"])
 	probe.SampleID = dynamicToString(row["sample_id"])
 	probe.Executor = dynamicToString(row["executor"])
-	if scriptID := strings.TrimSpace(dynamicToString(row["script_id"])); scriptID != "" {
-		probe.ScriptID = scriptID
-	}
+	// if scriptID := strings.TrimSpace(dynamicToString(row["script_id"])); scriptID != "" {
+	// 	probe.ScriptID = scriptID
+	// }
+	probe.ScriptID = script.ID
 	probe.InputsPatterns = dynamicToJSONMap(row["inputs_patterns"])
 	probe.OutputPatterns = dynamicToJSONMap(row["output_patterns"])
 	probe.Params = dynamicToJSONMap(row["params"])
@@ -807,6 +825,7 @@ func fileMD5Hex(path string) (string, error) {
 }
 
 func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
+	script *types.Script,
 	analysis *types.Analysis,
 	nodeID string,
 	row map[string]any,
@@ -846,7 +865,7 @@ func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
 		NodeID:                 nodeID,
 		NodeName:               dynamicToString(row["node_name"]),
 		SampleID:               dynamicToString(row["sample_id"]),
-		ScriptID:               dynamicToString(row["script_id"]),
+		ScriptID:               script.ID,
 		InputsPatterns:         dynamicToJSONMap(row["inputs_patterns"]),
 		ResolvedInputs:         mergedInputs,
 		OutputPatterns:         dynamicToJSONMap(row["output_patterns"]),

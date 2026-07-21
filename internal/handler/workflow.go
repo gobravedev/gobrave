@@ -228,8 +228,8 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 		}
 	}
 
-	scriptDir, _, _ := utils.GetScriptFile(item.ScriptType, item.ScriptID)
-	ioSchemaFile := filepath.Join(h.cfg.Storage.BaseDir, scriptDir, "io_schema.json")
+	scriptDir, _, _ := utils.GetScriptFile(h.cfg.Storage.BaseDir, project.ProjectID, item.ScriptType, item.ScriptID)
+	ioSchemaFile := filepath.Join(scriptDir, "io_schema.json")
 	// Write io_schema.json file if IOSchema is provided
 	if item.IOSchema != "" {
 		if err := os.MkdirAll(filepath.Dir(ioSchemaFile), 0o755); err != nil {
@@ -726,9 +726,9 @@ func (h *WorkflowHandler) GetScriptContent(c *gin.Context) {
 	}
 
 	path := filepath.Join(scriptDir, scriptMainFile)
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(h.cfg.Storage.BaseDir, path)
-	}
+	// if !filepath.IsAbs(path) {
+	// 	path = filepath.Join(h.cfg.Storage.BaseDir, path)
+	// }
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -1179,8 +1179,9 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 			scriptID = scriptIDFromExportScript(scriptMap)
 		}
 		if scriptID != "" {
+			scriptDir := utils.GetScriptDir(h.cfg.Storage.BaseDir, project.ProjectID)
 			sourceScriptDir := filepath.Join(store.Path, "script", scriptID)
-			targetScriptDir := filepath.Join(h.cfg.Storage.BaseDir, "pipeline", "script", scriptID)
+			targetScriptDir := filepath.Join(scriptDir, scriptID)
 			if copyErr := copyDirReplace(sourceScriptDir, targetScriptDir); copyErr != nil {
 				c.Error(errors.NewInternalServerError("failed to install script files").WithDetails(copyErr.Error()))
 				return
@@ -1189,9 +1190,9 @@ func (h *WorkflowHandler) InstallWorkflow(c *gin.Context) {
 
 		installedScriptCount++
 	}
-
+	workflowDir := utils.GetWorkflowDir(h.cfg.Storage.BaseDir, project.ProjectID)
 	storeWorkflowDir := filepath.Dir(workflowJSONPath)
-	localWorkflowDir := filepath.Join(h.cfg.Storage.BaseDir, "pipeline", "tools", payload.WorkflowID)
+	localWorkflowDir := filepath.Join(workflowDir, payload.WorkflowID)
 	if err := copyDirReplace(storeWorkflowDir, localWorkflowDir); err != nil {
 		c.Error(errors.NewInternalServerError("failed to install workflow files").WithDetails(err.Error()))
 		return

@@ -267,9 +267,9 @@ func (r *workflowRepository) ExistsScriptInProjectByScriptID(ctx context.Context
 	return item, nil
 }
 
-func (r *workflowRepository) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
+func (r *workflowRepository) GetScriptByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error) {
 	item := &types.Script{}
-	if err := r.db.WithContext(ctx).Where("component_id = ?", scriptID).Take(item).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("project_id = ? AND component_id = ?", projectID, scriptID).Take(item).Error; err != nil {
 		return nil, err
 	}
 	return item, nil

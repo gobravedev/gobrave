@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gobravedev/gobrave/internal/manager"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -46,12 +45,12 @@ func (e *DockerExecutor) Execute(ctx context.Context, node *types.AnalysisNode) 
 		return e.fallback.Execute(ctx, node)
 	}
 
-	scriptID := strings.TrimSpace(node.ScriptID)
-	if scriptID == "" {
+	scriptID := node.ScriptID
+	if scriptID == 0 {
 		return nil, fmt.Errorf("docker executor requires script_id")
 	}
 
-	scriptItem, err := e.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+	scriptItem, err := e.workflowRepo.GetScriptByID(ctx, scriptID)
 	if err != nil {
 		return nil, fmt.Errorf("load script failed: %w", err)
 	}

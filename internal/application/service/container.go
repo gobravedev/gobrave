@@ -112,19 +112,19 @@ func (s *containerService) PageContainerTemplate(ctx context.Context, pagination
 	return types.NewPageResult(total, pagination, items), nil
 }
 
-func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string) (*types.AppSession, error) {
+func (s *containerService) CreateAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string) (*types.AppSession, error) {
 	return s.createAppSessionByTemplate(ctx, userID, projectID, containerTemplateID, name, 0, "")
 }
 
-func (s *containerService) CreateAppSessionByTemplateForAnalysisNode(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
+func (s *containerService) CreateAppSessionByTemplateForAnalysisNode(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
 	return s.createAppSessionByTemplate(ctx, userID, projectID, containerTemplateID, name, analysisNodeID, workspacePath)
 }
 
-func (s *containerService) createAppSessionByTemplate(ctx context.Context, userID string, projectID string, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
+func (s *containerService) createAppSessionByTemplate(ctx context.Context, userID string, projectID int64, containerTemplateID int64, name string, analysisNodeID int64, workspacePath string) (*types.AppSession, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
-	if strings.TrimSpace(projectID) == "" {
+	if projectID == 0 {
 		return nil, fmt.Errorf("project id is required")
 	}
 	if containerTemplateID == 0 {

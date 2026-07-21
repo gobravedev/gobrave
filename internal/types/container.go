@@ -150,9 +150,10 @@ func (t *ContainerTemplate) BeforeCreate(_ *gorm.DB) error {
 type AppSession struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
-	UserID string `json:"user_id" gorm:"type:varchar(36);index;not null"`
+	UserID    string `json:"user_id" gorm:"type:varchar(36);index;not null"`
+	ProjectID int64  `json:"project_id,string" gorm:"column:project_id;type:bigint"`
 
-	ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
+	// ProjectID string `json:"project_id" gorm:"type:varchar(36);index;not null"`
 
 	AnalysisNodeID int64 `json:"analysis_node_id,string" gorm:"index"`
 
@@ -177,8 +178,8 @@ type AppSession struct {
 }
 
 type AppSessionPageQuery struct {
-	AnalysisNodeID *int64  `json:"analysis_node_id,string,omitempty"`
-	ProjectID      *string `json:"project_id,omitempty"`
+	AnalysisNodeID *int64 `json:"analysis_node_id,string,omitempty"`
+	ProjectID      *int64 `json:"project_id,omitempty"`
 }
 
 func (AppSession) TableName() string {

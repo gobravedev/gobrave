@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/gobravedev/gobrave/internal/utils"
+	"gorm.io/gorm"
 )
 
 type JSONMap map[string]any
@@ -120,8 +123,10 @@ func normalizeJSONScanInput(value any) ([]byte, error) {
 
 // Analysis maps to Python brave's nextflow table.
 type Analysis struct {
-	ID          uint   `json:"id" gorm:"primaryKey;autoIncrement"`
-	ProjectID   string `json:"project" gorm:"column:project;type:varchar(255)"`
+	// ID uint `json:"id" gorm:"primaryKey;autoIncrement"`
+	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
+	// ProjectID   string `json:"project" gorm:"column:project;type:varchar(255)"`
+	ProjectID   int64  `json:"project_id,string" gorm:"column:project_id;type:bigint"`
 	AnalysisID  string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255)"`
 	ComponentID string `json:"component_id" gorm:"column:component_id;type:varchar(255)"`
 	WorkflowID  string `json:"relation_id" gorm:"column:relation_id;type:varchar(255)"`
@@ -157,6 +162,13 @@ type Analysis struct {
 	UpdatedAt           time.Time `json:"updated_at" gorm:"column:updated_at"`
 }
 
+func (t *Analysis) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
+}
+
 const (
 	CacheTypeRerunAll                          = 1
 	CacheTypeReuseExistingNode                 = 2
@@ -174,13 +186,14 @@ type AnalysisNode struct {
 	ID int64 `json:"id,string" gorm:"primaryKey;type:bigint;autoIncrement:false"`
 
 	AnalysisNodeID string `json:"analysis_node_id" gorm:"column:analysis_node_id;type:varchar(255)"`
-	ProjectID      string `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
-	AnalysisID     string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
-	NodeID         string `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
-	NodeName       string `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
-	SampleID       string `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`
-	ScriptID       string `json:"script_id" gorm:"column:script_id;type:varchar(255)"`
-	// ScriptID               int64      `json:"script_id,string" gorm:"column:script_id;type:bigint"`
+	// ProjectID      string `json:"project_id" gorm:"column:project_id;type:varchar(255);index:idx_analysis_nodes_project_id"`
+	ProjectID  int64  `json:"project_id,string" gorm:"column:project_id;type:bigint"`
+	AnalysisID string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_nodes_analysis_id;index:idx_analysis_nodes_analysis_id_status,priority:1;index:idx_analysis_nodes_analysis_id_node_id,priority:1"`
+	NodeID     string `json:"node_id" gorm:"column:node_id;type:varchar(255);index:idx_analysis_nodes_analysis_id_node_id,priority:2"`
+	NodeName   string `json:"node_name" gorm:"column:node_name;type:varchar(255)"`
+	SampleID   string `json:"sample_id" gorm:"column:sample_id;type:varchar(255)"`
+	// ScriptID       string `json:"script_id" gorm:"column:script_id;type:varchar(255)"`
+	ScriptID               int64      `json:"script_id,string" gorm:"column:script_id;type:bigint"`
 	InputsPatterns         JSONMap    `json:"inputs_patterns" gorm:"column:inputs_patterns;type:json"`
 	ResolvedInputs         JSONMap    `json:"resolved_inputs" gorm:"column:resolved_inputs;type:json"`
 	OutputPatterns         JSONMap    `json:"output_patterns" gorm:"column:output_patterns;type:json"`
@@ -221,6 +234,12 @@ type AnalysisNode struct {
 	UpdatedAt              time.Time  `json:"updated_at" gorm:"column:updated_at"`
 }
 
+func (t *AnalysisNode) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
+}
 func (AnalysisNode) TableName() string {
 	return "analysis_nodes"
 }
@@ -246,6 +265,7 @@ type AnalysisControllerSaveInput struct {
 	RequestParam        map[string]any
 	ParseAnalysisResult map[string]any
 	DagRuntime          map[string]any
+	Project             *Project
 	IsRunNode           bool
 	IsReport            bool
 }

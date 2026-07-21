@@ -5,5 +5,5 @@ import "context"
 // DynamicDagOrchestrator provides a Nextflow-like dynamic scheduling path
 // without changing the existing DAG orchestrator behavior.
 type DynamicDagOrchestrator interface {
-	StartAsyncV2(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error
+	StartAsyncV2(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error
 }

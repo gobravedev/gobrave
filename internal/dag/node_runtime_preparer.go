@@ -11,6 +11,7 @@ import (
 	"github.com/flosch/pongo2/v6"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
+	"github.com/gobravedev/gobrave/internal/utils"
 )
 
 type NodeRuntimePreparer interface {
@@ -52,6 +53,7 @@ func (ShellScriptBuilder) Build(_ *types.AnalysisNode, scriptPath string, script
 type FileSystemNodeRuntimePreparer struct {
 	analysisRepo interfaces.AnalysisRepository
 	workflowRepo interfaces.WorkflowRepository
+	projectRepo  interfaces.ProjectRepository
 	storageBase  string
 	builders     map[string]RunScriptBuilder
 }
@@ -59,11 +61,13 @@ type FileSystemNodeRuntimePreparer struct {
 func NewFileSystemNodeRuntimePreparer(
 	analysisRepo interfaces.AnalysisRepository,
 	workflowRepo interfaces.WorkflowRepository,
+	projectRepo interfaces.ProjectRepository,
 	storageBase string,
 ) *FileSystemNodeRuntimePreparer {
 	return &FileSystemNodeRuntimePreparer{
 		analysisRepo: analysisRepo,
 		workflowRepo: workflowRepo,
+		projectRepo:  projectRepo,
 		storageBase:  strings.TrimSpace(storageBase),
 		builders: map[string]RunScriptBuilder{
 			"r":      RScriptBuilder{},
@@ -83,7 +87,7 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 	if strings.TrimSpace(node.AnalysisNodeID) == "" {
 		return fmt.Errorf("analysis_node_id is required")
 	}
-	if strings.TrimSpace(node.ScriptID) == "" {
+	if node.ScriptID == 0 {
 		return fmt.Errorf("script_id is required")
 	}
 
@@ -113,7 +117,7 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 		return fmt.Errorf("write params json failed: %w", err)
 	}
 
-	script, err := p.workflowRepo.GetScriptByScriptID(ctx, node.ScriptID)
+	script, err := p.workflowRepo.GetScriptByID(ctx, node.ScriptID)
 	if err != nil {
 		return fmt.Errorf("load script failed: %w", err)
 	}
@@ -123,7 +127,13 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 		builder = p.builders["shell"]
 	}
 
-	scriptPath := p.resolveScriptPath(node.ScriptID, scriptType)
+	// scriptPath := p.resolveScriptPath(script.ScriptID, scriptType)
+	project, err := p.projectRepo.GetProjectByID(ctx, script.ProjectID)
+	if err != nil {
+		return err
+	}
+	scriptDir, scriptFile, _ := utils.GetScriptFile(p.storageBase, project.ProjectID, script.ScriptType, script.ScriptID)
+	scriptPath := filepath.Join(scriptDir, scriptFile)
 	scriptContent, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return fmt.Errorf("read script file failed: %w", err)

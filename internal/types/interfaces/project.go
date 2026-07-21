@@ -22,6 +22,7 @@ type ProjectService interface {
 // ProjectRepository defines project data access methods.
 type ProjectRepository interface {
 	ListProjectByUserID(ctx context.Context, userID string) ([]*types.Project, error)
+	GetProjectByID(ctx context.Context, id int64) (*types.Project, error)
 	GetActiveProjectByUserID(ctx context.Context, userID string) (*types.Project, error)
 	AddUserProject(ctx context.Context, up *types.UserProject) error
 	ExistsUserProject(ctx context.Context, userID, projectID string) (bool, error)

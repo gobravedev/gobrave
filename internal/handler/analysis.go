@@ -31,6 +31,7 @@ import (
 type AnalysisHandler struct {
 	analysisService         interfaces.AnalysisService
 	projectService          interfaces.ProjectService
+	projectRepo             interfaces.ProjectRepository
 	workflowService         interfaces.WorkflowService
 	dataService             interfaces.DataService
 	containerService        interfaces.ContainerService
@@ -82,7 +83,7 @@ type VisualizationNodeFileResponse struct {
 }
 
 type VisualizationNodeTreeItem struct {
-	ScriptID   string                `json:"script_id"`
+	ScriptID   string                `json:"script_id,string"`
 	ScriptName string                `json:"script_name"`
 	Children   []*types.AnalysisNode `json:"children"`
 }
@@ -104,12 +105,13 @@ type analysisControllerRequest struct {
 
 type analysisNodeByProjectPageRequest struct {
 	types.Pagination
-	ScriptID string `json:"script_id"`
+	ScriptID int64 `json:"script_id,string"`
 }
 
 func NewAnalysisHandler(
 	analysisService interfaces.AnalysisService,
 	projectService interfaces.ProjectService,
+	projectRepo interfaces.ProjectRepository,
 	workflowService interfaces.WorkflowService,
 	dataService interfaces.DataService,
 	containerService interfaces.ContainerService,
@@ -127,6 +129,7 @@ func NewAnalysisHandler(
 		dataService:             dataService,
 		containerService:        containerService,
 		analysisRepo:            analysisRepo,
+		projectRepo:             projectRepo,
 		dagOrchestrator:         dagOrchestrator,
 		dynamicDagOrchestrator:  dynamicDagOrchestrator,
 		dataflowDagOrchestrator: dataflowDagOrchestrator,
@@ -248,7 +251,11 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 }
 
 func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -324,6 +331,7 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 		DagRuntime:          dagRuntime,
 		IsRunNode:           req.IsSubmit,
 		IsReport:            req.IsReport,
+		Project:             project,
 	})
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
@@ -353,7 +361,11 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 // SaveAnalysisControllerV2 keeps the current JSON dag definition and analysis schema,
 // but starts a dynamic Nextflow-like scheduler path that materializes analysis nodes at runtime.
 func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -419,6 +431,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 		DagRuntime:          nil,
 		IsRunNode:           req.IsSubmit,
 		IsReport:            req.IsReport,
+		Project:             project,
 	})
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
@@ -426,7 +439,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
+		if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), project.ID, saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
 			c.Error(errors.NewInternalServerError("failed to start dynamic dag scheduler").WithDetails(err.Error()))
 			return
 		}
@@ -463,7 +476,13 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		return
 	}
 
-	formJSONWrap, err := h.workflowService.GetFormJSONByScriptID(c.Request.Context(), scriptID)
+	scriptIDInt, err := strconv.ParseInt(scriptID, 10, 64)
+	if err != nil {
+		c.Error(errors.NewValidationError("request_param.script_id must be a valid integer string").WithDetails(err.Error()))
+		return
+	}
+
+	formJSONWrap, err := h.workflowService.GetScriptFormJSONByID(c.Request.Context(), scriptIDInt)
 
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to get form JSON").WithDetails(err.Error()))
@@ -561,11 +580,11 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	node := &types.AnalysisNode{
 		ID:             nodePrimaryID,
 		AnalysisNodeID: analysisNodeKey,
-		ProjectID:      projectID,
+		ProjectID:      activeProject.ID,
 		// AnalysisID:             "-",
 		NodeID:                 nodeID,
-		NodeName:               strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["node_name"])),
-		ScriptID:               scriptID,
+		NodeName:               strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_name"])),
+		ScriptID:               scriptIDInt,
 		InputsPatterns:         types.JSONMap{},
 		ResolvedInputs:         types.JSONMap(cloneAnyMapForNode(parseAnalysisResult)),
 		OutputPatterns:         types.JSONMap{},
@@ -633,7 +652,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		}
 	}
 
-	if err := h.initializeStandaloneNodeArtifacts(c.Request.Context(), scriptID, artifacts, parseAnalysisResult); err != nil {
+	if err := h.initializeStandaloneNodeArtifacts(c.Request.Context(), scriptIDInt, artifacts, parseAnalysisResult); err != nil {
 		c.Error(errors.NewInternalServerError("failed to initialize node runtime files").WithDetails(err.Error()))
 		return
 	}
@@ -683,8 +702,8 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 			baseDir = v
 		}
 	}
-
-	workspaceDir := filepath.Join(baseDir, "data", projectID, "analysis_node", strconv.FormatInt(analysisNodeID, 10))
+	analsyisNodeDir := utils.GetAnalysisNodeDir(baseDir, projectID)
+	workspaceDir := filepath.Join(analsyisNodeDir, strconv.FormatInt(analysisNodeID, 10))
 	outputDir := filepath.Join(workspaceDir, "output")
 	paramsPath := filepath.Join(workspaceDir, "params.json")
 	commandPath := filepath.Join(workspaceDir, "run.sh")
@@ -701,7 +720,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 
 func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 	ctx context.Context,
-	scriptID string,
+	scriptID int64,
 	artifacts *standaloneNodeArtifacts,
 	params map[string]interface{},
 ) error {
@@ -724,14 +743,14 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 		return err
 	}
 
-	script, err := h.workflowService.GetScriptByScriptID(ctx, scriptID)
+	script, err := h.workflowService.GetScriptByID(ctx, scriptID)
 	if err != nil {
 		return err
 	}
 	if script == nil {
 		return fmt.Errorf("script not found")
 	}
-	scriptDir, scriptMainFile, err := h.workflowService.GetScriptMainFileByScriptID(ctx, scriptID)
+	scriptDir, scriptMainFile, err := h.workflowService.GetScriptFileByScriptID(ctx, script.ID)
 	if err != nil {
 		return err
 	}
@@ -833,7 +852,11 @@ func parsePositiveInt64(v interface{}) int64 {
 // SaveAnalysisControllerV3 keeps the current request payload and persistence schema,
 // while using the V3 dataflow orchestrator entry (Nextflow-like model).
 func (h *AnalysisHandler) SaveAnalysisControllerV3(c *gin.Context) {
-	if _, ok := getCurrentUserID(c); !ok {
+	userID, ok := getCurrentUserID(c)
+
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(err)
 		return
 	}
 
@@ -897,6 +920,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV3(c *gin.Context) {
 		DagRuntime:          nil,
 		IsRunNode:           req.IsSubmit,
 		IsReport:            req.IsReport,
+		Project:             project,
 	})
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to save analysis").WithDetails(err.Error()))
@@ -904,7 +928,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV3(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.dataflowDagOrchestrator.StartAsyncV3(c.Request.Context(), saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
+		if err := h.dataflowDagOrchestrator.StartAsyncV3(c.Request.Context(), project.ID, saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
 			c.Error(errors.NewInternalServerError("failed to start dataflow dag scheduler").WithDetails(err.Error()))
 			return
 		}
@@ -1001,21 +1025,6 @@ func (h *AnalysisHandler) PageAnalysisNodeByProject(c *gin.Context) {
 		return
 	}
 
-	// TODO 后续需要将 AnalysisNode 的ScriptID变成 int64
-	if req.ScriptID != "" {
-		scriptIDInt64, err := strconv.ParseInt(req.ScriptID, 10, 64)
-		if err != nil {
-			c.Error(errors.NewValidationError("scriptId must be a positive integer"))
-			return
-		}
-		script, err := h.workflowService.GetScriptByID(c.Request.Context(), scriptIDInt64) // Validate script existence
-		if err != nil {
-			c.Error(errors.NewInternalServerError("failed to get script by ID").WithDetails(err.Error()))
-			return
-		}
-		req.ScriptID = script.ScriptID // Convert back to string representation
-	}
-
 	activeProject, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
@@ -1025,13 +1034,13 @@ func (h *AnalysisHandler) PageAnalysisNodeByProject(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
 		return
 	}
-	if activeProject == nil || strings.TrimSpace(activeProject.ProjectID) == "" {
+	if activeProject == nil || activeProject.ID == 0 {
 		c.Error(errors.NewValidationError("active project is required"))
 		return
 	}
 
-	projectID := strings.TrimSpace(activeProject.ProjectID)
-	scriptID := strings.TrimSpace(req.ScriptID)
+	projectID := activeProject.ID
+	scriptID := req.ScriptID
 	items, total, err := h.analysisRepo.PageAnalysisNodesByProjectID(c.Request.Context(), &req.Pagination, projectID, scriptID)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to page analysis nodes by project").WithDetails(err.Error()))
@@ -1098,13 +1107,19 @@ func (h *AnalysisHandler) EditParamsV2(c *gin.Context) {
 			return
 		}
 	}
+	requestParam["analysis_type"] = "workflow"
 
+	// TODO data的projectId 没有修改
+	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisItem.ProjectID)
+	if err != nil {
+		c.Error(errors.NewNotFoundError("project not found"))
+	}
 	formJSONWrap, analysisResult, err := buildWorkflowFormData(
 		c.Request.Context(),
 		h.workflowService,
 		h.dataService,
 		analysisItem.WorkflowID,
-		analysisItem.ProjectID,
+		project.ProjectID,
 	)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
@@ -1168,7 +1183,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		return
 	}
 
-	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+	scriptItem, err := h.workflowService.GetScriptByID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("script not found"))
@@ -1230,8 +1245,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			c.Error(errors.NewInternalServerError("failed to get workflow").WithDetails(err.Error()))
 			return
 		}
-
-		formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, scriptItem, analysisNode.ScriptID)
+		formJSON, err := buildNodeFormJSON(workflowItem.DagDefinition, scriptItem, scriptItem.ScriptID)
 		if err != nil {
 			c.Error(errors.NewInternalServerError("failed to build node form json").WithDetails(err.Error()))
 			return
@@ -1249,7 +1263,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		})
 	} else {
 		// TODO analysisNode 的 scriptID 后续变成 int64，直接使用 scriptID 查询 formJSON
-		script, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+		script, err := h.workflowService.GetScriptByID(c.Request.Context(), analysisNode.ScriptID)
 		if err != nil {
 			if stderrs.Is(err, gorm.ErrRecordNotFound) {
 				c.Error(errors.NewNotFoundError("script not found"))
@@ -1258,8 +1272,12 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 			c.Error(errors.NewInternalServerError("failed to get script").WithDetails(err.Error()))
 			return
 		}
-
-		formJSON, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, script.ID, analysisNode.ProjectID)
+		// TODO data的projectId 没有修改
+		project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisNode.ProjectID)
+		if err != nil {
+			c.Error(errors.NewNotFoundError("project not found"))
+		}
+		formJSON, analysisResult, err := buildScriptFormData(c.Request.Context(), h.workflowService, h.dataService, script.ID, project.ProjectID)
 
 		// formJSON, err = h.workflowService.GetFormJSONByScriptID(c.Request.Context(), analysisNode.ScriptID)
 		if err != nil {
@@ -1504,17 +1522,21 @@ func (h *AnalysisHandler) VisualizationNodeTree(c *gin.Context) {
 
 	grouped := make(map[string][]*types.AnalysisNode)
 	for _, node := range analysisNodes {
+		script, err := h.workflowService.GetScriptByID(c.Request.Context(), node.ScriptID)
+		if err != nil {
+			return
+		}
 		if node == nil {
 			continue
 		}
 		if len(scriptSet) > 0 {
-			if _, ok := scriptSet[node.ScriptID]; !ok {
+			if _, ok := scriptSet[script.ScriptID]; !ok {
 				continue
 			}
 		}
-		grouped[node.ScriptID] = append(grouped[node.ScriptID], node)
-		if _, exists := scriptNames[node.ScriptID]; !exists || strings.TrimSpace(scriptNames[node.ScriptID]) == "" {
-			scriptNames[node.ScriptID] = node.ScriptID
+		grouped[script.ScriptID] = append(grouped[script.ScriptID], node)
+		if _, exists := scriptNames[script.ScriptID]; !exists || strings.TrimSpace(scriptNames[script.ScriptID]) == "" {
+			scriptNames[script.ScriptID] = script.ScriptID
 		}
 	}
 
@@ -1564,7 +1586,7 @@ func (h *AnalysisHandler) buildVisualizationNodePayload(c *gin.Context, analysis
 	nodeMap["analysis_id"] = analysisNode.AnalysisID
 
 	// TODO
-	script, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+	script, err := h.workflowService.GetScriptByID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.NewNotFoundError("script not found")

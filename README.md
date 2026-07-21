@@ -95,3 +95,28 @@ docker run --rm \
 我可以补一组 DAG 调度单元测试（ready 计算、输出传播、失败分支、终止条件）。
 
 
+
+
+```
+UPDATE go_container_app_session t
+JOIN t_project p
+  ON t.project_id_ = p.project_id
+SET t.project_id = p.id
+
+
+UPDATE nextflow t
+JOIN t_project p
+  ON t.project = p.project_id
+SET t.project_id = p.id;
+
+UPDATE analysis_nodes t
+JOIN t_project p
+  ON t.project_id_ = p.project_id
+SET t.project_id = p.id
+
+
+UPDATE analysis_nodes t
+JOIN pipeline_components p
+  ON t.script_id_ = p.component_id
+SET t.script_id = p.id
+```

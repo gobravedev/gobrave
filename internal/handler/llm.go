@@ -974,8 +974,8 @@ func (h *LLMHandler) resolveWorkingDirectory(ctx context.Context, userID string,
 			if err != nil {
 				return "", fmt.Errorf("failed to get script file by script id: %w", err)
 			}
-			workingDir := filepath.Join(h.cfg.Storage.BaseDir, scriptDir)
-			return workingDir, nil
+			// workingDir := filepath.Join(h.cfg.Storage.BaseDir, scriptDir)
+			return scriptDir, nil
 		}
 	}
 	return h.resolveDefaultWorkingDirectory(ctx, userID)

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
@@ -17,10 +18,12 @@ import (
 type workflowService struct {
 	workflowRepo  interfaces.WorkflowRepository
 	containerRepo interfaces.ContainerRepository
+	projectRepo   interfaces.ProjectRepository
+	cfg           *config.Config
 }
 
-func NewWorkflowService(workflowRepo interfaces.WorkflowRepository, containerRepo interfaces.ContainerRepository) interfaces.WorkflowService {
-	return &workflowService{workflowRepo: workflowRepo, containerRepo: containerRepo}
+func NewWorkflowService(workflowRepo interfaces.WorkflowRepository, containerRepo interfaces.ContainerRepository, projectRepo interfaces.ProjectRepository, cfg *config.Config) interfaces.WorkflowService {
+	return &workflowService{workflowRepo: workflowRepo, containerRepo: containerRepo, projectRepo: projectRepo, cfg: cfg}
 }
 
 func (s *workflowService) GetWorkflowByID(ctx context.Context, id int64) (*types.Workflow, error) {
@@ -126,8 +129,8 @@ func (s *workflowService) GetWorkflowVisByWorkflowID(ctx context.Context, workfl
 	return dagDefinition, nil
 }
 
-func (s *workflowService) GetScriptByScriptID(ctx context.Context, scriptID string) (*types.Script, error) {
-	return s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+func (s *workflowService) GetScriptByScriptID(ctx context.Context, projectID int64, scriptID string) (*types.Script, error) {
+	return s.workflowRepo.GetScriptByScriptID(ctx, projectID, scriptID)
 }
 
 func (s *workflowService) GetScriptFileByScriptID(ctx context.Context, scriptID int64) (string, string, error) {
@@ -138,21 +141,35 @@ func (s *workflowService) GetScriptFileByScriptID(ctx context.Context, scriptID 
 	if script == nil {
 		return "", "", nil
 	}
-
-	return utils.GetScriptFile(script.ScriptType, script.ScriptID)
-}
-
-func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error) {
-	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+	project, err := s.projectRepo.GetProjectByID(ctx, script.ProjectID)
 	if err != nil {
 		return "", "", err
 	}
-	if script == nil {
+	if project == nil {
 		return "", "", nil
 	}
-
-	return utils.GetScriptFile(script.ScriptType, scriptID)
+	return utils.GetScriptFile(s.cfg.Storage.BaseDir, project.ProjectID, script.ScriptType, script.ScriptID)
 }
+
+// func (s *workflowService) GetScriptMainFileByScriptID(ctx context.Context, scriptID string) (string, string, error) {
+// 	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+// 	if err != nil {
+// 		return "", "", err
+// 	}
+// 	if script == nil {
+// 		return "", "", nil
+// 	}
+
+// 	// return utils.GetScriptFile(script.ScriptType, scriptID)
+// 	project, err := s.projectRepo.GetProjectByID(ctx, script.ProjectID)
+// 	if err != nil {
+// 		return "", "", err
+// 	}
+// 	if project == nil {
+// 		return "", "", nil
+// 	}
+// 	return utils.GetScriptFile(s.cfg.Storage.BaseDir, project.ProjectID, script.ScriptType, script.ScriptID)
+// }
 
 func (s *workflowService) GetScriptContainerSnapshotByScriptID(ctx context.Context, scriptID int64) (*types.ScriptContainerSnapshot, error) {
 	return s.workflowRepo.GetScriptContainerSnapshotByScriptID(ctx, scriptID)
@@ -207,7 +224,7 @@ func (s *workflowService) GenerateWorkflowJSONByWorkflowID(ctx context.Context, 
 	containerTemplates := make([]map[string]any, 0)
 	seenTemplateIDs := make(map[int64]struct{})
 	for _, scriptID := range scriptIDs {
-		script, scriptErr := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
+		script, scriptErr := s.workflowRepo.GetScriptByScriptID(ctx, workflow.ProjectID, scriptID)
 		if scriptErr != nil {
 			if stderrs.Is(scriptErr, gorm.ErrRecordNotFound) {
 				continue
@@ -313,39 +330,39 @@ func (s *workflowService) GetScriptFormJSONByID(ctx context.Context, scriptID in
 }
 
 // 后续废除
-func (s *workflowService) GetFormJSONByScriptID(ctx context.Context, scriptID string) ([]any, error) {
-	script, err := s.workflowRepo.GetScriptByScriptID(ctx, scriptID)
-	if err != nil {
-		return nil, err
-	}
+// func (s *workflowService) GetFormJSONByScriptID(ctx context.Context, scriptID int64) ([]any, error) {
+// 	script, err := s.workflowRepo.GetScriptByID(ctx, scriptID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	formJSONWrap := make([]interface{}, 0)
+// 	formJSONWrap := make([]interface{}, 0)
 
-	if script.IOSchema != "" {
-		ioSchema := make(map[string]interface{})
-		if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
-			return nil, err
-		}
-		if inputs, ok := ioSchema["inputs"].([]interface{}); ok {
-			formJSONWrap = append(formJSONWrap, inputs...)
-		}
-		if params, ok := ioSchema["params"].([]interface{}); ok {
-			formJSONWrap = append(formJSONWrap, params...)
-		}
+// 	if script.IOSchema != "" {
+// 		ioSchema := make(map[string]interface{})
+// 		if err := json.Unmarshal([]byte(script.IOSchema), &ioSchema); err != nil {
+// 			return nil, err
+// 		}
+// 		if inputs, ok := ioSchema["inputs"].([]interface{}); ok {
+// 			formJSONWrap = append(formJSONWrap, inputs...)
+// 		}
+// 		if params, ok := ioSchema["params"].([]interface{}); ok {
+// 			formJSONWrap = append(formJSONWrap, params...)
+// 		}
 
-	}
+// 	}
 
-	if script.Content != "" {
-		content := make(map[string]interface{})
-		if err := json.Unmarshal([]byte(script.Content), &content); err != nil {
-			return nil, err
-		}
-		if contentFormJSON, ok := content["formJson"].([]interface{}); ok {
-			formJSONWrap = append(formJSONWrap, contentFormJSON...)
-		}
-	}
-	return formJSONWrap, err
-}
+// 	if script.Content != "" {
+// 		content := make(map[string]interface{})
+// 		if err := json.Unmarshal([]byte(script.Content), &content); err != nil {
+// 			return nil, err
+// 		}
+// 		if contentFormJSON, ok := content["formJson"].([]interface{}); ok {
+// 			formJSONWrap = append(formJSONWrap, contentFormJSON...)
+// 		}
+// 	}
+// 	return formJSONWrap, err
+// }
 
 func (s *workflowService) GetFormJSONByWorkflowID(ctx context.Context, workflowID string) ([]any, error) {
 	findWorkflow, err := s.workflowRepo.GetWorkflowByWorkflowID(ctx, workflowID)

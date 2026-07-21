@@ -419,7 +419,7 @@ func newTestManager(repo *mockContainerRepo, rt *dockerMockRuntime) *ContainerMa
 	reg := containerruntime.NewRegistry()
 	reg.Register("docker", rt)
 	imgMgr := NewImageManager(repo, reg)
-	return NewContainerManager(repo, nil, nil, reg, nil, NewDefaultContainerRuntimeResolver(), imgMgr, nil)
+	return NewContainerManager(repo, nil, nil, nil, reg, nil, NewDefaultContainerRuntimeResolver(), imgMgr, nil)
 }
 
 func mustSeedTemplate(t *testing.T, repo *mockContainerRepo) {
@@ -658,7 +658,7 @@ func TestContainerManager_CreateByTemplate_UsesAppSessionContextVariables(t *tes
 		Command: "bash -lc echo ok",
 		Env:     datatypes.JSON([]byte(`{"USERID":"$USERID","PROJECTID":"$PROJECTID","APP_SESSION_ID":"$APP_SESSION_ID"}`)),
 	}
-	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: "session-project"}
+	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: 001}
 
 	rt := &dockerMockRuntime{runtimeID: "docker-abc-10"}
 	mgr := newTestManager(repo, rt)
@@ -692,7 +692,7 @@ func TestContainerManager_CreateByTemplate_AppSessionMergesProjectVolumes(t *tes
 		Command: "bash -lc echo ok",
 		Volumes: datatypes.JSON([]byte(`[{"source":"/template/src","target":"/template/dst","mode":"ro"}]`)),
 	}
-	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: "session-project"}
+	repo.sessions[1001] = &types.AppSession{ID: 1001, UserID: "session-user", ProjectID: 002}
 	repo.projects["session-project"] = &types.Project{
 		ProjectID: "session-project",
 		Volumes:   datatypes.JSON([]byte(`[{"source":"/project/src","target":"/project/dst","mode":"rw"}]`)),

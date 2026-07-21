@@ -19,13 +19,15 @@ import (
 type DagRuntimeEventNotifier struct {
 	db           *gorm.DB
 	analysisRepo interfaces.AnalysisRepository
+	projectRepo  interfaces.ProjectRepository
 	hub          *Hub
 }
 
-func NewDagRuntimeEventNotifier(db *gorm.DB, analysisRepo interfaces.AnalysisRepository, hub *Hub) *DagRuntimeEventNotifier {
+func NewDagRuntimeEventNotifier(db *gorm.DB, projectRepo interfaces.ProjectRepository, analysisRepo interfaces.AnalysisRepository, hub *Hub) *DagRuntimeEventNotifier {
 	return &DagRuntimeEventNotifier{
 		db:           db,
 		analysisRepo: analysisRepo,
+		projectRepo:  projectRepo,
 		hub:          hub,
 	}
 }
@@ -41,7 +43,7 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 	}
 
 	ctx := context.Background()
-	var projectID string
+	var projectID int64
 	if runtimeEvent.AnalysisNodeID == 0 {
 		analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
 		if err != nil {
@@ -54,7 +56,7 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 			return
 		}
 		projectID = analsyisNode.ProjectID
-		if strings.TrimSpace(projectID) == "" {
+		if projectID == 0 {
 			analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
 			if err != nil {
 				logger.Warnf(ctx, "[Realtime] skip dag event notify: load analysis failed analysis_id=%s event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.Name, err)
@@ -64,11 +66,14 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 		}
 	}
 
-	if strings.TrimSpace(projectID) == "" {
+	if projectID == 0 {
 		return
 	}
-
-	userIDs, err := n.listProjectUserIDs(ctx, projectID)
+	project, err := n.projectRepo.GetProjectByID(context.Background(), projectID)
+	if err != nil {
+		return
+	}
+	userIDs, err := n.listProjectUserIDs(ctx, project.ProjectID)
 	if err != nil {
 		logger.Warnf(ctx, "[Realtime] skip dag event notify: load project users failed project_id=%s event=%s err=%v", projectID, runtimeEvent.Name, err)
 		return

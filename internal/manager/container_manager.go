@@ -25,6 +25,7 @@ import (
 
 type ContainerManager struct {
 	repo            interfaces.ContainerRepository
+	projectRepo     interfaces.ProjectRepository
 	analysisRepo    interfaces.AnalysisRepository
 	workflowService interfaces.WorkflowService
 	reg             *containerruntime.Registry
@@ -38,6 +39,7 @@ type ContainerManager struct {
 func NewContainerManager(
 	repo interfaces.ContainerRepository,
 	analysisRepo interfaces.AnalysisRepository,
+	projectRepo interfaces.ProjectRepository,
 	workflowService interfaces.WorkflowService,
 	reg *containerruntime.Registry,
 	bus event.Bus,
@@ -51,7 +53,7 @@ func NewContainerManager(
 	if img == nil {
 		img = NewImageManager(repo, reg)
 	}
-	return &ContainerManager{repo: repo, analysisRepo: analysisRepo, workflowService: workflowService, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
+	return &ContainerManager{repo: repo, projectRepo: projectRepo, analysisRepo: analysisRepo, workflowService: workflowService, reg: reg, bus: bus, res: res, img: img, cfg: cfg}
 }
 
 // func (m *ContainerManager) Create(ctx context.Context, spec Spec) error {
@@ -214,12 +216,13 @@ func (m *ContainerManager) CreateByTemplate(
 }
 
 func (m *ContainerManager) resolveOwnerProjectVolumes(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) []types.ContainerVolume {
-	projectID := strings.TrimSpace(m.resolveProjectIDByOwner(ctx, ownerType, ownerID))
-	if projectID == "" {
+	projectID := m.resolveProjectIDByOwner(ctx, ownerType, ownerID)
+	if projectID == 0 {
 		return nil
 	}
 
-	project, err := m.repo.GetProjectByProjectID(ctx, projectID)
+	// project, err := m.repo.GetProjectByProjectID(ctx, projectID)
+	project, err := m.projectRepo.GetProjectByID(ctx, projectID)
 	if err != nil || project == nil {
 		return nil
 	}
@@ -227,29 +230,29 @@ func (m *ContainerManager) resolveOwnerProjectVolumes(ctx context.Context, owner
 	return parseVolumes(project.Volumes)
 }
 
-func (m *ContainerManager) resolveProjectIDByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) string {
+func (m *ContainerManager) resolveProjectIDByOwner(ctx context.Context, ownerType types.ContainerOwnerType, ownerID int64) int64 {
 	switch ownerType {
 	case types.ContainerOwnerAppSession:
 		session, err := m.repo.GetAppSessionByID(ctx, ownerID)
 		if err != nil || session == nil {
-			return ""
+			return 0
 		}
 		return session.ProjectID
 	case types.ContainerOwnerDagNode:
 		if m.analysisRepo == nil {
-			return ""
+			return 0
 		}
 		node, err := m.analysisRepo.GetAnalysisNodeByID(ctx, ownerID)
 		if err != nil || node == nil {
-			return ""
+			return 0
 		}
 		analysis, err := m.analysisRepo.GetAnalysisByAnalysisID(ctx, node.AnalysisID)
 		if err != nil || analysis == nil {
-			return ""
+			return 0
 		}
 		return analysis.ProjectID
 	default:
-		return ""
+		return 0
 	}
 }
 
@@ -855,13 +858,13 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 			setRuntimeVar(vars, "APPSESSION_ID", strconv.FormatInt(session.ID, 10))
 			setRuntimeVar(vars, "SYS_USER_ID", session.UserID)
 			// setRuntimeVar(vars, "USERID", session.UserID)
-			setRuntimeVar(vars, "PROJECT_ID", session.ProjectID)
+			setRuntimeVar(vars, "PROJECT_ID", strconv.FormatInt(session.ProjectID, 10))
 			user_project_dir := fmt.Sprintf("%s/data/%s", baseDir, session.ProjectID)
 			if baseDir != "" {
 				setRuntimeVar(vars, "USER_PROJECT_DIR", user_project_dir)
 			}
 
-			setRuntimeVar(vars, "PROJECTID", session.ProjectID)
+			setRuntimeVar(vars, "PROJECTID", strconv.FormatInt(session.ProjectID, 10))
 			setRuntimeVar(vars, "WORKSPACE_PATH", session.WorkspacePath)
 			if session.WorkspacePath == "" {
 				setRuntimeVar(vars, "WORKSPACE_PATH", user_project_dir)
@@ -872,10 +875,10 @@ func (m *ContainerManager) buildRuntimeResolveVariables(
 				analysisNode, err := m.analysisRepo.GetAnalysisNodeByID(ctx, analysisNodeID)
 				if err == nil && analysisNode != nil {
 					if m.workflowService != nil {
-						scriptDir, mainFile, err := m.workflowService.GetScriptMainFileByScriptID(ctx, analysisNode.ScriptID)
+						scriptDir, mainFile, err := m.workflowService.GetScriptFileByScriptID(ctx, analysisNode.ScriptID)
 						if err == nil && strings.TrimSpace(mainFile) != "" && strings.TrimSpace(scriptDir) != "" {
 							// /home/admin/.brave/pipeline/script/4a34dad8-7ad6-4daf-9cdb-5cfb8f64d611/main.R
-							scriptFile := filepath.Join(baseDir, scriptDir, mainFile)
+							scriptFile := filepath.Join(scriptDir, mainFile)
 							setRuntimeVar(vars, "SCRIPT_FILE", scriptFile)
 						}
 					}

@@ -22,11 +22,12 @@ import (
 
 type analysisService struct {
 	analysisRepo interfaces.AnalysisRepository
+	workflowRepo interfaces.WorkflowRepository
 	cfg          *config.Config
 }
 
-func NewAnalysisService(analysisRepo interfaces.AnalysisRepository, cfg *config.Config) interfaces.AnalysisService {
-	return &analysisService{analysisRepo: analysisRepo, cfg: cfg}
+func NewAnalysisService(analysisRepo interfaces.AnalysisRepository, workflowRepo interfaces.WorkflowRepository, cfg *config.Config) interfaces.AnalysisService {
+	return &analysisService{analysisRepo: analysisRepo, workflowRepo: workflowRepo, cfg: cfg}
 }
 
 func (s *analysisService) GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error) {
@@ -73,10 +74,11 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	// 	return nil, fmt.Errorf("request_param.relation_id or script_id is required")
 	// }
 
-	projectID := strings.TrimSpace(toString(input.RequestParam["project"]))
-	if projectID == "" {
+	// projectID := strings.TrimSpace(toString(input.RequestParam["project"]))
+	if input.Project == nil {
 		return nil, fmt.Errorf("request_param.project is required")
 	}
+
 	analysisName := strings.TrimSpace(toString(input.RequestParam["analysis_name"]))
 	if analysisName == "" {
 		return nil, fmt.Errorf("request_param.analysis_name is required")
@@ -88,6 +90,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	}
 
 	analysisID := strings.TrimSpace(toString(input.RequestParam["analysis_id"]))
+
 	cacheType := intFromAny(input.RequestParam["cache_type"], types.CacheTypeRerunAll)
 	if _, ok := input.RequestParam["cache_type"]; !ok {
 		if toBool(input.RequestParam["is_cache"]) {
@@ -118,8 +121,9 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			analysisID = uuid.NewString()
 		}
 
-		outputDir := filepath.Join(baseDir, "analysis", projectID, analysisID)
-		workDir := filepath.Join(baseDir, "work", projectID, workflowID, analysisID)
+		analsyisDir := utils.GetAnalysisDir(baseDir, input.Project.ProjectID)
+		outputDir := filepath.Join(analsyisDir, analysisID)
+		workDir := filepath.Join(analsyisDir, analysisID)
 		if existing != nil {
 			analysisID = existing.AnalysisID
 			if strings.TrimSpace(existing.OutputDir) != "" {
@@ -158,7 +162,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 
 		if existing != nil {
 			updateValues := map[string]any{
-				"project":       projectID,
+				"project":       input.Project.ID,
 				"analysis_name": analysisName,
 				"request_param": string(requestParamJSON),
 				"cache_type":    cacheType,
@@ -181,7 +185,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			}
 		} else {
 			newAnalysis := &types.Analysis{
-				ProjectID:  projectID,
+				ProjectID:  input.Project.ID,
 				AnalysisID: analysisID,
 				WorkflowID: workflowID,
 				// AnalysisType:    analysisType,
@@ -305,7 +309,12 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			status = dagruntime.StatusPending
 			cacheHit = false
 		}
+		scriptID := toString(row["script_id"])
 
+		script, err := s.workflowRepo.GetScriptByScriptID(ctx, analysis.ProjectID, scriptID)
+		if err != nil {
+			return err
+		}
 		node := &types.AnalysisNode{
 			ID:                     id,
 			AnalysisNodeID:         analysisNodeID,
@@ -313,7 +322,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			NodeID:                 nodeID,
 			NodeName:               toString(row["node_name"]),
 			SampleID:               toString(row["sample_id"]),
-			ScriptID:               toString(row["script_id"]),
+			ScriptID:               script.ID,
 			InputsPatterns:         toJSONMap(row["inputs_patterns"]),
 			ResolvedInputs:         toJSONMap(row["resolved_inputs"]),
 			OutputPatterns:         toJSONMap(row["output_patterns"]),

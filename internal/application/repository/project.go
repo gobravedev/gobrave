@@ -92,6 +92,18 @@ func (r *projectRepository) ListProjectByUserID(ctx context.Context, userID stri
 	return projects, nil
 }
 
+func (r *projectRepository) GetProjectByID(ctx context.Context, id int64) (*types.Project, error) {
+	project := &types.Project{}
+	err := r.db.WithContext(ctx).
+		Where("id = ?", id).
+		Take(project).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return project, nil
+}
+
 func (r *projectRepository) AddProjectReport(ctx context.Context, report *types.ProjectReport) error {
 	return r.db.WithContext(ctx).Create(report).Error
 }

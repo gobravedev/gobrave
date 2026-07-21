@@ -32,6 +32,7 @@ const (
 type dagOrchestrator struct {
 	repo          interfaces.AnalysisRepository
 	workflowRepo  interfaces.WorkflowRepository
+	projectRepo   interfaces.ProjectRepository
 	containerRepo interfaces.ContainerRepository
 	containerMgr  *manager.ContainerManager
 	cfg           *config.Config
@@ -42,6 +43,7 @@ type dagOrchestrator struct {
 func NewDagOrchestrator(
 	repo interfaces.AnalysisRepository,
 	workflowRepo interfaces.WorkflowRepository,
+	projectRepo interfaces.ProjectRepository,
 	containerRepo interfaces.ContainerRepository,
 	containerMgr *manager.ContainerManager,
 	cfg *config.Config,
@@ -51,6 +53,7 @@ func NewDagOrchestrator(
 		repo:          repo,
 		workflowRepo:  workflowRepo,
 		containerRepo: containerRepo,
+		projectRepo:   projectRepo,
 		containerMgr:  containerMgr,
 		cfg:           cfg,
 		bus:           bus,
@@ -101,7 +104,7 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID string) err
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
 	dispatcher := dagruntime.NewNodeDispatcher(runtime, o.repo, o.bus, executor.NewFactory(executor.FactoryDeps{
 		WorkflowRepository: o.workflowRepo,
 		ContainerManager:   o.containerMgr,

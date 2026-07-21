@@ -15,15 +15,16 @@ import (
 
 type ContainerHandler struct {
 	containerService interfaces.ContainerService
+	projectService   interfaces.ProjectService
 	analysisService  interfaces.AnalysisService
 	workflowService  interfaces.WorkflowService
 	cfg              *config.Config
 }
 
 type appSessionCreateRequest struct {
-	ContainerTemplateID int64  `json:"container_template_id,string" binding:"required"`
-	ProjectID           string `json:"project_id" binding:"required"`
-	Name                string `json:"name"`
+	ContainerTemplateID int64 `json:"container_template_id,string" binding:"required"`
+	// ProjectID           string `json:"project_id" binding:"required"`
+	Name string `json:"name"`
 }
 
 type appSessionCreateByAnalysisNodeRequest struct {
@@ -51,7 +52,7 @@ type appSessionPageRequest struct {
 	types.Pagination
 	Query          *appSessionPageQuery `json:"query"`
 	AnalysisNodeID string               `json:"analysis_node_id"`
-	ProjectID      string               `json:"project_id"`
+	// ProjectID      string               `json:"project_id"`
 }
 
 type appSessionPageQuery struct {
@@ -77,10 +78,13 @@ type appSessionPageItem struct {
 	NodeName   string `json:"node_name"`
 }
 
-func NewContainerHandler(containerService interfaces.ContainerService, analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, cfg *config.Config) *ContainerHandler {
+func NewContainerHandler(containerService interfaces.ContainerService,
+	projectService interfaces.ProjectService,
+	analysisService interfaces.AnalysisService, workflowService interfaces.WorkflowService, cfg *config.Config) *ContainerHandler {
 	return &ContainerHandler{
 		containerService: containerService,
 		analysisService:  analysisService,
+		projectService:   projectService,
 		workflowService:  workflowService,
 		cfg:              cfg,
 	}
@@ -501,14 +505,18 @@ func (h *ContainerHandler) CreateAppSession(c *gin.Context) {
 	if !ok {
 		return
 	}
-
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(errors.NewValidationError("project not found").WithDetails(err.Error()))
+		return
+	}
 	var req appSessionCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
 		return
 	}
 
-	item, err := h.containerService.CreateAppSessionByTemplate(c.Request.Context(), userID, req.ProjectID, req.ContainerTemplateID, req.Name)
+	item, err := h.containerService.CreateAppSessionByTemplate(c.Request.Context(), userID, project.ID, req.ContainerTemplateID, req.Name)
 	if err != nil {
 		handleDataError(c, err, "failed to create app session")
 		return
@@ -550,7 +558,7 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 	}
 
 	projectID := analysisNode.ProjectID
-	if projectID == "" {
+	if projectID == 0 {
 		analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
 		if err != nil {
 			handleDataError(c, err, "failed to get analysis")
@@ -560,7 +568,7 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 
 	}
 
-	scriptItem, err := h.workflowService.GetScriptByScriptID(c.Request.Context(), analysisNode.ScriptID)
+	scriptItem, err := h.workflowService.GetScriptByID(c.Request.Context(), analysisNode.ScriptID)
 	if err != nil {
 		handleDataError(c, err, "failed to get script")
 		return
@@ -766,7 +774,11 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 	if !ok {
 		return
 	}
-
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	var req appSessionPageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
@@ -778,6 +790,7 @@ func (h *ContainerHandler) PageAppSession(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	query.ProjectID = &project.ID
 
 	result, err := h.containerService.PageAppSessionByUserID(c.Request.Context(), userID, &req.Pagination, query)
 	if err != nil {
@@ -838,19 +851,19 @@ func buildAppSessionPageQuery(req *appSessionPageRequest) (*types.AppSessionPage
 	if req.Query != nil && strings.TrimSpace(req.Query.AnalysisNodeID) != "" {
 		rawAnalysisNodeID = strings.TrimSpace(req.Query.AnalysisNodeID)
 	}
-	rawProjectID := strings.TrimSpace(req.ProjectID)
-	if req.Query != nil && strings.TrimSpace(req.Query.ProjectID) != "" {
-		rawProjectID = strings.TrimSpace(req.Query.ProjectID)
-	}
+	// rawProjectID := strings.TrimSpace(req.ProjectID)
+	// if req.Query != nil && strings.TrimSpace(req.Query.ProjectID) != "" {
+	// 	rawProjectID = req.Query.ProjectID
+	// }
 
-	if rawAnalysisNodeID == "" && rawProjectID == "" {
-		return nil, nil
-	}
+	// if rawAnalysisNodeID == "" && rawProjectID == "" {
+	// 	return nil, nil
+	// }
 
 	query := &types.AppSessionPageQuery{}
-	if rawProjectID != "" {
-		query.ProjectID = &rawProjectID
-	}
+	// if rawProjectID != "" {
+	// 	query.ProjectID = &rawProjectID
+	// }
 
 	if rawAnalysisNodeID == "" {
 		return query, nil

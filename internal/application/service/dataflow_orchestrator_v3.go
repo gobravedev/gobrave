@@ -36,6 +36,8 @@ type dataflowDagOrchestratorV3 struct {
 	bus          event.Bus
 	repo         interfaces.AnalysisRepository
 	workflowRepo interfaces.WorkflowRepository
+	projectRepo  interfaces.ProjectRepository
+	analysisRepo interfaces.AnalysisRepository
 	containerMgr *manager.ContainerManager
 	cfg          *config.Config
 }
@@ -43,7 +45,9 @@ type dataflowDagOrchestratorV3 struct {
 func NewDataflowDagOrchestratorV3(
 	repo interfaces.AnalysisRepository,
 	workflowRepo interfaces.WorkflowRepository,
+	analysisRepo interfaces.AnalysisRepository,
 	containerMgr *manager.ContainerManager,
+	projectRepo interfaces.ProjectRepository,
 	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DataflowDagOrchestrator {
@@ -52,6 +56,7 @@ func NewDataflowDagOrchestratorV3(
 		repo:         repo,
 		workflowRepo: workflowRepo,
 		containerMgr: containerMgr,
+		projectRepo:  projectRepo,
 		cfg:          cfg,
 	}
 }
@@ -267,6 +272,8 @@ func (r *loggingDataflowRuntime) SubmitProcessInstance(ctx context.Context, req 
 type persistentDataflowRuntime struct {
 	repo               interfaces.AnalysisRepository
 	dispatcher         *dagruntime.NodeDispatcher
+	projectID          int64
+	workflowRepo       interfaces.WorkflowRepository
 	dispatchFn         func(ctx context.Context, analysisNodeID int64) error
 	onNodeSubmitChange func(nodeID string, delta int)
 	buildPersistParams func(req DataflowProcessRunRequest) (*DataflowAnalysisNodePersistParams, bool)
@@ -388,8 +395,12 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 		)
 		return existing, false, nil
 	}
-
-	item := buildAnalysisNodeFromPersistPayload(payload)
+	scriptID := strings.TrimSpace(payload.ScriptID)
+	script, err := r.workflowRepo.GetScriptByScriptID(ctx, r.projectID, scriptID)
+	if err != nil {
+		return nil, false, err
+	}
+	item := buildAnalysisNodeFromPersistPayload(script, payload)
 	r.populateNodePathDefaults(ctx, item)
 	if err := r.repo.CreateAnalysisNodes(ctx, []*types.AnalysisNode{item}); err != nil {
 		return nil, false, err
@@ -535,7 +546,7 @@ func (r *persistentDataflowRuntime) InflightDispatches() int {
 	return r.inflightDispatches
 }
 
-func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistParams) *types.AnalysisNode {
+func buildAnalysisNodeFromPersistPayload(script *types.Script, payload *DataflowAnalysisNodePersistParams) *types.AnalysisNode {
 	status := strings.ToLower(strings.TrimSpace(payload.Status))
 	if status == "" {
 		status = "ready"
@@ -548,7 +559,7 @@ func buildAnalysisNodeFromPersistPayload(payload *DataflowAnalysisNodePersistPar
 		NodeID:                 strings.TrimSpace(payload.NodeID),
 		NodeName:               strings.TrimSpace(payload.NodeName),
 		SampleID:               strings.TrimSpace(payload.SampleID),
-		ScriptID:               strings.TrimSpace(payload.ScriptID),
+		ScriptID:               script.ID,
 		InputsPatterns:         dynamicToJSONMap(payload.InputsPatterns),
 		ResolvedInputs:         dynamicToJSONMap(payload.ResolvedInputs),
 		OutputPatterns:         dynamicToJSONMap(payload.OutputPatterns),
@@ -1162,7 +1173,7 @@ func (k *dataflowKernel) submitSourceProcessFallback(ctx context.Context, proc D
 	})
 }
 
-func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
 	analysisID = strings.TrimSpace(analysisID)
 	if analysisID == "" {
 		return fmt.Errorf("analysis_id is required")
@@ -1171,7 +1182,7 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 	bgCtx := context.Background()
 
 	go func() {
-		if err := o.runStartAsyncV3(bgCtx, analysisID, parseAnalysisResult, dagDefinition); err != nil {
+		if err := o.runStartAsyncV3(bgCtx, projectID, analysisID, parseAnalysisResult, dagDefinition); err != nil {
 			logger.Errorf(bgCtx, "[DataflowDagOrchestratorV3] async run failed, analysis_id=%s err=%v", analysisID, err)
 		}
 	}()
@@ -1179,7 +1190,7 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, analysisID
 	return nil
 }
 
-func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
 	if err := o.prepareAnalysisByCacheTypeV3(ctx, analysisID); err != nil {
 		return fmt.Errorf("prepare analysis by cache_type failed: %w", err)
 	}
@@ -1192,7 +1203,7 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
 	dispatcher := dagruntime.NewNodeDispatcher(
 		runtimeEngine,
 		o.repo,
@@ -1225,7 +1236,8 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, analysi
 				return nil, false
 			}
 			return kernel.buildAnalysisNodePersistParams(req)
-		},
+		}, workflowRepo: o.workflowRepo,
+		projectID: projectID,
 	}
 	kernel = newDataflowKernel(spec, runtime, parseAnalysisResult)
 	kernel.repo = o.repo

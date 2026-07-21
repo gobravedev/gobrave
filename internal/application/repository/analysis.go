@@ -104,11 +104,11 @@ func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, 
 	return items, nil
 }
 
-func (r *analysisRepository) PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID string, scriptID string) ([]*types.AnalysisNode, int64, error) {
+func (r *analysisRepository) PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID, scriptID int64) ([]*types.AnalysisNode, int64, error) {
 	items := make([]*types.AnalysisNode, 0)
-	query := r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("project_id = ?", strings.TrimSpace(projectID))
-	if script := strings.TrimSpace(scriptID); script != "" {
-		query = query.Where("script_id = ?", script)
+	query := r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("project_id = ?", projectID)
+	if scriptID != 0 {
+		query = query.Where("script_id = ?", scriptID)
 	}
 
 	var total int64
