@@ -82,6 +82,20 @@ outputs <- list(
 )
 jsonlite::write_json(outputs, file.path(output_dir, "outputs.json"), auto_unbox = TRUE, pretty = TRUE)
     `
+	case "qmd":
+		return `
+---
+title: "title"
+format: md
+editor: source
+# execute:
+#   freeze: auto
+#   cache: true
+# knitr:
+#   opts_chunk:
+#     cache.path: "../cache/title/"
+---
+        `
 	default:
 		return `
     `

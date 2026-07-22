@@ -58,8 +58,9 @@ type dynamicDagOrchestratorV2 struct {
 	containerRepo interfaces.ContainerRepository
 	// containerMgr is passed into executor factory so container-backed executors are reused.
 
-	projectRepo  interfaces.ProjectRepository
-	containerMgr *manager.ContainerManager
+	projectRepo       interfaces.ProjectRepository
+	containerMgr      *manager.ContainerManager
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder
 	// cfg provides storage roots and runtime options.
 	cfg *config.Config
 	// bus emits runtime events using the existing event pipeline.
@@ -81,18 +82,20 @@ func NewDynamicDagOrchestratorV2(
 	containerRepo interfaces.ContainerRepository,
 	containerMgr *manager.ContainerManager,
 	projectRepo interfaces.ProjectRepository,
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder,
 	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DynamicDagOrchestrator {
 	return &dynamicDagOrchestratorV2{
-		repo:          repo,
-		workflowRepo:  workflowRepo,
-		containerRepo: containerRepo,
-		containerMgr:  containerMgr,
-		projectRepo:   projectRepo,
-		cfg:           cfg,
-		bus:           bus,
-		registry:      dagruntime.NewRunningRegistry(),
+		repo:              repo,
+		workflowRepo:      workflowRepo,
+		containerRepo:     containerRepo,
+		containerMgr:      containerMgr,
+		projectRepo:       projectRepo,
+		runScriptBuilders: runScriptBuilders,
+		cfg:               cfg,
+		bus:               bus,
+		registry:          dagruntime.NewRunningRegistry(),
 	}
 }
 
@@ -366,7 +369,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparerWithBuilders(o.repo, o.workflowRepo, o.projectRepo, storageBase, o.runScriptBuilders)
 	dispatcher := dagruntime.NewNodeDispatcher(
 		runtime,
 		o.repo,
@@ -791,6 +794,7 @@ func prepareNodeArtifactsAndFillMD5(ctx context.Context, preparer dagruntime.Nod
 	if preparer == nil {
 		return fmt.Errorf("node runtime preparer is nil")
 	}
+	// TODO 这里的 preparer 与 NodeDispatcher 的 preparer 重复执行
 	if err := preparer.Prepare(ctx, node); err != nil {
 		return fmt.Errorf("prepare dynamic node runtime artifacts failed: %w", err)
 	}

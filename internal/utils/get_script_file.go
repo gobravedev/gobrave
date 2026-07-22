@@ -38,6 +38,8 @@ func mainFileByScriptType(scriptType string) string {
 		return "main.sh"
 	case "jupyter":
 		return "main.ipynb"
+	case "qmd":
+		return "main.qmd"
 	default:
 		return "main.R"
 	}

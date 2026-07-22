@@ -220,7 +220,7 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 		logger.Warnf(ctx, "[NodeCompletionCoordinator] complete node failed, source=%s analysis_id=%s node_id=%s status=%s err=%v", source, node.AnalysisID, node.NodeID, finalStatus, err)
 		return
 	}
-
+	// TODO 目前容器失败直接删除, 后续需要可配置, 方便查看失败日志
 	if finalStatus == StatusFailed {
 		c.runCleanup(ctx, node)
 	} else if finalStatus == StatusDone {

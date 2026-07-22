@@ -33,13 +33,14 @@ import (
 // - Keep existing frontend payload, executor path, and analysis persistence untouched.
 // - Delegate runtime execution to V2 for safe rollout.
 type dataflowDagOrchestratorV3 struct {
-	bus          event.Bus
-	repo         interfaces.AnalysisRepository
-	workflowRepo interfaces.WorkflowRepository
-	projectRepo  interfaces.ProjectRepository
-	analysisRepo interfaces.AnalysisRepository
-	containerMgr *manager.ContainerManager
-	cfg          *config.Config
+	bus               event.Bus
+	repo              interfaces.AnalysisRepository
+	workflowRepo      interfaces.WorkflowRepository
+	projectRepo       interfaces.ProjectRepository
+	analysisRepo      interfaces.AnalysisRepository
+	containerMgr      *manager.ContainerManager
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder
+	cfg               *config.Config
 }
 
 func NewDataflowDagOrchestratorV3(
@@ -48,16 +49,18 @@ func NewDataflowDagOrchestratorV3(
 	analysisRepo interfaces.AnalysisRepository,
 	containerMgr *manager.ContainerManager,
 	projectRepo interfaces.ProjectRepository,
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder,
 	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DataflowDagOrchestrator {
 	return &dataflowDagOrchestratorV3{
-		bus:          bus,
-		repo:         repo,
-		workflowRepo: workflowRepo,
-		containerMgr: containerMgr,
-		projectRepo:  projectRepo,
-		cfg:          cfg,
+		bus:               bus,
+		repo:              repo,
+		workflowRepo:      workflowRepo,
+		containerMgr:      containerMgr,
+		projectRepo:       projectRepo,
+		runScriptBuilders: runScriptBuilders,
+		cfg:               cfg,
 	}
 }
 
@@ -1199,7 +1202,7 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, project
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparerWithBuilders(o.repo, o.workflowRepo, o.projectRepo, storageBase, o.runScriptBuilders)
 	dispatcher := dagruntime.NewNodeDispatcher(
 		runtimeEngine,
 		o.repo,

@@ -30,14 +30,15 @@ const (
 )
 
 type dagOrchestrator struct {
-	repo          interfaces.AnalysisRepository
-	workflowRepo  interfaces.WorkflowRepository
-	projectRepo   interfaces.ProjectRepository
-	containerRepo interfaces.ContainerRepository
-	containerMgr  *manager.ContainerManager
-	cfg           *config.Config
-	bus           event.Bus
-	registry      *dagruntime.RunningRegistry
+	repo              interfaces.AnalysisRepository
+	workflowRepo      interfaces.WorkflowRepository
+	projectRepo       interfaces.ProjectRepository
+	containerRepo     interfaces.ContainerRepository
+	containerMgr      *manager.ContainerManager
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder
+	cfg               *config.Config
+	bus               event.Bus
+	registry          *dagruntime.RunningRegistry
 }
 
 func NewDagOrchestrator(
@@ -46,18 +47,20 @@ func NewDagOrchestrator(
 	projectRepo interfaces.ProjectRepository,
 	containerRepo interfaces.ContainerRepository,
 	containerMgr *manager.ContainerManager,
+	runScriptBuilders map[string]dagruntime.RunScriptBuilder,
 	cfg *config.Config,
 	bus event.Bus,
 ) interfaces.DagOrchestrator {
 	o := &dagOrchestrator{
-		repo:          repo,
-		workflowRepo:  workflowRepo,
-		containerRepo: containerRepo,
-		projectRepo:   projectRepo,
-		containerMgr:  containerMgr,
-		cfg:           cfg,
-		bus:           bus,
-		registry:      dagruntime.NewRunningRegistry(),
+		repo:              repo,
+		workflowRepo:      workflowRepo,
+		containerRepo:     containerRepo,
+		projectRepo:       projectRepo,
+		containerMgr:      containerMgr,
+		runScriptBuilders: runScriptBuilders,
+		cfg:               cfg,
+		bus:               bus,
+		registry:          dagruntime.NewRunningRegistry(),
 	}
 	return o
 }
@@ -104,7 +107,7 @@ func (o *dagOrchestrator) StartAsync(ctx context.Context, analysisID int64) erro
 	if o.cfg != nil && o.cfg.Storage != nil {
 		storageBase = strings.TrimSpace(o.cfg.Storage.BaseDir)
 	}
-	preparer := dagruntime.NewFileSystemNodeRuntimePreparer(o.repo, o.workflowRepo, o.projectRepo, storageBase)
+	preparer := dagruntime.NewFileSystemNodeRuntimePreparerWithBuilders(o.repo, o.workflowRepo, o.projectRepo, storageBase, o.runScriptBuilders)
 	dispatcher := dagruntime.NewNodeDispatcher(runtime, o.repo, o.bus, executor.NewFactory(executor.FactoryDeps{
 		WorkflowRepository: o.workflowRepo,
 		ContainerManager:   o.containerMgr,

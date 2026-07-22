@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/flosch/pongo2/v6"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
@@ -22,32 +21,6 @@ type NoopNodeRuntimePreparer struct{}
 
 func (NoopNodeRuntimePreparer) Prepare(context.Context, *types.AnalysisNode) error {
 	return nil
-}
-
-type RunScriptBuilder interface {
-	Build(node *types.AnalysisNode, scriptPath string, scriptContent string, params map[string]any) (string, error)
-}
-
-type RScriptBuilder struct{}
-
-func (RScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ string, _ map[string]any) (string, error) {
-	return fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nRscript %q %q %q\n", scriptPath, node.ParamsPath, node.OutputDir), nil
-}
-
-type PythonScriptBuilder struct{}
-
-func (PythonScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ string, _ map[string]any) (string, error) {
-	return fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\npython %q %q %q\n", scriptPath, node.ParamsPath, node.OutputDir), nil
-}
-
-type ShellScriptBuilder struct{}
-
-func (ShellScriptBuilder) Build(_ *types.AnalysisNode, scriptPath string, scriptContent string, params map[string]any) (string, error) {
-	rendered, err := renderShellTemplate(scriptContent, params)
-	if err != nil {
-		return "", err
-	}
-	return rendered + "\n\n#" + scriptPath + "\n", nil
 }
 
 type FileSystemNodeRuntimePreparer struct {
@@ -64,16 +37,28 @@ func NewFileSystemNodeRuntimePreparer(
 	projectRepo interfaces.ProjectRepository,
 	storageBase string,
 ) *FileSystemNodeRuntimePreparer {
+	return NewFileSystemNodeRuntimePreparerWithBuilders(
+		analysisRepo,
+		workflowRepo,
+		projectRepo,
+		storageBase,
+		nil,
+	)
+}
+
+func NewFileSystemNodeRuntimePreparerWithBuilders(
+	analysisRepo interfaces.AnalysisRepository,
+	workflowRepo interfaces.WorkflowRepository,
+	projectRepo interfaces.ProjectRepository,
+	storageBase string,
+	builders map[string]RunScriptBuilder,
+) *FileSystemNodeRuntimePreparer {
 	return &FileSystemNodeRuntimePreparer{
 		analysisRepo: analysisRepo,
 		workflowRepo: workflowRepo,
 		projectRepo:  projectRepo,
 		storageBase:  strings.TrimSpace(storageBase),
-		builders: map[string]RunScriptBuilder{
-			"r":      RScriptBuilder{},
-			"python": PythonScriptBuilder{},
-			"shell":  ShellScriptBuilder{},
-		},
+		builders:     cloneRunScriptBuilders(builders),
 	}
 }
 
@@ -309,36 +294,14 @@ func writeBytesAtomic(path string, content []byte, mode os.FileMode) error {
 	return nil
 }
 
-func renderShellTemplate(content string, params map[string]any) (string, error) {
-	tpl, err := pongo2.FromString(content)
-	if err != nil {
-		return "", fmt.Errorf("parse shell template failed: %w", err)
+func cloneRunScriptBuilders(builders map[string]RunScriptBuilder) map[string]RunScriptBuilder {
+	if len(builders) == 0 {
+		return NewRunScriptBuilders()
 	}
 
-	ctx := pongo2.Context{}
-	for k, v := range params {
-		ctx[k] = v
+	cloned := make(map[string]RunScriptBuilder, len(builders))
+	for scriptType, builder := range builders {
+		cloned[scriptType] = builder
 	}
-
-	if meta, ok := templateAsMap(ctx["meta"]); ok {
-		if _, exists := ctx["meta_file_name"]; !exists {
-			if fileName, ok := meta["file_name"]; ok {
-				ctx["meta_file_name"] = fileName
-			}
-		}
-	}
-
-	rendered, err := tpl.Execute(ctx)
-	if err != nil {
-		return "", fmt.Errorf("render shell template failed: %w", err)
-	}
-	return rendered, nil
-}
-
-func templateAsMap(v any) (map[string]any, bool) {
-	if v == nil {
-		return nil, false
-	}
-	m, ok := v.(map[string]any)
-	return m, ok
+	return cloned
 }

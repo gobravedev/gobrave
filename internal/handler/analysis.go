@@ -845,6 +845,11 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 		scriptPath = filepath.Join(baseDir, scriptPath)
 	}
 
+	scriptContent, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return err
+	}
+
 	scriptWorkspaceDir := filepath.Join(artifacts.WorkspaceDir, scriptMainFile)
 	if _, err := os.Lstat(scriptWorkspaceDir); err != nil {
 		if os.IsNotExist(err) {
@@ -856,7 +861,10 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 		}
 	}
 
-	runScript := buildStandaloneRunScript(script.ScriptType, scriptPath, artifacts.ParamsPath, artifacts.OutputDir)
+	runScript, err := buildStandaloneRunScript(script.ScriptType, scriptPath, string(scriptContent), paramsPayload, artifacts.ParamsPath, artifacts.OutputDir)
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(artifacts.CommandPath, []byte(runScript), 0o755); err != nil {
 		return err
 	}
@@ -874,16 +882,19 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 	return nil
 }
 
-func buildStandaloneRunScript(scriptType string, scriptPath string, paramsPath string, outputDir string) string {
-	base := "#!/usr/bin/env bash\nset -euo pipefail\n"
-	switch strings.ToLower(strings.TrimSpace(scriptType)) {
-	case "r":
-		return base + fmt.Sprintf("Rscript %q %q %q\n", scriptPath, paramsPath, outputDir)
-	case "python":
-		return base + fmt.Sprintf("python %q %q %q\n", scriptPath, paramsPath, outputDir)
-	default:
-		return base + fmt.Sprintf("bash %q %q %q\n", scriptPath, paramsPath, outputDir)
+func buildStandaloneRunScript(
+	scriptType string,
+	scriptPath string,
+	scriptContent string,
+	params map[string]interface{},
+	paramsPath string,
+	outputDir string,
+) (string, error) {
+	node := &types.AnalysisNode{
+		ParamsPath: paramsPath,
+		OutputDir:  outputDir,
 	}
+	return dagruntime.BuildRunScript(node, scriptType, scriptPath, scriptContent, params)
 }
 
 func cloneAnyMapForNode(in map[string]interface{}) map[string]interface{} {
