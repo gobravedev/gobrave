@@ -45,7 +45,12 @@ type QmdScriptBuilder struct{}
 
 func (QmdScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ string, _ map[string]any) (string, error) {
 	// quarto preview chapter_5.qmd --to md --no-watch-inputs --no-browse
-	return fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nexport QUARTO_CACHE_DIR=$PWD/.quarto-cache\nquarto render %q --to md  --no-cache --output-dir %q\n", scriptPath, node.OutputDir), nil
+	return fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+export HOME=$PWD/.home
+export XDG_CACHE_HOME=$HOME/.cache
+quarto render %q --to md --output-dir %q --execute-dir %q 
+`, scriptPath, node.OutputDir, node.WorkspaceDir), nil
 
 }
 
