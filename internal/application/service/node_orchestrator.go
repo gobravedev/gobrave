@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/gobravedev/gobrave/internal/config"
 	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/dag/executor"
 	"github.com/gobravedev/gobrave/internal/errors"
@@ -22,21 +25,27 @@ type nodeOrchestrator struct {
 	containerMgr     *manager.ContainerManager
 	containerService interfaces.ContainerService
 	bus              event.Bus
+	projectRepo      interfaces.ProjectRepository
+	cfg              *config.Config
 }
 
 func NewNodeOrchestrator(
 	repo interfaces.AnalysisRepository,
 	workflowRepo interfaces.WorkflowRepository,
 	containerMgr *manager.ContainerManager,
+	projectRepo interfaces.ProjectRepository,
 	containerService interfaces.ContainerService,
 	bus event.Bus,
+	cfg *config.Config,
 ) interfaces.NodeOrchestrator {
 	return &nodeOrchestrator{
 		repo:             repo,
 		workflowRepo:     workflowRepo,
 		containerMgr:     containerMgr,
 		containerService: containerService,
+		projectRepo:      projectRepo,
 		bus:              bus,
+		cfg:              cfg,
 	}
 }
 
@@ -56,6 +65,30 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID int64)
 	}
 
 	node, err := o.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
+
+	// 运行前删除文件夹ouput下内容 如果路径存在就删除 如果不存在就不删除
+	outputDir := node.OutputDir
+	if outputDir != "" {
+		project, err := o.projectRepo.GetProjectByID(ctx, node.ProjectID)
+		if err != nil {
+			logger.Warnf(ctx, "[NodeOrchestrator] failed to get project by id=%d, err=%v", node.ProjectID, err)
+			return err
+		}
+		prefix := filepath.Join(o.cfg.Storage.BaseDir, "data", project.ProjectID)
+		//判断是否以prefix开头 如果不是就不删除
+		if !strings.HasPrefix(outputDir, prefix) {
+			logger.Warnf(ctx, "[NodeOrchestrator] output dir=%s is not under project data dir=%s, skip delete", outputDir, prefix)
+			return fmt.Errorf("output dir is not under project data dir")
+		}
+		// 删除outputDir下的所有内容，，直接判断文件夹是否存在，如果存在就删除，如果不存在就不删除
+		if _, err := os.Stat(outputDir); err == nil {
+			if err := os.RemoveAll(outputDir); err != nil {
+				logger.Warnf(ctx, "[NodeOrchestrator] failed to delete output dir=%s, err=%v", outputDir, err)
+			}
+		}
+
+	}
+
 	if err != nil {
 		return err
 	}
