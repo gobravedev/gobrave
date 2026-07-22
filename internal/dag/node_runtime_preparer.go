@@ -160,7 +160,7 @@ func (p *FileSystemNodeRuntimePreparer) ensureNodePaths(node *types.AnalysisNode
 		if analysisOutputDir == "" {
 			return fmt.Errorf("node workspace_dir is empty and analysis output_dir is empty")
 		}
-		baseWorkspace = filepath.Join(analysisOutputDir, node.AnalysisNodeID)
+		baseWorkspace = filepath.Join(analysisOutputDir, fmt.Sprintf("%d", node.ID))
 		node.WorkspaceDir = baseWorkspace
 	}
 

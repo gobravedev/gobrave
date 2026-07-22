@@ -421,7 +421,7 @@ func (r *persistentDataflowRuntime) populateNodePathDefaults(ctx context.Context
 	if baseWorkspace == "" {
 		analysisOutputDir := r.lookupAnalysisOutputDir(ctx, node.AnalysisID)
 		if analysisOutputDir != "" {
-			baseWorkspace = filepath.Join(analysisOutputDir, strings.TrimSpace(node.AnalysisNodeID))
+			baseWorkspace = filepath.Join(analysisOutputDir, fmt.Sprintf("%d", node.ID))
 		}
 	}
 

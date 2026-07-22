@@ -187,6 +187,9 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 		}
 	}
 
+	if req.IOSchema == "" {
+		req.IOSchema = GetDefaultIOSchame()
+	}
 	item := &types.Script{
 		ID:                  req.ID,
 		ScriptID:            scriptID,
@@ -228,7 +231,7 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 		}
 	}
 
-	scriptDir, _, _ := utils.GetScriptFile(h.cfg.Storage.BaseDir, project.ProjectID, item.ScriptType, item.ScriptID)
+	scriptDir, scriptFile, _ := utils.GetScriptFile(h.cfg.Storage.BaseDir, project.ProjectID, item.ScriptType, item.ScriptID)
 	ioSchemaFile := filepath.Join(scriptDir, "io_schema.json")
 	// Write io_schema.json file if IOSchema is provided
 	if item.IOSchema != "" {
@@ -238,6 +241,19 @@ func (h *WorkflowHandler) SaveScript(c *gin.Context) {
 		}
 		if err := os.WriteFile(ioSchemaFile, []byte(item.IOSchema), 0o644); err != nil {
 			c.Error(errors.NewInternalServerError("failed to write io_schema file").WithDetails(err.Error()))
+			return
+		}
+	}
+	scriptFilePath := filepath.Join(scriptDir, scriptFile)
+	// 如果不存在脚本文件，则创建一个空的脚本文件
+	if _, err := os.Stat(scriptFilePath); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(scriptFilePath), 0o755); err != nil {
+			c.Error(errors.NewInternalServerError("failed to prepare script directory").WithDetails(err.Error()))
+			return
+		}
+		content := GetInitScript(item.ScriptType)
+		if err := os.WriteFile(scriptFilePath, []byte(content), 0o644); err != nil {
+			c.Error(errors.NewInternalServerError("failed to create script file").WithDetails(err.Error()))
 			return
 		}
 	}

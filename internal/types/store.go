@@ -3,7 +3,9 @@ package types
 import (
 	"time"
 
+	"github.com/gobravedev/gobrave/internal/utils"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type Store struct {
@@ -30,6 +32,13 @@ type Store struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (t *Store) BeforeCreate(_ *gorm.DB) error {
+	if t.ID == 0 {
+		t.ID = utils.GenerateID()
+	}
+	return nil
 }
 
 type StoreDTO struct {

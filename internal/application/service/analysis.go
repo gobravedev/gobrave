@@ -282,7 +282,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 			analysisNodeID = "node-" + uuid.NewString()
 		}
 
-		workspaceDir := filepath.Join(analysis.OutputDir, analysisNodeID)
+		workspaceDir := filepath.Join(analysis.OutputDir, fmt.Sprintf("%d", id))
 		outputDir := filepath.Join(workspaceDir, "output")
 		paramsPath := filepath.Join(workspaceDir, "params.json")
 		commandPath := filepath.Join(workspaceDir, "run.sh")

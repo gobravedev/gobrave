@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -137,17 +138,17 @@ func (n *DagRuntimeEventNotifier) buildRealtimeMessage(ctx context.Context, runt
 
 	switch runtimeEvent.Name {
 	case dag.EventDagStarted:
-		payload["id"] = runtimeEvent.AnalysisID
+		payload["id"] = fmt.Sprint(runtimeEvent.AnalysisID)
 		payload["method"] = "dagStarted"
 		payload["args"] = map[string]any{"status": "running", "id": runtimeEvent.AnalysisID}
 		return message, true
 	case dag.EventDagCompleted:
-		payload["id"] = runtimeEvent.AnalysisID
+		payload["id"] = fmt.Sprint(runtimeEvent.AnalysisID)
 		payload["method"] = "dagDone"
 		payload["args"] = map[string]any{"status": "done", "id": runtimeEvent.AnalysisID}
 		return message, true
 	case dag.EventDagFailed:
-		payload["id"] = runtimeEvent.AnalysisID
+		payload["id"] = fmt.Sprint(runtimeEvent.AnalysisID)
 		payload["method"] = "dagDone"
 		payload["args"] = map[string]any{"status": "failed", "id": runtimeEvent.AnalysisID}
 		return message, true
@@ -161,7 +162,7 @@ func (n *DagRuntimeEventNotifier) buildRealtimeMessage(ctx context.Context, runt
 		status, method := n.resolveNodeRealtimeStatusAndMethod(runtimeEvent)
 
 		payload["id"] = analysisNodeID
-		payload["parentId"] = runtimeEvent.AnalysisID
+		payload["parentId"] = fmt.Sprint(runtimeEvent.AnalysisID)
 		payload["method"] = method
 		payload["args"] = map[string]any{"status": status, "id": analysisNodeID}
 		return message, true
