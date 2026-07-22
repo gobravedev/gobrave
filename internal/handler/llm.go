@@ -42,11 +42,13 @@ type LLMHandler struct {
 	bridgeMu       sync.RWMutex
 	bridgeSessions map[string]*llmBridgeSession
 	workflowSvc    interfaces.WorkflowService
+	analsyisSvc    interfaces.AnalysisService
 }
 
 func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService,
 	llmSvc interfaces.LLMService,
 	workflowSvc interfaces.WorkflowService,
+	analsyisSvc interfaces.AnalysisService,
 ) *LLMHandler {
 	cliURL := ""
 	if cfg != nil && cfg.LLM != nil {
@@ -80,6 +82,7 @@ func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.
 		llmSvc:         llmSvc,
 		bridgeSessions: make(map[string]*llmBridgeSession),
 		workflowSvc:    workflowSvc,
+		analsyisSvc:    analsyisSvc,
 	}
 	h.hub.SubscribeInbound(h.onBridgeInboundMessage)
 	return h
@@ -960,22 +963,29 @@ func (h *LLMHandler) resolveWorkingDirectory(ctx context.Context, userID string,
 			// return "", fmt.Errorf("env.type is required")
 			return h.resolveDefaultWorkingDirectory(ctx, userID)
 		}
+		idStr, ok := env["id"]
+		if !ok {
+			return "", fmt.Errorf("env.id is required for script type")
+		}
+		id, err := strconv.ParseInt(fmt.Sprintf("%v", idStr), 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("invalid env.script_id: %w", err)
+		}
 		switch strings.TrimSpace(envType) {
 		case "script":
-			scriptID, ok := env["script_id"]
-			if !ok {
-				return "", fmt.Errorf("env.script_id is required for script type")
-			}
-			scriptIDInt64, err := strconv.ParseInt(fmt.Sprintf("%v", scriptID), 10, 64)
-			if err != nil {
-				return "", fmt.Errorf("invalid env.script_id: %w", err)
-			}
-			scriptDir, _, err := h.workflowSvc.GetScriptFileByScriptID(ctx, scriptIDInt64)
+			scriptDir, _, err := h.workflowSvc.GetScriptFileByScriptID(ctx, id)
 			if err != nil {
 				return "", fmt.Errorf("failed to get script file by script id: %w", err)
 			}
 			// workingDir := filepath.Join(h.cfg.Storage.BaseDir, scriptDir)
 			return scriptDir, nil
+		case "analsyisNode":
+			analsyisNode, err := h.analsyisSvc.GetAnalysisNodeByID(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			return analsyisNode.WorkspaceDir, nil
+
 		}
 	}
 	return h.resolveDefaultWorkingDirectory(ctx, userID)
