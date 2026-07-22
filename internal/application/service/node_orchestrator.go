@@ -8,30 +8,35 @@ import (
 
 	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/dag/executor"
+	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/event"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/manager"
+	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 )
 
 type nodeOrchestrator struct {
-	repo         interfaces.AnalysisRepository
-	workflowRepo interfaces.WorkflowRepository
-	containerMgr *manager.ContainerManager
-	bus          event.Bus
+	repo             interfaces.AnalysisRepository
+	workflowRepo     interfaces.WorkflowRepository
+	containerMgr     *manager.ContainerManager
+	containerService interfaces.ContainerService
+	bus              event.Bus
 }
 
 func NewNodeOrchestrator(
 	repo interfaces.AnalysisRepository,
 	workflowRepo interfaces.WorkflowRepository,
 	containerMgr *manager.ContainerManager,
+	containerService interfaces.ContainerService,
 	bus event.Bus,
 ) interfaces.NodeOrchestrator {
 	return &nodeOrchestrator{
-		repo:         repo,
-		workflowRepo: workflowRepo,
-		containerMgr: containerMgr,
-		bus:          bus,
+		repo:             repo,
+		workflowRepo:     workflowRepo,
+		containerMgr:     containerMgr,
+		containerService: containerService,
+		bus:              bus,
 	}
 }
 
@@ -40,6 +45,14 @@ func NewNodeOrchestrator(
 func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID int64) error {
 	if analysisNodeID <= 0 {
 		return fmt.Errorf("analysis node id is required")
+	}
+
+	if err := o.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
+		ctx,
+		types.ContainerOwnerDagNode,
+		[]int64{analysisNodeID},
+	); err != nil {
+		return errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error())
 	}
 
 	node, err := o.repo.GetAnalysisNodeByID(ctx, analysisNodeID)

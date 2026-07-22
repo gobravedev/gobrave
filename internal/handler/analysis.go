@@ -695,14 +695,14 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
-			c.Request.Context(),
-			types.ContainerOwnerDagNode,
-			[]int64{int64(node.ID)},
-		); err != nil {
-			c.Error(errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error()))
-			return
-		}
+		// if err := h.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
+		// 	c.Request.Context(),
+		// 	types.ContainerOwnerDagNode,
+		// 	[]int64{int64(node.ID)},
+		// ); err != nil {
+		// 	c.Error(errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error()))
+		// 	return
+		// }
 
 		if err := h.nodeOrchestrator.StartAsync(c.Request.Context(), int64(node.ID)); err != nil {
 			c.Error(errors.NewInternalServerError("failed to submit analysis node").WithDetails(err.Error()))
@@ -756,14 +756,6 @@ func (h *AnalysisHandler) RunAnalysisNodeWithID(ctx context.Context, analsyisNod
 		"updated_at":               time.Now().UTC(),
 	}); err != nil {
 		return errors.NewInternalServerError("failed to reset analysis node status").WithDetails(err.Error())
-	}
-
-	if err := h.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
-		ctx,
-		types.ContainerOwnerDagNode,
-		[]int64{analsyisNodeId},
-	); err != nil {
-		return errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error())
 	}
 
 	if err := h.nodeOrchestrator.StartAsync(ctx, analsyisNodeId); err != nil {

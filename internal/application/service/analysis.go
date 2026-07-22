@@ -47,6 +47,13 @@ func (s *analysisService) GetAnalysisByID(ctx context.Context, analysisID int64)
 func (s *analysisService) GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error) {
 	return s.analysisRepo.GetAnalysisNodeByID(ctx, id)
 }
+func (s *analysisService) UpdateAnalysisByID(ctx context.Context, analysisID int64, values map[string]any) error {
+	return s.analysisRepo.UpdateAnalysisByID(ctx, analysisID, values)
+}
+
+func (s *analysisService) UpdateAnalysisNodeByID(ctx context.Context, analysisNodeID int64, values map[string]any) error {
+	return s.analysisRepo.UpdateAnalysisNodeByID(ctx, analysisNodeID, values)
+}
 
 func (s *analysisService) GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error) {
 	return s.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)

@@ -231,6 +231,13 @@ func (r *analysisRepository) ListAnalysisEdgesByAnalysisID(ctx context.Context, 
 	return items, nil
 }
 
+func (r *analysisRepository) UpdateAnalysisNodeByID(ctx context.Context, id int64, values map[string]any) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("id = ?", id).Updates(values).Error
+}
+
 func (r *analysisRepository) UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error {
 	if len(values) == 0 {
 		return nil

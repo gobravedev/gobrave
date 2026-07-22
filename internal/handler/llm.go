@@ -18,6 +18,7 @@ import (
 	copilot "github.com/github/copilot-sdk/go"
 	copilotrpc "github.com/github/copilot-sdk/go/rpc"
 	"github.com/gobravedev/gobrave/internal/config"
+	dagruntime "github.com/gobravedev/gobrave/internal/dag"
 	"github.com/gobravedev/gobrave/internal/errors"
 	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/realtime"
@@ -39,16 +40,75 @@ type LLMHandler struct {
 	projectSvc  interfaces.ProjectService
 	llmSvc      interfaces.LLMService
 
-	bridgeMu       sync.RWMutex
-	bridgeSessions map[string]*llmBridgeSession
-	workflowSvc    interfaces.WorkflowService
-	analsyisSvc    interfaces.AnalysisService
+	bridgeMu         sync.RWMutex
+	bridgeSessions   map[string]*llmBridgeSession
+	workflowSvc      interfaces.WorkflowService
+	analsyisSvc      interfaces.AnalysisService
+	nodeOrchestrator interfaces.NodeOrchestrator
+
+	completionBroker *nodeCompletionBroker
+}
+
+// nodeCompletionBroker manages per-node completion waiters.
+// Design pattern: Broker/Mediator – decouples the async node executor
+// from the LLM tool caller via a channel-based signaling mechanism.
+type nodeCompletionBroker struct {
+	mu      sync.Mutex
+	waiters map[int64][]chan nodeCompletionEvent
+}
+
+type nodeCompletionEvent struct {
+	Status string
+	Log    string
+	Err    string
+}
+
+func newNodeCompletionBroker() *nodeCompletionBroker {
+	return &nodeCompletionBroker{waiters: make(map[int64][]chan nodeCompletionEvent)}
+}
+
+// register creates a buffered channel and registers it under nodeID.
+// Must be called BEFORE starting the node to avoid a completion-before-register race.
+func (b *nodeCompletionBroker) register(nodeID int64) chan nodeCompletionEvent {
+	ch := make(chan nodeCompletionEvent, 1)
+	b.mu.Lock()
+	b.waiters[nodeID] = append(b.waiters[nodeID], ch)
+	b.mu.Unlock()
+	return ch
+}
+
+// unregister removes a specific channel from the waiter list.
+func (b *nodeCompletionBroker) unregister(nodeID int64, ch chan nodeCompletionEvent) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	list := b.waiters[nodeID]
+	for i, c := range list {
+		if c == ch {
+			b.waiters[nodeID] = append(list[:i], list[i+1:]...)
+			return
+		}
+	}
+}
+
+// notify sends the event to all registered waiters for nodeID and clears them.
+func (b *nodeCompletionBroker) notify(nodeID int64, event nodeCompletionEvent) {
+	b.mu.Lock()
+	waiters := b.waiters[nodeID]
+	delete(b.waiters, nodeID)
+	b.mu.Unlock()
+	for _, ch := range waiters {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
 }
 
 func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.ProjectService,
 	llmSvc interfaces.LLMService,
 	workflowSvc interfaces.WorkflowService,
 	analsyisSvc interfaces.AnalysisService,
+	nodeOrchestrator interfaces.NodeOrchestrator,
 ) *LLMHandler {
 	cliURL := ""
 	if cfg != nil && cfg.LLM != nil {
@@ -72,17 +132,19 @@ func NewLLMHandler(hub *realtime.Hub, cfg *config.Config, projectSvc interfaces.
 	providerCfg := buildProviderConfigFromConfig(cfg, defaultModel)
 
 	h := &LLMHandler{
-		cliURL:         cliURL,
-		model:          defaultModel,
-		githubToken:    githubToken,
-		providerCfg:    providerCfg,
-		hub:            hub,
-		cfg:            cfg,
-		projectSvc:     projectSvc,
-		llmSvc:         llmSvc,
-		bridgeSessions: make(map[string]*llmBridgeSession),
-		workflowSvc:    workflowSvc,
-		analsyisSvc:    analsyisSvc,
+		cliURL:           cliURL,
+		model:            defaultModel,
+		githubToken:      githubToken,
+		providerCfg:      providerCfg,
+		hub:              hub,
+		cfg:              cfg,
+		projectSvc:       projectSvc,
+		llmSvc:           llmSvc,
+		bridgeSessions:   make(map[string]*llmBridgeSession),
+		workflowSvc:      workflowSvc,
+		analsyisSvc:      analsyisSvc,
+		nodeOrchestrator: nodeOrchestrator,
+		completionBroker: newNodeCompletionBroker(),
 	}
 	h.hub.SubscribeInbound(h.onBridgeInboundMessage)
 	return h
@@ -749,6 +811,7 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to resolve working directory", "detail": err.Error()})
 		return
 	}
+	systemMessage := buildRuntimeSystemMessage(session.userID, env, workingDir)
 	// TODO
 	// workingDir := "/data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/analysis_node/2077962373498408960"
 
@@ -832,7 +895,7 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 		}
 	}
 
-	copilotSession, resumed, err := h.openOrResumeCopilotSession(ctx, client, copilotSessionID, resolvedModel, workingDir, providerCfg, permissionHandler)
+	copilotSession, resumed, err := h.openOrResumeCopilotSession(ctx, client, copilotSessionID, resolvedModel, workingDir, systemMessage, providerCfg, permissionHandler)
 	if err != nil {
 		h.pushBridgeEvent(session.userID, session.sessionID, "error", gin.H{"error": "failed to initialize copilot session", "detail": err.Error()})
 		return
@@ -1018,6 +1081,39 @@ func (h *LLMHandler) resolveDefaultWorkingDirectory(ctx context.Context, userID 
 	return workingDir, nil
 }
 
+func buildRuntimeSystemMessage(userID string, env map[string]any, workingDir string) *copilot.SystemMessageConfig {
+	lines := []string{
+		"You are operating inside Gobrave's LLM runtime.",
+		"Follow the runtime context below when choosing tools or file locations.",
+		fmt.Sprintf("current_user_id: %s", strings.TrimSpace(userID)),
+		fmt.Sprintf("working_directory: %s", strings.TrimSpace(workingDir)),
+	}
+
+	if env == nil {
+		lines = append(lines, "env: <nil>")
+	} else {
+		envType := strings.TrimSpace(toString(env["type"]))
+		envID := strings.TrimSpace(fmt.Sprintf("%v", env["id"]))
+		if envType == "" {
+			envType = "<empty>"
+		}
+		if envID == "" || envID == "<nil>" {
+			envID = "<empty>"
+		}
+		lines = append(lines,
+			fmt.Sprintf("env.type: %s", envType),
+			fmt.Sprintf("env.id: %s", envID),
+		)
+		if strings.EqualFold(envType, "analsyisNode") || strings.EqualFold(envType, "analysisNode") {
+			lines = append(lines, "When you need to run or inspect the current analysis node, use env.id as the analysis_node_id and do not guess a different ID.")
+		} else if strings.EqualFold(envType, "script") {
+			lines = append(lines, "When you need to run a script-based task, resolve the script workspace from env.id through the runtime context.")
+		}
+	}
+
+	return &copilot.SystemMessageConfig{Content: strings.Join(lines, "\n")}
+}
+
 func (h *LLMHandler) removeBridgeSession(userID string, sessionID int64) {
 	key := bridgeSessionKey(userID, sessionID)
 	h.bridgeMu.Lock()
@@ -1061,6 +1157,206 @@ func buildCopilotSessionID(userID string, sessionID int64) string {
 	return "gobrave-" + b.String() + "-" + strconv.FormatInt(sessionID, 10)
 }
 
+// RunAnalysisNodeToolParams is the input for the run_analysis_node LLM tool.
+type RunAnalysisNodeToolParams struct {
+	AnalysisNodeID string `json:"analysis_node_id" jsonschema:"The analysis node ID to run, as a string to preserve precision"`
+	TimeoutSeconds int    `json:"timeout_seconds" jsonschema:"Timeout seconds waiting for completion (default 600)"`
+}
+
+// RunAnalysisNodeToolResult is the output returned to the LLM after the node finishes.
+type RunAnalysisNodeToolResult struct {
+	AnalysisNodeID int64  `json:"analysis_node_id"`
+	Status         string `json:"status"`
+	Log            string `json:"log"`
+	Success        bool   `json:"success"`
+	Error          string `json:"error,omitempty"`
+}
+
+// buildRunAnalysisNodeTool returns a copilot Tool that:
+//  1. Registers a completion waiter (Broker pattern) BEFORE starting the node.
+//  2. Calls RunAnalysisNodeWithID to reset state and trigger async execution.
+//  3. Launches a background Polling Observer goroutine that watches node status.
+//  4. Blocks on the waiter channel until completion or timeout.
+//  5. Reads the node log file and returns the result to the LLM.
+func (h *LLMHandler) buildRunAnalysisNodeTool() copilot.Tool {
+	return copilot.DefineTool(
+		"run_analysis_node",
+		"Run an analysis node by its numeric ID, wait for it to finish, then return the execution log. Use this to trigger computations and inspect their output.",
+		func(params RunAnalysisNodeToolParams, inv copilot.ToolInvocation) (RunAnalysisNodeToolResult, error) {
+			ctx := context.Background()
+			nodeID, err := parseAnalysisNodeToolID(params.AnalysisNodeID)
+			if err != nil {
+				return RunAnalysisNodeToolResult{Error: fmt.Sprintf("invalid analysis_node_id: %v", err)}, nil
+			}
+			if nodeID <= 0 {
+				return RunAnalysisNodeToolResult{Error: "analysis_node_id must be a positive integer string"}, nil
+			}
+
+			timeoutSecs := params.TimeoutSeconds
+			if timeoutSecs <= 0 {
+				timeoutSecs = 60000
+			}
+			timeout := time.Duration(timeoutSecs) * time.Second
+
+			// Step 1: Register waiter BEFORE starting to avoid completion-before-register race.
+			ch := h.completionBroker.register(nodeID)
+			defer h.completionBroker.unregister(nodeID, ch)
+
+			// Step 2: Reset node state and submit to executor.
+			node, err := h.analsyisSvc.GetAnalysisNodeByID(ctx, nodeID)
+
+			if err != nil {
+				return RunAnalysisNodeToolResult{
+					AnalysisNodeID: nodeID,
+					Status:         "error",
+					Error:          fmt.Sprintf("failed to get analysis node: %v", err),
+				}, nil
+			}
+			if err := h.analsyisSvc.UpdateAnalysisNodeByID(ctx, node.ID, map[string]any{
+				"status":                   dagruntime.StatusReady,
+				"server_status":            "",
+				"cache_hit":                false,
+				"rerun_reason":             "node rerun requested by user",
+				"error_message":            "",
+				"exit_code":                0,
+				"pid":                      0,
+				"job_id":                   "",
+				"started_at":               nil,
+				"finished_at":              nil,
+				"output_validation_errors": types.JSONSlice{},
+				"updated_at":               time.Now().UTC(),
+			}); err != nil {
+				return RunAnalysisNodeToolResult{
+					AnalysisNodeID: nodeID,
+					Status:         "error",
+					Error:          fmt.Sprintf("failed to update analysis node: %v", err),
+				}, nil
+			}
+			//
+
+			if err := h.runAnalysisNodeByID(ctx, nodeID); err != nil {
+				return RunAnalysisNodeToolResult{
+					AnalysisNodeID: nodeID,
+					Status:         "error",
+					Error:          fmt.Sprintf("failed to start analysis node: %v", err),
+				}, nil
+			}
+
+			// Step 3: Launch polling observer goroutine.
+			go h.pollNodeCompletion(ctx, nodeID, node.LogPath, timeout)
+
+			// Step 4: Wait for completion signal or timeout.
+			select {
+			case event := <-ch:
+				return RunAnalysisNodeToolResult{
+					AnalysisNodeID: nodeID,
+					Status:         event.Status,
+					Log:            event.Log,
+					Success:        isTerminalSuccess(event.Status),
+					Error:          event.Err,
+				}, nil
+			case <-time.After(timeout):
+				return RunAnalysisNodeToolResult{
+					AnalysisNodeID: nodeID,
+					Status:         "timeout",
+					Error:          fmt.Sprintf("timeout after %ds waiting for node to complete", timeoutSecs),
+				}, nil
+			}
+		},
+	)
+}
+
+func parseAnalysisNodeToolID(value string) (int64, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "<nil>" {
+		return 0, nil
+	}
+	return strconv.ParseInt(trimmed, 10, 64)
+}
+
+// runAnalysisNodeByID resets the node status and submits it for async execution.
+// Mirrors the logic in AnalysisHandler.RunAnalysisNodeWithID but uses only the
+// services already injected into LLMHandler.
+func (h *LLMHandler) runAnalysisNodeByID(ctx context.Context, nodeID int64) error {
+	if h.nodeOrchestrator == nil {
+		return fmt.Errorf("node orchestrator is not configured")
+	}
+	return h.nodeOrchestrator.StartAsync(ctx, nodeID)
+}
+
+// pollNodeCompletion is a Polling Observer that periodically queries the DB for
+// node status. When the node reaches a terminal state it reads the log and
+// notifies the completionBroker, which unblocks the waiting LLM tool call.
+func (h *LLMHandler) pollNodeCompletion(ctx context.Context, nodeID int64, logPath string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return // waiter will hit its own timeout; no need to notify
+			}
+
+			node, err := h.analsyisSvc.GetAnalysisNodeByID(ctx, nodeID)
+			if err != nil {
+				logger.Warnf(ctx, "[LLM] pollNodeCompletion: failed to get node %d: %v", nodeID, err)
+				continue
+			}
+
+			if lp := strings.TrimSpace(node.LogPath); lp != "" {
+				logPath = lp
+			}
+
+			status := strings.ToLower(strings.TrimSpace(node.Status))
+			if !isTerminalStatus(status) {
+				continue
+			}
+
+			// Terminal state reached – read log and notify.
+			log := readNodeLog(logPath)
+			h.completionBroker.notify(nodeID, nodeCompletionEvent{
+				Status: node.Status,
+				Log:    log,
+			})
+			return
+		}
+	}
+}
+
+const maxLogBytes = 12000
+
+func readNodeLog(logPath string) string {
+	logPath = strings.TrimSpace(logPath)
+	if logPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return fmt.Sprintf("[could not read log: %v]", err)
+	}
+	if len(data) > maxLogBytes {
+		return "...(truncated)\n" + string(data[len(data)-maxLogBytes:])
+	}
+	return string(data)
+}
+
+func isTerminalStatus(status string) bool {
+	switch status {
+	case "done", "failed", "skipped", "cached", "stopped":
+		return true
+	}
+	return false
+}
+
+func isTerminalSuccess(status string) bool {
+	s := strings.ToLower(strings.TrimSpace(status))
+	return s == "done" || s == "cached" || s == "skipped"
+}
+
 // Define the parameter type
 type WeatherParams struct {
 	City string `json:"city" jsonschema:"The city name"`
@@ -1079,6 +1375,7 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 	copilotSessionID string,
 	model string,
 	workingDir string,
+	systemMessage *copilot.SystemMessageConfig,
 	providerCfg *copilot.ProviderConfig,
 	permissionHandler copilot.PermissionHandlerFunc,
 ) (*copilot.Session, bool, error) {
@@ -1098,14 +1395,17 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 		},
 	)
 
+	runAnalysisNode := h.buildRunAnalysisNodeTool()
+
 	resumeCfg := &copilot.ResumeSessionConfig{
 		Model:               model,
 		GitHubToken:         h.githubToken,
 		Streaming:           copilot.Bool(true),
+		SystemMessage:       systemMessage,
 		Provider:            providerCfg,
 		WorkingDirectory:    workingDir,
 		OnPermissionRequest: permissionHandler,
-		Tools:               []copilot.Tool{getWeather},
+		Tools:               []copilot.Tool{getWeather, runAnalysisNode},
 	}
 
 	metadata, err := client.GetSessionMetadata(ctx, copilotSessionID)
@@ -1125,10 +1425,11 @@ func (h *LLMHandler) openOrResumeCopilotSession(
 		Model:               model,
 		GitHubToken:         h.githubToken,
 		Streaming:           copilot.Bool(true),
+		SystemMessage:       systemMessage,
 		Provider:            providerCfg,
 		WorkingDirectory:    workingDir,
 		OnPermissionRequest: permissionHandler,
-		Tools:               []copilot.Tool{getWeather},
+		Tools:               []copilot.Tool{getWeather, runAnalysisNode},
 	}
 
 	s, createErr := client.CreateSession(ctx, createCfg)

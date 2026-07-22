@@ -8,6 +8,8 @@ import (
 )
 
 type AnalysisService interface {
+	UpdateAnalysisByID(ctx context.Context, analysisID int64, values map[string]any) error
+	UpdateAnalysisNodeByID(ctx context.Context, analysisNodeID int64, values map[string]any) error
 	GetAnalysisByID(ctx context.Context, analysisID int64) (*types.Analysis, error)
 	GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error)
 	PageAnalysisByProjectID(ctx context.Context, pagination *types.Pagination, projectID int64, query *types.AnalysisQuey) ([]*types.Analysis, int64, error)
@@ -34,6 +36,7 @@ type AnalysisRepository interface {
 	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisNode, error)
 	PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID, scriptID int64) ([]*types.AnalysisNode, int64, error)
 	ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisEdge, error)
+	UpdateAnalysisNodeByID(ctx context.Context, id int64, values map[string]any) error
 	UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error
 	ClaimNextReadyNode(ctx context.Context, analysisID int64, fromStatus string, toStatus string) (*types.AnalysisNode, error)
 	DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) error
