@@ -192,7 +192,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 				"form_json":     formJSONWrap,
 			})
 			f.Close()
-			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %s, debug_path: %s", analysisID, debugPath)
+			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %d, debug_path: %s", analysisID, debugPath)
 		}
 		// 将 parseAnalysisResult 写入json文件
 		resultPath := filepath.Join(debugDir, "result.json")
@@ -202,7 +202,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 			encoder.SetIndent("", "  ")
 			_ = encoder.Encode(parseAnalysisResult)
 			f.Close()
-			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %s, result_path: %s", analysisID, resultPath)
+			logger.Infof(context.Background(), "debug parse analysis result, analysis_id: %d, result_path: %s", analysisID, resultPath)
 		}
 	}
 	if err != nil {
@@ -233,7 +233,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 				"analysis_id":           analysisID,
 			})
 			f.Close()
-			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %s, params_path: %s", analysisID, paramsPath)
+			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %d, params_path: %s", analysisID, paramsPath)
 		}
 
 		resultPath := filepath.Join(dagDebug, "runtime_dag.json")
@@ -243,7 +243,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 			encoder.SetIndent("", "  ")
 			_ = encoder.Encode(runtimeDAG)
 			f.Close()
-			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %s, runtime_dag_path: %s", analysisID, resultPath)
+			logger.Infof(context.Background(), "debug compile runtime dag, analysis_id: %d, runtime_dag_path: %s", analysisID, resultPath)
 		}
 
 	}
@@ -710,6 +710,66 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *AnalysisHandler) RunAnalysisNode(c *gin.Context) {
+	analysisNodeID := strings.TrimSpace(c.Param("analysisNodeId"))
+	analysisNodeIDInt, err := strconv.ParseInt(analysisNodeID, 10, 64)
+	if err != nil {
+		c.Error(errors.NewBadRequestError("invalid analysis node id").WithDetails(err.Error()))
+		return
+	}
+	if err := h.RunAnalysisNodeWithID(c.Request.Context(), analysisNodeIDInt); err != nil {
+		c.Error(errors.NewInternalServerError("failed to run analaysis ndoe!").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"analysis_ndoe_id": analysisNodeID})
+
+}
+
+func (h *AnalysisHandler) RunAnalysisNodeWithID(ctx context.Context, analsyisNodeId int64) error {
+	if analsyisNodeId <= 0 {
+		return errors.NewBadRequestError("invalid analysis node id")
+	}
+
+	node, err := h.analysisRepo.GetAnalysisNodeByID(ctx, analsyisNodeId)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			return errors.NewNotFoundError("analysis node not found")
+		}
+		return errors.NewInternalServerError("failed to query analysis node").WithDetails(err.Error())
+	}
+
+	if err := h.analysisRepo.UpdateAnalysisNodeByAnalysisNodeID(ctx, node.AnalysisNodeID, map[string]any{
+		"status":                   dagruntime.StatusReady,
+		"server_status":            "",
+		"cache_hit":                false,
+		"rerun_reason":             "node rerun requested by user",
+		"error_message":            "",
+		"exit_code":                0,
+		"pid":                      0,
+		"job_id":                   "",
+		"started_at":               nil,
+		"finished_at":              nil,
+		"output_validation_errors": types.JSONSlice{},
+		"updated_at":               time.Now().UTC(),
+	}); err != nil {
+		return errors.NewInternalServerError("failed to reset analysis node status").WithDetails(err.Error())
+	}
+
+	if err := h.containerService.DeleteContainerInstancesByOwnerTypeAndOwnerIDs(
+		ctx,
+		types.ContainerOwnerDagNode,
+		[]int64{analsyisNodeId},
+	); err != nil {
+		return errors.NewInternalServerError("failed to cleanup previous container instances before submit").WithDetails(err.Error())
+	}
+
+	if err := h.nodeOrchestrator.StartAsync(ctx, analsyisNodeId); err != nil {
+		return errors.NewInternalServerError("failed to submit analysis node").WithDetails(err.Error())
+	}
+	return nil
 }
 
 type standaloneNodeArtifacts struct {
