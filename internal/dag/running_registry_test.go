@@ -7,20 +7,20 @@ func TestRunningRegistryRequestStop(t *testing.T) {
 	cancelCalled := false
 
 	registry.Register(&RunningEntry{
-		AnalysisID: "analysis-1",
+		AnalysisID: 001,
 		Status:     "running",
 		Cancel: func() {
 			cancelCalled = true
 		},
 	})
 
-	if ok := registry.RequestStop("analysis-1"); !ok {
+	if ok := registry.RequestStop(001); !ok {
 		t.Fatalf("request stop should succeed for running entry")
 	}
 	if !cancelCalled {
 		t.Fatalf("cancel function should be called when stop is requested")
 	}
-	if !registry.IsStopping("analysis-1") {
+	if !registry.IsStopping(001) {
 		t.Fatalf("entry should be marked as stopping")
 	}
 }
@@ -28,7 +28,7 @@ func TestRunningRegistryRequestStop(t *testing.T) {
 func TestRunningRegistryRequestStopNotFound(t *testing.T) {
 	registry := NewRunningRegistry()
 
-	if ok := registry.RequestStop("missing"); ok {
+	if ok := registry.RequestStop(999); ok {
 		t.Fatalf("request stop should return false when entry does not exist")
 	}
 }

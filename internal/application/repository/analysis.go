@@ -30,10 +30,10 @@ func (r *analysisRepository) CreateAnalysis(ctx context.Context, item *types.Ana
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
-func (r *analysisRepository) TryMarkAnalysisRunning(ctx context.Context, analysisID string, now time.Time, staleBefore time.Time) (bool, error) {
+func (r *analysisRepository) TryMarkAnalysisRunning(ctx context.Context, analysisID int64, now time.Time, staleBefore time.Time) (bool, error) {
 	result := r.db.WithContext(ctx).
 		Model(&types.Analysis{}).
-		Where("analysis_id = ? AND (job_status IS NULL OR job_status <> ? OR updated_at IS NULL OR updated_at < ?)", analysisID, "running", staleBefore).
+		Where("id = ? AND (job_status IS NULL OR job_status <> ? OR updated_at IS NULL OR updated_at < ?)", analysisID, "running", staleBefore).
 		Updates(map[string]any{
 			"job_status": "running",
 			"updated_at": now,
@@ -83,6 +83,85 @@ func (r *analysisRepository) ListAnalysisByJobStatus(ctx context.Context, jobSta
 	return items, nil
 }
 
+func (r *analysisRepository) PageAnalysisByProjectID(ctx context.Context, pagination *types.Pagination, projectID int64, query *types.AnalysisQuey) ([]*types.Analysis, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	items := make([]*types.Analysis, 0)
+	base := r.db.WithContext(ctx).Model(&types.Analysis{}).Where("project_id = ?", projectID)
+
+	applyFilters := func(db *gorm.DB) *gorm.DB {
+		if query == nil {
+			return db
+		}
+
+		if len(query.IDs) > 0 {
+			db = db.Where("id IN ?", query.IDs)
+		}
+
+		if query.ID != nil && *query.ID > 0 {
+			db = db.Where("id = ?", *query.ID)
+		}
+
+		if analysisID := query.GetAnalysisID(); analysisID != "" {
+			db = db.Where("analysis_id = ?", analysisID)
+		}
+
+		if analysisName := query.GetAnalysisName(); analysisName != "" {
+			db = db.Where("analysis_name LIKE ?", "%"+analysisName+"%")
+		}
+
+		if workflowID := query.GetWorkflowID(); workflowID != "" {
+			db = db.Where("relation_id = ?", workflowID)
+		}
+
+		if jobStatus := query.GetJobStatus(); jobStatus != "" {
+			db = db.Where("job_status = ?", jobStatus)
+		}
+
+		if serverStatus := query.GetServerStatus(); serverStatus != "" {
+			db = db.Where("server_status = ?", serverStatus)
+		}
+
+		if query.IsReport != nil {
+			db = db.Where("is_report = ?", *query.IsReport)
+		}
+
+		if query.CacheType != nil {
+			db = db.Where("cache_type = ?", *query.CacheType)
+		}
+
+		return db
+	}
+
+	filtered := applyFilters(base)
+
+	var total int64
+	if err := filtered.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderBy := "updated_at"
+	orderDirection := "DESC"
+	if query != nil {
+		orderBy = query.GetSortColumn()
+		orderDirection = query.GetSortOrder()
+	}
+
+	err := filtered.
+		Order(orderBy + " " + orderDirection).
+		Order("id DESC").
+		Offset(pagination.Offset()).
+		Limit(pagination.Limit()).
+		Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return items, total, nil
+}
+
 func (r *analysisRepository) GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error) {
 	item := &types.AnalysisNode{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Take(item).Error; err != nil {
@@ -99,7 +178,7 @@ func (r *analysisRepository) GetAnalysisNodeByAnalysisNodeID(ctx context.Context
 	return item, nil
 }
 
-func (r *analysisRepository) GetAnalysisNodeByNodeID(ctx context.Context, analysisID string, nodeID string) (*types.AnalysisNode, error) {
+func (r *analysisRepository) GetAnalysisNodeByNodeID(ctx context.Context, analysisID int64, nodeID string) (*types.AnalysisNode, error) {
 	item := &types.AnalysisNode{}
 	if err := r.db.WithContext(ctx).Where("analysis_id = ? AND node_id = ?", analysisID, nodeID).Take(item).Error; err != nil {
 		return nil, err
@@ -107,7 +186,7 @@ func (r *analysisRepository) GetAnalysisNodeByNodeID(ctx context.Context, analys
 	return item, nil
 }
 
-func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error) {
+func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisNode, error) {
 	items := make([]*types.AnalysisNode, 0)
 	err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Find(&items).Error
 	if err != nil {
@@ -143,7 +222,7 @@ func (r *analysisRepository) PageAnalysisNodesByProjectID(ctx context.Context, p
 	return items, total, nil
 }
 
-func (r *analysisRepository) ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisEdge, error) {
+func (r *analysisRepository) ListAnalysisEdgesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisEdge, error) {
 	items := make([]*types.AnalysisEdge, 0)
 	err := r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Find(&items).Error
 	if err != nil {
@@ -159,7 +238,7 @@ func (r *analysisRepository) UpdateAnalysisNodeByAnalysisNodeID(ctx context.Cont
 	return r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("analysis_node_id = ?", analysisNodeID).Updates(values).Error
 }
 
-func (r *analysisRepository) ClaimNextReadyNode(ctx context.Context, analysisID string, fromStatus string, toStatus string) (*types.AnalysisNode, error) {
+func (r *analysisRepository) ClaimNextReadyNode(ctx context.Context, analysisID int64, fromStatus string, toStatus string) (*types.AnalysisNode, error) {
 	var claimed *types.AnalysisNode
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.
@@ -196,7 +275,7 @@ func (r *analysisRepository) ClaimNextReadyNode(ctx context.Context, analysisID 
 	return claimed, nil
 }
 
-func (r *analysisRepository) DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) error {
+func (r *analysisRepository) DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) error {
 	return r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Delete(&types.AnalysisNode{}).Error
 }
 
@@ -207,7 +286,7 @@ func (r *analysisRepository) CreateAnalysisNodes(ctx context.Context, items []*t
 	return r.db.WithContext(ctx).Create(&items).Error
 }
 
-func (r *analysisRepository) DeleteAnalysisEdgesByAnalysisID(ctx context.Context, analysisID string) error {
+func (r *analysisRepository) DeleteAnalysisEdgesByAnalysisID(ctx context.Context, analysisID int64) error {
 	return r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Delete(&types.AnalysisEdge{}).Error
 }
 

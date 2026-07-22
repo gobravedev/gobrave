@@ -7,7 +7,7 @@ import (
 )
 
 type RunningEntry struct {
-	AnalysisID     string
+	AnalysisID     int64
 	TaskName       string
 	StartedAt      time.Time
 	UpdatedAt      time.Time
@@ -22,11 +22,11 @@ type RunningEntry struct {
 
 type RunningRegistry struct {
 	mu      sync.RWMutex
-	running map[string]*RunningEntry
+	running map[int64]*RunningEntry
 }
 
 func NewRunningRegistry() *RunningRegistry {
-	return &RunningRegistry{running: map[string]*RunningEntry{}}
+	return &RunningRegistry{running: map[int64]*RunningEntry{}}
 }
 
 func (r *RunningRegistry) Register(entry *RunningEntry) {
@@ -46,7 +46,7 @@ func (r *RunningRegistry) Register(entry *RunningEntry) {
 	r.mu.Unlock()
 }
 
-func (r *RunningRegistry) MarkFinished(analysisID string, status string) {
+func (r *RunningRegistry) MarkFinished(analysisID int64, status string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	entry := r.running[analysisID]
@@ -58,14 +58,14 @@ func (r *RunningRegistry) MarkFinished(analysisID string, status string) {
 	delete(r.running, analysisID)
 }
 
-func (r *RunningRegistry) IsRunning(analysisID string) bool {
+func (r *RunningRegistry) IsRunning(analysisID int64) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	_, ok := r.running[analysisID]
 	return ok
 }
 
-func (r *RunningRegistry) RequestStop(analysisID string) bool {
+func (r *RunningRegistry) RequestStop(analysisID int64) bool {
 	r.mu.Lock()
 	entry := r.running[analysisID]
 	if entry == nil {
@@ -84,7 +84,7 @@ func (r *RunningRegistry) RequestStop(analysisID string) bool {
 	return true
 }
 
-func (r *RunningRegistry) IsStopping(analysisID string) bool {
+func (r *RunningRegistry) IsStopping(analysisID int64) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	entry := r.running[analysisID]

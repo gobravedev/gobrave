@@ -45,7 +45,7 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 	ctx := context.Background()
 	var projectID int64
 	if runtimeEvent.AnalysisNodeID == 0 {
-		analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
+		analysis, err := n.analysisRepo.GetAnalysisByID(ctx, runtimeEvent.AnalysisID)
 		if err != nil {
 			return
 		}
@@ -57,9 +57,9 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 		}
 		projectID = analsyisNode.ProjectID
 		if projectID == 0 {
-			analysis, err := n.analysisRepo.GetAnalysisByAnalysisID(ctx, runtimeEvent.AnalysisID)
+			analysis, err := n.analysisRepo.GetAnalysisByID(ctx, runtimeEvent.AnalysisID)
 			if err != nil {
-				logger.Warnf(ctx, "[Realtime] skip dag event notify: load analysis failed analysis_id=%s event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.Name, err)
+				logger.Warnf(ctx, "[Realtime] skip dag event notify: load analysis failed analysis_id=%d event=%s err=%v", runtimeEvent.AnalysisID, runtimeEvent.Name, err)
 				return
 			}
 			projectID = analysis.ProjectID
@@ -75,7 +75,7 @@ func (n *DagRuntimeEventNotifier) Handle(evt event.Event) {
 	}
 	userIDs, err := n.listProjectUserIDs(ctx, project.ProjectID)
 	if err != nil {
-		logger.Warnf(ctx, "[Realtime] skip dag event notify: load project users failed project_id=%s event=%s err=%v", projectID, runtimeEvent.Name, err)
+		logger.Warnf(ctx, "[Realtime] skip dag event notify: load project users failed project_id=%d event=%s err=%v", projectID, runtimeEvent.Name, err)
 		return
 	}
 	if len(userIDs) == 0 {
@@ -174,19 +174,20 @@ func (n *DagRuntimeEventNotifier) resolveAnalysisNodeID(ctx context.Context, run
 	if runtimeEvent.AnalysisNodeID > 0 {
 		return strconv.FormatInt(runtimeEvent.AnalysisNodeID, 10), nil
 	}
-	analysisID := runtimeEvent.AnalysisID
-	nodeID := runtimeEvent.NodeID
-	if strings.TrimSpace(analysisID) == "" || strings.TrimSpace(nodeID) == "" {
-		return "", errors.New("analysis_id and node_id are required")
-	}
-	node, err := n.analysisRepo.GetAnalysisNodeByNodeID(ctx, analysisID, nodeID)
-	if err != nil {
-		return "", err
-	}
-	if node == nil || node.ID <= 0 {
-		return "", errors.New("analysis node id not found")
-	}
-	return strconv.FormatInt(node.ID, 10), nil
+	return "", errors.New("AnalysisNodeID is required")
+	// analysisID := runtimeEvent.AnalysisID
+	// nodeID := runtimeEvent.NodeID
+	// if analysisID == 0 || nodeID == "" {
+	// 	return "", errors.New("analysis_id and node_id are required")
+	// }
+	// node, err := n.analysisRepo.GetAnalysisNodeByNodeID(ctx, analysisID, nodeID)
+	// if err != nil {
+	// 	return "", err
+	// }
+	// if node == nil || node.ID <= 0 {
+	// 	return "", errors.New("analysis node id not found")
+	// }
+	// return strconv.FormatInt(node.ID, 10), nil
 }
 
 func (n *DagRuntimeEventNotifier) resolveNodeRealtimeStatusAndMethod(runtimeEvent dag.RuntimeEvent) (string, string) {

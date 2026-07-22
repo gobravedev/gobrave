@@ -104,9 +104,8 @@ func NewDynamicDagOrchestratorV2(
 // 3) Compile templates from current JSON dag_definition.
 // 4) Register running state + heartbeat renewer.
 // 5) Spawn run loop goroutine that performs dynamic materialization and dispatch.
-func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
-	analysisID = strings.TrimSpace(analysisID)
-	if analysisID == "" {
+func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID int64, analysisID int64, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+	if analysisID <= 0 {
 		return fmt.Errorf("analysis_id is required")
 	}
 	if o.registry.IsRunning(analysisID) {
@@ -127,7 +126,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 	o.publishDagRuntimeEvent(dagruntime.EventDagStarted, analysisID, nil)
 
 	if err := o.prepareAnalysisForCacheRerun(ctx, analysisID); err != nil {
-		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+		_ = o.repo.UpdateAnalysisByID(context.Background(), analysisID, map[string]any{
 			"job_status": "failed",
 			"updated_at": time.Now().UTC(),
 		})
@@ -138,7 +137,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 	compiled, err := compiler.BuildRuntimeTasks(analysisID, dynamicCloneAnyMap(parseAnalysisResult), dynamicCloneAnyMap(dagDefinition))
 	if err != nil {
 		// Compile failure is terminal for current submission; mark analysis failed.
-		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+		_ = o.repo.UpdateAnalysisByID(context.Background(), analysisID, map[string]any{
 			"job_status": "failed",
 			"updated_at": time.Now().UTC(),
 		})
@@ -152,7 +151,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 	runCtx, runCancel := context.WithCancel(context.Background())
 	o.registry.Register(&dagruntime.RunningEntry{
 		AnalysisID:     analysisID,
-		TaskName:       "dag-v2-run-" + analysisID,
+		TaskName:       "dag-v2-run-" + fmt.Sprint(analysisID),
 		MaxConcurrency: 1,
 		QueueSize:      64,
 		PollIntervalMs: 500,
@@ -173,7 +172,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 		if err := o.runDynamicLoop(runCtx, analysisID, nodeTemplates, edgeRows); err != nil {
 			finalStatus = "failed"
 			finalErr = err
-			logger.Warnf(context.Background(), "[DynamicDagOrchestratorV2] run failed, analysis_id=%s err=%v", analysisID, err)
+			logger.Warnf(context.Background(), "[DynamicDagOrchestratorV2] run failed, analysis_id=%d err=%v", analysisID, err)
 		}
 		if o.registry.IsStopping(analysisID) {
 			// External stop request wins over loop result.
@@ -192,7 +191,7 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 			}
 			o.publishDagRuntimeEvent(dagruntime.EventDagFailed, analysisID, payload)
 		}
-		_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+		_ = o.repo.UpdateAnalysisByID(context.Background(), analysisID, map[string]any{
 			"job_status": finalStatus,
 			"updated_at": time.Now().UTC(),
 		})
@@ -203,8 +202,8 @@ func (o *dynamicDagOrchestratorV2) StartAsyncV2(ctx context.Context, projectID i
 
 // prepareAnalysisForCacheRerun resets persisted runtime graph for reruns when
 // cache_type requires full rerun.
-func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Context, analysisID string) error {
-	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Context, analysisID int64) error {
+	analysis, err := o.repo.GetAnalysisByID(ctx, analysisID)
 	if err != nil {
 		return err
 	}
@@ -224,13 +223,13 @@ func (o *dynamicDagOrchestratorV2) prepareAnalysisForCacheRerun(ctx context.Cont
 }
 
 type dynamicRuntimeEventHandler struct {
-	analysisID string
+	analysisID int64
 	events     chan<- dagruntime.RuntimeEvent
 }
 
 func (h *dynamicRuntimeEventHandler) Handle(evt event.Event) {
 	runtimeEvt, ok := evt.(dagruntime.RuntimeEvent)
-	if !ok || strings.TrimSpace(runtimeEvt.AnalysisID) != h.analysisID {
+	if !ok || runtimeEvt.AnalysisID != h.analysisID {
 		return
 	}
 	select {
@@ -347,8 +346,8 @@ func (m *dynamicDependencyManager) IsBlocked(nodeID string) bool {
 // 1) NodeCompleted/NodeFailed events update dependency state.
 // 2) Only affected downstream templates are re-evaluated/materialized.
 // 3) Ready nodes are claimed and pushed into ReadyQueue for worker dispatch.
-func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisID string, nodeTemplates []map[string]any, edgeRows []map[string]any) error {
-	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisID int64, nodeTemplates []map[string]any, edgeRows []map[string]any) error {
+	analysis, err := o.repo.GetAnalysisByID(ctx, analysisID)
 	if err != nil {
 		return err
 	}
@@ -504,7 +503,7 @@ func (o *dynamicDagOrchestratorV2) runDynamicLoop(ctx context.Context, analysisI
 
 func (o *dynamicDagOrchestratorV2) checkDynamicCompletion(
 	ctx context.Context,
-	analysisID string,
+	analysisID int64,
 	templateCount int,
 	runtime *dagruntime.RuntimeEngine,
 	pool *dagruntime.WorkerPool,
@@ -527,7 +526,7 @@ func (o *dynamicDagOrchestratorV2) checkDynamicCompletion(
 	return false, nil
 }
 
-func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *dagruntime.RuntimeEngine, analysisID string, readyQueue chan<- int64) error {
+func (o *dynamicDagOrchestratorV2) pumpReadyQueue(ctx context.Context, runtime *dagruntime.RuntimeEngine, analysisID int64, readyQueue chan<- int64) error {
 	for len(readyQueue) < cap(readyQueue) {
 		node, err := runtime.ClaimNextReadyNode(ctx, analysisID)
 		if err != nil {
@@ -567,7 +566,7 @@ func (o *dynamicDagOrchestratorV2) reconcileDynamicCandidates(
 		return nil
 	}
 
-	existingNodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID)
+	existingNodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysis.ID)
 	if err != nil {
 		return err
 	}
@@ -861,7 +860,7 @@ func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
 	return &types.AnalysisNode{
 		ID:                     utils.GenerateID(),
 		AnalysisNodeID:         analysisNodeID,
-		AnalysisID:             analysis.AnalysisID,
+		AnalysisID:             analysis.ID,
 		NodeID:                 nodeID,
 		NodeName:               dynamicToString(row["node_name"]),
 		SampleID:               dynamicToString(row["sample_id"]),
@@ -894,7 +893,7 @@ func (o *dynamicDagOrchestratorV2) buildDynamicAnalysisNode(
 
 // allCandidateNodesCreated compares persisted nodes with compiled template count.
 // It is used as one half of the loop completion gate.
-func (o *dynamicDagOrchestratorV2) allCandidateNodesCreated(ctx context.Context, analysisID string, total int) (bool, error) {
+func (o *dynamicDagOrchestratorV2) allCandidateNodesCreated(ctx context.Context, analysisID int64, total int) (bool, error) {
 	nodes, err := o.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 	if err != nil {
 		return false, err
@@ -903,8 +902,8 @@ func (o *dynamicDagOrchestratorV2) allCandidateNodesCreated(ctx context.Context,
 }
 
 // shouldStopByJobStatus checks persistent stop flags set by external control APIs.
-func (o *dynamicDagOrchestratorV2) shouldStopByJobStatus(ctx context.Context, analysisID string) (bool, error) {
-	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+func (o *dynamicDagOrchestratorV2) shouldStopByJobStatus(ctx context.Context, analysisID int64) (bool, error) {
+	analysis, err := o.repo.GetAnalysisByID(ctx, analysisID)
 	if err != nil {
 		return false, err
 	}
@@ -914,7 +913,7 @@ func (o *dynamicDagOrchestratorV2) shouldStopByJobStatus(ctx context.Context, an
 
 // renewRunningLease periodically updates analysis.updated_at so stale lock recovery
 // can distinguish live scheduler from abandoned runs.
-func (o *dynamicDagOrchestratorV2) renewRunningLease(analysisID string, stop <-chan struct{}) {
+func (o *dynamicDagOrchestratorV2) renewRunningLease(analysisID int64, stop <-chan struct{}) {
 	ticker := time.NewTicker(dynamicV2Heartbeat)
 	defer ticker.Stop()
 	for {
@@ -922,14 +921,14 @@ func (o *dynamicDagOrchestratorV2) renewRunningLease(analysisID string, stop <-c
 		case <-stop:
 			return
 		case <-ticker.C:
-			_ = o.repo.UpdateAnalysisByAnalysisID(context.Background(), analysisID, map[string]any{
+			_ = o.repo.UpdateAnalysisByID(context.Background(), analysisID, map[string]any{
 				"updated_at": time.Now().UTC(),
 			})
 		}
 	}
 }
 
-func (o *dynamicDagOrchestratorV2) publishDagRuntimeEvent(name, analysisID string, payload map[string]any) {
+func (o *dynamicDagOrchestratorV2) publishDagRuntimeEvent(name string, analysisID int64, payload map[string]any) {
 	if o.bus == nil {
 		return
 	}
@@ -945,7 +944,7 @@ func (o *dynamicDagOrchestratorV2) publishDagRuntimeEvent(name, analysisID strin
 }
 
 // buildAnalysisEdges converts compiled edge rows into persistence entities.
-func buildAnalysisEdges(analysisID string, edgeRows []map[string]any) []*types.AnalysisEdge {
+func buildAnalysisEdges(analysisID int64, edgeRows []map[string]any) []*types.AnalysisEdge {
 	out := make([]*types.AnalysisEdge, 0, len(edgeRows))
 	for _, row := range edgeRows {
 		out = append(out, &types.AnalysisEdge{

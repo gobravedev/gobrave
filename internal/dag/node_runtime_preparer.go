@@ -81,7 +81,7 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 	if node == nil {
 		return fmt.Errorf("analysis node is nil")
 	}
-	if strings.TrimSpace(node.AnalysisID) == "" {
+	if node.AnalysisID == 0 {
 		return fmt.Errorf("analysis_id is required")
 	}
 	if strings.TrimSpace(node.AnalysisNodeID) == "" {
@@ -91,7 +91,7 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 		return fmt.Errorf("script_id is required")
 	}
 
-	analysis, err := p.analysisRepo.GetAnalysisByAnalysisID(ctx, node.AnalysisID)
+	analysis, err := p.analysisRepo.GetAnalysisByID(ctx, node.AnalysisID)
 	if err != nil {
 		return fmt.Errorf("load analysis failed: %w", err)
 	}

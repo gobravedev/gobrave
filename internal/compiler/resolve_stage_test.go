@@ -3,7 +3,7 @@ package compiler
 import "testing"
 
 func TestBuildRuntimeTasks_ScatterEachMapsPluralFieldToSingularInput(t *testing.T) {
-	runtimeDAG, err := BuildRuntimeTasks("analysis-1", map[string]any{
+	runtimeDAG, err := BuildRuntimeTasks(1, map[string]any{
 		"seuratObjects": []any{
 			map[string]any{"file_name": "sample-1.rds", "sample_id": "s1"},
 			map[string]any{"file_name": "sample-2.rds", "sample_id": "s2"},
@@ -55,12 +55,12 @@ func TestBuildRuntimeTasks_ScatterEachMapsPluralFieldToSingularInput(t *testing.
 
 func TestBuildRuntimeTasks_DownstreamSampleNodeKeepsGlobalMetadata(t *testing.T) {
 	metadata := map[string]any{
-		"path":      "/tmp/metadata.tsv",
+		"path":       "/tmp/metadata.tsv",
 		"sample_col": "sample",
 		"group_col":  "group",
 	}
 
-	runtimeDAG, err := BuildRuntimeTasks("analysis-1", map[string]any{
+	runtimeDAG, err := BuildRuntimeTasks(1, map[string]any{
 		"abundances": []any{
 			map[string]any{
 				"analysis_result_id": "a1",

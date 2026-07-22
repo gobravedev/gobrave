@@ -38,7 +38,7 @@ type NodeRuntimeState struct {
 }
 
 type CompileContext struct {
-	AnalysisID string
+	AnalysisID int64
 	Params     map[string]any
 	Dag        map[string]any
 	Abort      bool
@@ -62,7 +62,7 @@ type CompileContext struct {
 	AnalysisEdges []map[string]any
 }
 
-func NewCompileContext(analysisID string, params map[string]any, dagDefinition map[string]any) *CompileContext {
+func NewCompileContext(analysisID int64, params map[string]any, dagDefinition map[string]any) *CompileContext {
 	if params == nil {
 		params = map[string]any{}
 	}

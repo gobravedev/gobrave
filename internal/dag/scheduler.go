@@ -16,7 +16,7 @@ type SchedulerConfig struct {
 }
 
 type SchedulerResult struct {
-	AnalysisID          string           `json:"analysis_id"`
+	AnalysisID          int64            `json:"analysis_id"`
 	SubmittedCount      int              `json:"submitted_count"`
 	FailedToSubmitCount int              `json:"failed_to_submit_count"`
 	TimedOut            bool             `json:"timed_out"`
@@ -24,14 +24,14 @@ type SchedulerResult struct {
 }
 
 type DagScheduler struct {
-	analysisID string
+	analysisID int64
 	runtime    *RuntimeEngine
 	dispatcher *NodeDispatcher
 	bus        event.Bus
 	cfg        SchedulerConfig
 }
 
-func NewDagScheduler(analysisID string, runtime *RuntimeEngine, dispatcher *NodeDispatcher, bus event.Bus, cfg SchedulerConfig) *DagScheduler {
+func NewDagScheduler(analysisID int64, runtime *RuntimeEngine, dispatcher *NodeDispatcher, bus event.Bus, cfg SchedulerConfig) *DagScheduler {
 	if cfg.MaxSteps <= 0 {
 		cfg.MaxSteps = 10000
 	}

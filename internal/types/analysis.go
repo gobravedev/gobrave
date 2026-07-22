@@ -247,15 +247,17 @@ func (AnalysisNode) TableName() string {
 
 // AnalysisEdge maps to Python brave's analysis_edges table.
 type AnalysisEdge struct {
-	ID             uint      `json:"id" gorm:"primaryKey;autoIncrement"`
-	AnalysisEdgeID string    `json:"analysis_edge_id" gorm:"column:analysis_edge_id;type:varchar(255)"`
-	AnalysisID     string    `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_edges_analysis_id"`
-	SourceNode     string    `json:"source_node" gorm:"column:source_node;type:varchar(255)"`
-	TargetNode     string    `json:"target_node" gorm:"column:target_node;type:varchar(255)"`
-	SourceHandle   string    `json:"source_handle" gorm:"column:source_handle;type:varchar(255)"`
-	TargetHandle   string    `json:"target_handle" gorm:"column:target_handle;type:varchar(255)"`
-	CreatedAt      time.Time `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"column:updated_at"`
+	ID             uint   `json:"id" gorm:"primaryKey;autoIncrement"`
+	AnalysisEdgeID string `json:"analysis_edge_id" gorm:"column:analysis_edge_id;type:varchar(255)"`
+	// AnalysisID     string `json:"analysis_id" gorm:"column:analysis_id;type:varchar(255);index:idx_analysis_edges_analysis_id"`
+	AnalysisID int64 `json:"analysis_id,string" gorm:"column:analysis_id;type:bigint"`
+
+	SourceNode   string    `json:"source_node" gorm:"column:source_node;type:varchar(255)"`
+	TargetNode   string    `json:"target_node" gorm:"column:target_node;type:varchar(255)"`
+	SourceHandle string    `json:"source_handle" gorm:"column:source_handle;type:varchar(255)"`
+	TargetHandle string    `json:"target_handle" gorm:"column:target_handle;type:varchar(255)"`
+	CreatedAt    time.Time `json:"created_at" gorm:"column:created_at"`
+	UpdatedAt    time.Time `json:"updated_at" gorm:"column:updated_at"`
 }
 
 func (AnalysisEdge) TableName() string {

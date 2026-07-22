@@ -62,13 +62,13 @@ func NewDataflowDagOrchestratorV3(
 }
 
 type dataflowRuntimeEventHandler struct {
-	analysisID string
+	analysisID int64
 	events     chan<- dagruntime.RuntimeEvent
 }
 
 func (h *dataflowRuntimeEventHandler) Handle(evt event.Event) {
 	runtimeEvt, ok := evt.(dagruntime.RuntimeEvent)
-	if !ok || strings.TrimSpace(runtimeEvt.AnalysisID) != h.analysisID {
+	if !ok || runtimeEvt.AnalysisID != h.analysisID {
 		return
 	}
 	select {
@@ -80,7 +80,7 @@ func (h *dataflowRuntimeEventHandler) Handle(evt event.Event) {
 // DataflowGraphSpec is a V3 planning view converted from dag_definition.
 // It is intentionally lightweight for the first framework milestone.
 type DataflowGraphSpec struct {
-	AnalysisID string
+	AnalysisID int64
 	Processes  []DataflowProcessSpec
 	Channels   []DataflowChannelSpec
 }
@@ -116,7 +116,7 @@ type DataflowProcessSpec struct {
 // It is assembled at the runtime submit boundary and will be consumed by
 // a persistent runtime implementation in the next step.
 type DataflowAnalysisNodePersistParams struct {
-	AnalysisID      string
+	AnalysisID      int64
 	NodeID          string
 	InputHash       string
 	NodeName        string
@@ -245,7 +245,7 @@ type DataflowProcessRuntime interface {
 }
 
 type DataflowProcessRunRequest struct {
-	AnalysisID string
+	AnalysisID int64
 	NodeID     string
 	Inputs     map[string]any
 	Reason     string
@@ -371,10 +371,7 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 	if r.repo == nil || payload == nil {
 		return nil, false, nil
 	}
-	payload.AnalysisID = strings.TrimSpace(payload.AnalysisID)
-	payload.NodeID = strings.TrimSpace(payload.NodeID)
-	payload.InputHash = strings.TrimSpace(payload.InputHash)
-	if payload.AnalysisID == "" || payload.NodeID == "" {
+	if payload.AnalysisID <= 0 || strings.TrimSpace(payload.NodeID) == "" {
 		return nil, false, nil
 	}
 	if payload.InputHash == "" {
@@ -388,7 +385,7 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 	existing := findPersistedNodeInstance(existingNodes, payload.NodeID, payload.InputHash)
 	if existing != nil {
 		logger.Infof(ctx,
-			"[DataflowDagOrchestratorV3] skip persist duplicated analysis node instance, analysis_id=%s node_id=%s input_hash=%s",
+			"[DataflowDagOrchestratorV3] skip persist duplicated analysis node instance, analysis_id=%d node_id=%s input_hash=%s",
 			payload.AnalysisID,
 			payload.NodeID,
 			payload.InputHash,
@@ -407,7 +404,7 @@ func (r *persistentDataflowRuntime) persistAnalysisNode(ctx context.Context, pay
 	}
 
 	logger.Infof(ctx,
-		"[DataflowDagOrchestratorV3] persisted analysis node, analysis_id=%s node_id=%s analysis_node_id=%s",
+		"[DataflowDagOrchestratorV3] persisted analysis node, analysis_id=%d node_id=%s analysis_node_id=%s",
 		item.AnalysisID,
 		item.NodeID,
 		item.AnalysisNodeID,
@@ -422,7 +419,7 @@ func (r *persistentDataflowRuntime) populateNodePathDefaults(ctx context.Context
 
 	baseWorkspace := strings.TrimSpace(node.WorkspaceDir)
 	if baseWorkspace == "" {
-		analysisOutputDir := r.lookupAnalysisOutputDir(ctx, strings.TrimSpace(node.AnalysisID))
+		analysisOutputDir := r.lookupAnalysisOutputDir(ctx, node.AnalysisID)
 		if analysisOutputDir != "" {
 			baseWorkspace = filepath.Join(analysisOutputDir, strings.TrimSpace(node.AnalysisNodeID))
 		}
@@ -445,14 +442,14 @@ func (r *persistentDataflowRuntime) populateNodePathDefaults(ctx context.Context
 	}
 }
 
-func (r *persistentDataflowRuntime) lookupAnalysisOutputDir(ctx context.Context, analysisID string) string {
-	if r == nil || r.repo == nil || analysisID == "" {
+func (r *persistentDataflowRuntime) lookupAnalysisOutputDir(ctx context.Context, analysisID int64) string {
+	if r == nil || r.repo == nil || analysisID <= 0 {
 		return ""
 	}
-	analysis, err := r.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	analysis, err := r.repo.GetAnalysisByID(ctx, analysisID)
 	if err != nil {
 		logger.Warnf(ctx,
-			"[DataflowDagOrchestratorV3] lookup analysis output_dir failed, analysis_id=%s err=%v",
+			"[DataflowDagOrchestratorV3] lookup analysis output_dir failed, analysis_id=%d err=%v",
 			analysisID,
 			err,
 		)
@@ -555,7 +552,7 @@ func buildAnalysisNodeFromPersistPayload(script *types.Script, payload *Dataflow
 	return &types.AnalysisNode{
 		ID:                     utils.GenerateID(),
 		AnalysisNodeID:         "node-" + uuid.NewString(),
-		AnalysisID:             strings.TrimSpace(payload.AnalysisID),
+		AnalysisID:             payload.AnalysisID,
 		NodeID:                 strings.TrimSpace(payload.NodeID),
 		NodeName:               strings.TrimSpace(payload.NodeName),
 		SampleID:               strings.TrimSpace(payload.SampleID),
@@ -586,7 +583,7 @@ func buildAnalysisNodeFromPersistPayload(script *types.Script, payload *Dataflow
 }
 
 type dataflowKernel struct {
-	analysisID          string
+	analysisID          int64
 	repo                interfaces.AnalysisRepository
 	channels            map[string]*DataflowChannel
 	channelSpecByID     map[string]DataflowChannelSpec
@@ -892,8 +889,8 @@ func (k *dataflowKernel) buildAnalysisNodePersistParams(req DataflowProcessRunRe
 		return nil, false
 	}
 
-	analysisID := strings.TrimSpace(req.AnalysisID)
-	if analysisID == "" {
+	analysisID := req.AnalysisID
+	if analysisID <= 0 {
 		analysisID = k.analysisID
 	}
 
@@ -974,7 +971,7 @@ func (k *dataflowKernel) onNodeCompleted(ctx context.Context, analysisNodeID int
 	if err != nil {
 		return err
 	}
-	if node == nil || strings.TrimSpace(node.AnalysisID) != k.analysisID {
+	if node == nil || node.AnalysisID != k.analysisID {
 		return nil
 	}
 	nodeID := strings.TrimSpace(node.NodeID)
@@ -1006,7 +1003,7 @@ func (k *dataflowKernel) onNodeFailed(ctx context.Context, analysisNodeID int64)
 	if err != nil {
 		return err
 	}
-	if node == nil || strings.TrimSpace(node.AnalysisID) != k.analysisID {
+	if node == nil || node.AnalysisID != k.analysisID {
 		return nil
 	}
 	nodeID := strings.TrimSpace(node.NodeID)
@@ -1173,9 +1170,8 @@ func (k *dataflowKernel) submitSourceProcessFallback(ctx context.Context, proc D
 	})
 }
 
-func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
-	analysisID = strings.TrimSpace(analysisID)
-	if analysisID == "" {
+func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, projectID int64, analysisID int64, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+	if analysisID <= 0 {
 		return fmt.Errorf("analysis_id is required")
 	}
 
@@ -1183,14 +1179,14 @@ func (o *dataflowDagOrchestratorV3) StartAsyncV3(ctx context.Context, projectID 
 
 	go func() {
 		if err := o.runStartAsyncV3(bgCtx, projectID, analysisID, parseAnalysisResult, dagDefinition); err != nil {
-			logger.Errorf(bgCtx, "[DataflowDagOrchestratorV3] async run failed, analysis_id=%s err=%v", analysisID, err)
+			logger.Errorf(bgCtx, "[DataflowDagOrchestratorV3] async run failed, analysis_id=%d err=%v", analysisID, err)
 		}
 	}()
 
 	return nil
 }
 
-func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
+func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, projectID int64, analysisID int64, parseAnalysisResult map[string]any, dagDefinition map[string]any) error {
 	if err := o.prepareAnalysisByCacheTypeV3(ctx, analysisID); err != nil {
 		return fmt.Errorf("prepare analysis by cache_type failed: %w", err)
 	}
@@ -1313,13 +1309,12 @@ func (o *dataflowDagOrchestratorV3) runStartAsyncV3(ctx context.Context, project
 // Current V3 scope:
 // - CacheTypeRerunAll: clear persisted runtime graph and rebuild from scratch.
 // - CacheTypeReuseExistingNode: keep persisted runtime graph for reuse.
-func (o *dataflowDagOrchestratorV3) prepareAnalysisByCacheTypeV3(ctx context.Context, analysisID string) error {
-	analysisID = strings.TrimSpace(analysisID)
-	if analysisID == "" {
+func (o *dataflowDagOrchestratorV3) prepareAnalysisByCacheTypeV3(ctx context.Context, analysisID int64) error {
+	if analysisID <= 0 {
 		return nil
 	}
 
-	analysis, err := o.repo.GetAnalysisByAnalysisID(ctx, analysisID)
+	analysis, err := o.repo.GetAnalysisByID(ctx, analysisID)
 	if err != nil {
 		return err
 	}
@@ -1341,12 +1336,12 @@ func (o *dataflowDagOrchestratorV3) prepareAnalysisByCacheTypeV3(ctx context.Con
 			return err
 		}
 		logger.Infof(ctx,
-			"[DataflowDagOrchestratorV3] cache_type rerun_all, cleared persisted graph, analysis_id=%s",
+			"[DataflowDagOrchestratorV3] cache_type rerun_all, cleared persisted graph, analysis_id=%d",
 			analysisID,
 		)
 	case types.CacheTypeReuseExistingNode:
 		logger.Infof(ctx,
-			"[DataflowDagOrchestratorV3] cache_type reuse_existing_node, keep persisted graph, analysis_id=%s",
+			"[DataflowDagOrchestratorV3] cache_type reuse_existing_node, keep persisted graph, analysis_id=%d",
 			analysisID,
 		)
 	default:
@@ -1356,7 +1351,7 @@ func (o *dataflowDagOrchestratorV3) prepareAnalysisByCacheTypeV3(ctx context.Con
 	return nil
 }
 
-func (o *dataflowDagOrchestratorV3) buildGraphSpec(analysisID string, dagDefinition map[string]any) DataflowGraphSpec {
+func (o *dataflowDagOrchestratorV3) buildGraphSpec(analysisID int64, dagDefinition map[string]any) DataflowGraphSpec {
 	spec := DataflowGraphSpec{AnalysisID: analysisID}
 
 	edges := dynamicToMapSlice(dagDefinition["edges"])

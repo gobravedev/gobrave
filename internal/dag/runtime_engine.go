@@ -14,7 +14,7 @@ import (
 )
 
 type RuntimeSnapshot struct {
-	AnalysisID        string         `json:"analysis_id"`
+	AnalysisID        int64          `json:"analysis_id,string"`
 	TotalNodes        int            `json:"total_nodes"`
 	StatusCount       map[string]int `json:"status_count"`
 	CompletedCount    int            `json:"completed_count"`
@@ -32,7 +32,7 @@ func NewRuntimeEngine(repo interfaces.AnalysisRepository) *RuntimeEngine {
 	return &RuntimeEngine{repo: repo}
 }
 
-func (e *RuntimeEngine) GetSnapshot(ctx context.Context, analysisID string) (*RuntimeSnapshot, error) {
+func (e *RuntimeEngine) GetSnapshot(ctx context.Context, analysisID int64) (*RuntimeSnapshot, error) {
 	nodes, err := e.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (e *RuntimeEngine) GetSnapshot(ctx context.Context, analysisID string) (*Ru
 	}, nil
 }
 
-func (e *RuntimeEngine) RefreshReadyStatus(ctx context.Context, analysisID string) error {
+func (e *RuntimeEngine) RefreshReadyStatus(ctx context.Context, analysisID int64) error {
 	nodes, err := e.repo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (e *RuntimeEngine) RefreshReadyStatus(ctx context.Context, analysisID strin
 	return nil
 }
 
-func (e *RuntimeEngine) ClaimNextReadyNode(ctx context.Context, analysisID string) (*types.AnalysisNode, error) {
+func (e *RuntimeEngine) ClaimNextReadyNode(ctx context.Context, analysisID int64) (*types.AnalysisNode, error) {
 	node, err := e.repo.ClaimNextReadyNode(ctx, analysisID, StatusReady, StatusSubmitted)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -228,7 +228,7 @@ func (e *RuntimeEngine) CompleteNode(
 	return e.repo.GetAnalysisNodeByID(ctx, analysisNodeID)
 }
 
-func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID string, sourceNodeID string, outputs map[string]any) error {
+func (e *RuntimeEngine) propagateOutputs(ctx context.Context, analysisID int64, sourceNodeID string, outputs map[string]any) error {
 	if len(outputs) == 0 {
 		return nil
 	}

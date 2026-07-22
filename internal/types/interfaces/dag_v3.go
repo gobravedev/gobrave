@@ -9,5 +9,5 @@ import "context"
 // - Process instances are materialized when channel inputs are available.
 // - Existing persistence schema and executors are reused.
 type DataflowDagOrchestrator interface {
-	StartAsyncV3(ctx context.Context, projectID int64, analysisID string, parseAnalysisResult map[string]any, dagDefinition map[string]any) error
+	StartAsyncV3(ctx context.Context, projectID int64, analysisID int64, parseAnalysisResult map[string]any, dagDefinition map[string]any) error
 }

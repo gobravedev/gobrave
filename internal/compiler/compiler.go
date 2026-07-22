@@ -20,7 +20,7 @@ func NewRuntimeCompiler() *RuntimeCompiler {
 	}
 }
 
-func (c *RuntimeCompiler) Compile(analysisID string, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
+func (c *RuntimeCompiler) Compile(analysisID int64, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
 	ctx := NewCompileContext(analysisID, params, dagDefinition)
 	for _, stage := range c.stages {
 		if ctx.Abort {
@@ -36,10 +36,10 @@ func (c *RuntimeCompiler) Compile(analysisID string, params map[string]any, dagD
 	}, nil
 }
 
-func BuildRuntimeTasks(analysisID string, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
+func BuildRuntimeTasks(analysisID int64, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
 	return NewRuntimeCompiler().Compile(analysisID, params, dagDefinition)
 }
 
-func build_runtime_tasks(analysisID string, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
-	return BuildRuntimeTasks(analysisID, params, dagDefinition)
-}
+// func build_runtime_tasks(analysisID string, params map[string]any, dagDefinition map[string]any) (map[string]any, error) {
+// 	return BuildRuntimeTasks(analysisID, params, dagDefinition)
+// }

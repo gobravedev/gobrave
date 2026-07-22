@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	stderrs "errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +16,6 @@ import (
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type analysisService struct {
@@ -34,6 +32,18 @@ func (s *analysisService) GetAnalysisByAnalysisID(ctx context.Context, analysisI
 	return s.analysisRepo.GetAnalysisByAnalysisID(ctx, analysisID)
 }
 
+func (s *analysisService) PageAnalysisByProjectID(ctx context.Context, pagination *types.Pagination, projectID int64, query *types.AnalysisQuey) ([]*types.Analysis, int64, error) {
+	if pagination == nil {
+		pagination = &types.Pagination{}
+	}
+
+	return s.analysisRepo.PageAnalysisByProjectID(ctx, pagination, projectID, query)
+}
+
+func (s *analysisService) GetAnalysisByID(ctx context.Context, analysisID int64) (*types.Analysis, error) {
+	return s.analysisRepo.GetAnalysisByID(ctx, analysisID)
+}
+
 func (s *analysisService) GetAnalysisNodeByID(ctx context.Context, id int64) (*types.AnalysisNode, error) {
 	return s.analysisRepo.GetAnalysisNodeByID(ctx, id)
 }
@@ -42,7 +52,7 @@ func (s *analysisService) GetAnalysisNodeByAnalysisNodeID(ctx context.Context, a
 	return s.analysisRepo.GetAnalysisNodeByAnalysisNodeID(ctx, analysisNodeID)
 }
 
-func (s *analysisService) ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID string) ([]*types.AnalysisNode, error) {
+func (s *analysisService) ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisNode, error) {
 	return s.analysisRepo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 }
 
@@ -113,11 +123,12 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	saveErr := s.analysisRepo.WithTransaction(ctx, func(tx interfaces.AnalysisRepository) error {
 		var existing *types.Analysis
 		if analysisID != 0 {
-			item, err := tx.GetAnalysisByID(ctx, analysisID)
-			if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			if err == nil {
+			item, _ := tx.GetAnalysisByID(ctx, analysisID)
+			// if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
+			// 	return err
+			// }
+
+			if item != nil {
 				existing = item
 			}
 		}
@@ -192,6 +203,7 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 			}
 		} else {
 			newAnalysis := &types.Analysis{
+				ID:         analysisID,
 				ProjectID:  input.Project.ID,
 				AnalysisID: uuid.NewString(),
 				WorkflowID: workflowID,
@@ -244,7 +256,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 	edgeRows := toMapSlice(dagRuntime["analysis_edges"])
 	useCache := analysis != nil && analysis.CacheType != types.CacheTypeRerunAll
 
-	existingNodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID)
+	existingNodes, err := repo.ListAnalysisNodesByAnalysisID(ctx, analysis.ID)
 	if err != nil {
 		return err
 	}
@@ -325,7 +337,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 		node := &types.AnalysisNode{
 			ID:                     id,
 			AnalysisNodeID:         analysisNodeID,
-			AnalysisID:             analysis.AnalysisID,
+			AnalysisID:             analysis.ID,
 			NodeID:                 nodeID,
 			NodeName:               toString(row["node_name"]),
 			SampleID:               toString(row["sample_id"]),
@@ -361,7 +373,7 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 	for _, row := range edgeRows {
 		edge := &types.AnalysisEdge{
 			AnalysisEdgeID: fallbackString(toString(row["analysis_edge_id"]), uuid.NewString()),
-			AnalysisID:     analysis.AnalysisID,
+			AnalysisID:     analysis.ID,
 			SourceNode:     toString(row["source_node"]),
 			TargetNode:     toString(row["target_node"]),
 			SourceHandle:   toString(row["source_handle"]),
@@ -370,13 +382,13 @@ func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces
 		edges = append(edges, edge)
 	}
 
-	if err := repo.DeleteAnalysisNodesByAnalysisID(ctx, analysis.AnalysisID); err != nil {
+	if err := repo.DeleteAnalysisNodesByAnalysisID(ctx, analysis.ID); err != nil {
 		return err
 	}
 	if err := repo.CreateAnalysisNodes(ctx, nodes); err != nil {
 		return err
 	}
-	if err := repo.DeleteAnalysisEdgesByAnalysisID(ctx, analysis.AnalysisID); err != nil {
+	if err := repo.DeleteAnalysisEdgesByAnalysisID(ctx, analysis.ID); err != nil {
 		return err
 	}
 	if err := repo.CreateAnalysisEdges(ctx, edges); err != nil {

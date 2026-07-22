@@ -559,7 +559,7 @@ func (h *ContainerHandler) CreateAppSessionByAnalysisNode(c *gin.Context) {
 
 	projectID := analysisNode.ProjectID
 	if projectID == 0 {
-		analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+		analysisItem, err := h.analysisService.GetAnalysisByID(c.Request.Context(), analysisNode.AnalysisID)
 		if err != nil {
 			handleDataError(c, err, "failed to get analysis")
 			return

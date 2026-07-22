@@ -59,7 +59,7 @@ type EditNodeParamsResponse struct {
 	AnalysisName   string                 `json:"analysis_name"`
 	IsReport       bool                   `json:"is_report"`
 	CacheType      int                    `json:"cache_type"`
-	AnalysisID     string                 `json:"analysis_id"`
+	AnalysisID     int64                  `json:"analysis_id,string"`
 	AnalysisNodeID string                 `json:"analysis_node_id"`
 	Status         string                 `json:"status"`
 	ServerStatus   string                 `json:"server_status"`
@@ -108,6 +108,11 @@ type analysisNodeByProjectPageRequest struct {
 	ScriptID int64 `json:"script_id,string"`
 }
 
+type analysisByProjectPageRequest struct {
+	types.Pagination
+	Query types.AnalysisQuey `json:"query"`
+}
+
 func NewAnalysisHandler(
 	analysisService interfaces.AnalysisService,
 	projectService interfaces.ProjectService,
@@ -145,10 +150,18 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 		return
 	}
 	requestParam, ok := params["request_param"].(map[string]interface{})
-	analysisID, _ := requestParam["analysis_id"].(string)
-	if strings.TrimSpace(analysisID) == "" {
-		analysisID = "preview"
+	// analysisID, _ := requestParam["analysis_id"].(string)
+	// if strings.TrimSpace(analysisID) == "" {
+	// 	analysisID = "preview"
+	// }
+	analysisIDStr := strings.TrimSpace(toString(requestParam["analysis_id"]))
+	// analysisIDStr 转 int64
+	analysisID, err := strconv.ParseInt(analysisIDStr, 10, 64)
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == 0 {
+		analysisID = 0
 	}
+
 	if !ok {
 		c.Error(errors.NewValidationError("request_param is required and must be an object"))
 		return
@@ -167,7 +180,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 	// 将requestParam+formJSONWrap写入json文件，方便调试
 	if true {
 		baseDir := h.config.Storage.BaseDir
-		debugDir := filepath.Join(baseDir, "debug", "parse_analysis_result", analysisID)
+		debugDir := filepath.Join(baseDir, "debug", "parse_analysis_result", analysisIDStr)
 		_ = os.MkdirAll(debugDir, os.ModePerm)
 		debugPath := filepath.Join(debugDir, fmt.Sprintf("input.json"))
 		f, err := os.Create(debugPath)
@@ -207,7 +220,7 @@ func (h *AnalysisHandler) ParseParams(c *gin.Context) {
 		// 将 parseAnalysisResult+dagDefinition 写入json文件
 
 		baseDir := h.config.Storage.BaseDir
-		dagDebug := filepath.Join(baseDir, "debug", "dag", analysisID)
+		dagDebug := filepath.Join(baseDir, "debug", "dag", analysisIDStr)
 		_ = os.MkdirAll(dagDebug, os.ModePerm)
 		paramsPath := filepath.Join(dagDebug, "params.json")
 		f, err := os.Create(paramsPath)
@@ -302,13 +315,26 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 	// 		return
 	// 	}
 	// }
-	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
-	if analysisID == "" || analysisID == "<nil>" {
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	// if analysisID == "" || analysisID == "<nil>" {
+	// 	if req.Save {
+	// 		analysisID = uuid.NewString()
+	// 		req.RequestParam["analysis_id"] = analysisID
+	// 	} else {
+	// 		analysisID = "preview"
+	// 	}
+	// }
+
+	analysisIDStr := strings.TrimSpace(toString(req.RequestParam["analysis_id"]))
+	// analysisIDStr 转 int64
+	analysisID, err := strconv.ParseInt(analysisIDStr, 10, 64)
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == 0 {
 		if req.Save {
-			analysisID = uuid.NewString()
+			analysisID = utils.GenerateID()
 			req.RequestParam["analysis_id"] = analysisID
 		} else {
-			analysisID = "preview"
+			analysisID = 0
 		}
 	}
 
@@ -339,7 +365,7 @@ func (h *AnalysisHandler) SaveAnalysisController(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.dagOrchestrator.StartAsync(c.Request.Context(), saved.AnalysisID); err != nil {
+		if err := h.dagOrchestrator.StartAsync(c.Request.Context(), saved.ID); err != nil {
 			c.Error(errors.NewInternalServerError("failed to start dag scheduler").WithDetails(err.Error()))
 			return
 		}
@@ -441,7 +467,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), project.ID, saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
+		if err := h.dynamicDagOrchestrator.StartAsyncV2(c.Request.Context(), project.ID, saved.ID, parseAnalysisResult, dagDefinition); err != nil {
 			c.Error(errors.NewInternalServerError("failed to start dynamic dag scheduler").WithDetails(err.Error()))
 			return
 		}
@@ -892,13 +918,26 @@ func (h *AnalysisHandler) SaveAnalysisControllerV3(c *gin.Context) {
 		return
 	}
 
-	analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
-	if analysisID == "" || analysisID == "<nil>" {
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	// if analysisID == "" || analysisID == "<nil>" {
+	// 	if req.Save {
+	// 		analysisID = uuid.NewString()
+	// 		req.RequestParam["analysis_id"] = analysisID
+	// 	} else {
+	// 		analysisID = "preview"
+	// 	}
+	// }
+
+	analysisIDStr := strings.TrimSpace(toString(req.RequestParam["analysis_id"]))
+	// analysisIDStr 转 int64
+	analysisID, err := strconv.ParseInt(analysisIDStr, 10, 64)
+	// analysisID := strings.TrimSpace(fmt.Sprintf("%v", req.RequestParam["analysis_id"]))
+	if analysisID == 0 {
 		if req.Save {
-			analysisID = uuid.NewString()
+			analysisID = utils.GenerateID()
 			req.RequestParam["analysis_id"] = analysisID
 		} else {
-			analysisID = "preview"
+			analysisID = 0
 		}
 	}
 
@@ -930,7 +969,7 @@ func (h *AnalysisHandler) SaveAnalysisControllerV3(c *gin.Context) {
 	}
 
 	if req.IsSubmit {
-		if err := h.dataflowDagOrchestrator.StartAsyncV3(c.Request.Context(), project.ID, saved.AnalysisID, parseAnalysisResult, dagDefinition); err != nil {
+		if err := h.dataflowDagOrchestrator.StartAsyncV3(c.Request.Context(), project.ID, saved.ID, parseAnalysisResult, dagDefinition); err != nil {
 			c.Error(errors.NewInternalServerError("failed to start dataflow dag scheduler").WithDetails(err.Error()))
 			return
 		}
@@ -955,12 +994,14 @@ func (h *AnalysisHandler) StopAnalysis(c *gin.Context) {
 	}
 
 	analysisID := strings.TrimSpace(c.Param("analysisId"))
-	if analysisID == "" {
-		c.Error(errors.NewValidationError("analysisId is required"))
+
+	analysisIDInt, err := strconv.ParseInt(analysisID, 10, 64)
+	if err != nil || analysisIDInt <= 0 {
+		c.Error(errors.NewValidationError("analysisId must be a positive integer"))
 		return
 	}
 
-	if err := h.dagOrchestrator.StopAsync(c.Request.Context(), analysisID); err != nil {
+	if err := h.dagOrchestrator.StopAsync(c.Request.Context(), analysisIDInt); err != nil {
 		c.Error(errors.NewInternalServerError("failed to stop dag scheduler").WithDetails(err.Error()))
 		return
 	}
@@ -998,6 +1039,64 @@ func (h *AnalysisHandler) StopAnalysisNode(c *gin.Context) {
 		"analysis_node_id": analysisNodeID,
 		"job_status":       "stopping",
 		"stop_started":     true,
+	})
+}
+
+// PageAnalysisByProject godoc
+// @Summary      按当前项目分页查询分析任务
+// @Description  默认按当前用户 active project 的 project_id 过滤，支持可选 query 条件
+// @Tags         分析
+// @Accept       json
+// @Produce      json
+// @Param        request  body      handler.analysisByProjectPageRequest  true  "分页请求参数"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  errors.AppError
+// @Failure      401      {object}  errors.AppError
+// @Failure      404      {object}  errors.AppError
+// @Failure      500      {object}  errors.AppError
+// @Security     Bearer
+// @Router       /analysis/list-by-project-page [post]
+func (h *AnalysisHandler) PageAnalysisByProject(c *gin.Context) {
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+
+	var req analysisByProjectPageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("invalid request parameters").WithDetails(err.Error()))
+		return
+	}
+
+	activeProject, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		if stderrs.Is(err, gorm.ErrRecordNotFound) {
+			c.Error(errors.NewNotFoundError("active project not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError("failed to get active project").WithDetails(err.Error()))
+		return
+	}
+	if activeProject == nil || activeProject.ID == 0 {
+		c.Error(errors.NewValidationError("active project is required"))
+		return
+	}
+
+	projectID := activeProject.ID
+	req.Query.ProjectID = projectID
+	items, total, err := h.analysisService.PageAnalysisByProjectID(c.Request.Context(), &req.Pagination, projectID, &req.Query)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to page analyses by project").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":       items,
+		"total":      total,
+		"page":       req.GetPage(),
+		"page_size":  req.GetPageSize(),
+		"project_id": projectID,
+		"query":      req.Query,
 	})
 }
 
@@ -1086,13 +1185,14 @@ func (h *AnalysisHandler) EditParamsV2(c *gin.Context) {
 		return
 	}
 
-	analysisID := c.Param("analysisId")
-	if analysisID == "" {
-		c.Error(errors.NewValidationError("analysisId is required"))
+	analysisIDStr := c.Param("analysisId")
+	analysisID, err := strconv.ParseInt(strings.TrimSpace(analysisIDStr), 10, 64)
+	if err != nil || analysisID <= 0 {
+		c.Error(errors.NewValidationError("analysisId must be a positive integer"))
 		return
 	}
 
-	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisID)
+	analysisItem, err := h.analysisService.GetAnalysisByID(c.Request.Context(), analysisID)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("analysis not found"))
@@ -1212,7 +1312,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 	analysisIDValue := analysisNode.AnalysisID
 	serverStatus := analysisNode.ServerStatus
 
-	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisNode.AnalysisID)
+	analysisItem, err := h.analysisService.GetAnalysisByID(c.Request.Context(), analysisNode.AnalysisID)
 	if err != nil && !stderrs.Is(err, gorm.ErrRecordNotFound) {
 		c.Error(errors.NewInternalServerError("failed to get analysis").WithDetails(err.Error()))
 		return
@@ -1224,9 +1324,7 @@ func (h *AnalysisHandler) EditNodeParams(c *gin.Context) {
 		}
 		isReport = analysisItem.IsReport
 		cacheType = analysisItem.CacheType
-		if strings.TrimSpace(analysisItem.AnalysisID) != "" {
-			analysisIDValue = analysisItem.AnalysisID
-		}
+		analysisIDValue = analysisItem.ID
 		if strings.TrimSpace(analysisItem.ServerStatus) != "" {
 			serverStatus = analysisItem.ServerStatus
 		}
@@ -1465,12 +1563,13 @@ func (h *AnalysisHandler) VisualizationNodeTree(c *gin.Context) {
 	}
 
 	analysisID := strings.TrimSpace(c.Param("analysisId"))
-	if analysisID == "" {
-		c.Error(errors.NewValidationError("analysisId is required"))
+	analysisIDInt, err := strconv.ParseInt(analysisID, 10, 64)
+	if err != nil || analysisIDInt <= 0 {
+		c.Error(errors.NewValidationError("analysisId must be a positive integer"))
 		return
 	}
 
-	analysisItem, err := h.analysisService.GetAnalysisByAnalysisID(c.Request.Context(), analysisID)
+	analysisItem, err := h.analysisService.GetAnalysisByID(c.Request.Context(), analysisIDInt)
 	if err != nil {
 		if stderrs.Is(err, gorm.ErrRecordNotFound) {
 			c.Error(errors.NewNotFoundError("analysis not found"))
@@ -1518,7 +1617,7 @@ func (h *AnalysisHandler) VisualizationNodeTree(c *gin.Context) {
 		scriptNames[scriptID] = scriptName
 	}
 
-	analysisNodes, err := h.analysisService.ListAnalysisNodesByAnalysisID(c.Request.Context(), analysisID)
+	analysisNodes, err := h.analysisService.ListAnalysisNodesByAnalysisID(c.Request.Context(), analysisIDInt)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to list analysis nodes").WithDetails(err.Error()))
 		return

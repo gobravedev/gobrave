@@ -179,7 +179,7 @@ func (o *BaseOperator) markFinished() {
 }
 
 type operatorCommonConfig struct {
-	analysisID   string
+	analysisID   int64
 	nodeID       string
 	inputByChID  map[string]string
 	requiredKeys []string
@@ -187,7 +187,7 @@ type operatorCommonConfig struct {
 }
 
 func newOperatorCommonConfig(
-	analysisID string,
+	analysisID int64,
 	nodeID string,
 	inputByChannelID map[string]string,
 	runtime DataflowProcessRuntime,
@@ -203,7 +203,7 @@ func newOperatorCommonConfig(
 	sort.Strings(required)
 
 	return operatorCommonConfig{
-		analysisID:   strings.TrimSpace(analysisID),
+		analysisID:   analysisID,
 		nodeID:       strings.TrimSpace(nodeID),
 		inputByChID:  normalizedInputByChID,
 		requiredKeys: required,
@@ -220,7 +220,7 @@ func newOperatorCommonConfig(
 // - if Ready() { runtime.SubmitTask(...) }
 type InputOperator struct {
 	*BaseOperator
-	analysisID   string
+	analysisID   int64
 	nodeID       string
 	inputByChID  map[string]string
 	requiredKeys []string
@@ -231,7 +231,7 @@ type InputOperator struct {
 }
 
 func newInputOperator(
-	analysisID string,
+	analysisID int64,
 	nodeID string,
 	inputByChannelID map[string]string,
 	outputChannels map[string]*DataflowChannel,
@@ -358,7 +358,7 @@ func (o *InputOperator) ready() bool {
 // Supported modes: each, list.
 type ScatterOperator struct {
 	*BaseOperator
-	analysisID   string
+	analysisID   int64
 	nodeID       string
 	inputByChID  map[string]string
 	requiredKeys []string
@@ -370,7 +370,7 @@ type ScatterOperator struct {
 }
 
 func newScatterOperator(
-	analysisID string,
+	analysisID int64,
 	nodeID string,
 	inputByChannelID map[string]string,
 	outputChannels map[string]*DataflowChannel,
@@ -496,7 +496,7 @@ func (o *ScatterOperator) submitScatter(ctx context.Context, inputs map[string]a
 // when all upstream channels are closed.
 type GatherOperator struct {
 	*BaseOperator
-	analysisID   string
+	analysisID   int64
 	nodeID       string
 	inputByChID  map[string]string
 	requiredKeys []string
@@ -509,7 +509,7 @@ type GatherOperator struct {
 }
 
 func newGatherOperator(
-	analysisID string,
+	analysisID int64,
 	nodeID string,
 	inputByChannelID map[string]string,
 	outputChannels map[string]*DataflowChannel,
@@ -592,7 +592,7 @@ func (o *GatherOperator) flushLocked(ctx context.Context) error {
 }
 
 func newDataflowOperator(
-	analysisID string,
+	analysisID int64,
 	proc DataflowProcessSpec,
 	inputByChannelID map[string]string,
 	outputChannels map[string]*DataflowChannel,
@@ -606,7 +606,7 @@ func newDataflowOperator(
 	}
 
 	type operatorBuilder func(
-		analysisID string,
+		analysisID int64,
 		nodeID string,
 		proc DataflowProcessSpec,
 		inputByChannelID map[string]string,
@@ -616,7 +616,7 @@ func newDataflowOperator(
 
 	builders := map[string]operatorBuilder{
 		string(dataflowOperatorTypeGather): func(
-			analysisID string,
+			analysisID int64,
 			nodeID string,
 			proc DataflowProcessSpec,
 			inputByChannelID map[string]string,
@@ -634,7 +634,7 @@ func newDataflowOperator(
 			)
 		},
 		string(dataflowOperatorTypeScatter): func(
-			analysisID string,
+			analysisID int64,
 			nodeID string,
 			proc DataflowProcessSpec,
 			inputByChannelID map[string]string,

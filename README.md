@@ -119,4 +119,16 @@ UPDATE analysis_nodes t
 JOIN pipeline_components p
   ON t.script_id_ = p.component_id
 SET t.script_id = p.id
+
+
+UPDATE analysis_nodes t
+JOIN nextflow p
+  ON t.analysis_id_ = p.analysis_id
+SET t.analysis_id = p.id
+
+
+UPDATE analysis_edges t
+JOIN nextflow p
+  ON t.analysis_id_ = p.analysis_id
+SET t.analysis_id = p.id
 ```

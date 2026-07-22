@@ -98,11 +98,11 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID int64)
 		preparer,
 	)
 
-	go func(nodeID int64, relationID string, runtimeNodeID string) {
+	go func(nodeID int64, runtimeNodeID string) {
 		if dispatchErr := dispatcher.Dispatch(context.Background(), nodeID); dispatchErr != nil {
-			logger.Warnf(context.Background(), "[NodeOrchestrator] dispatch failed, analysis_node_db_id=%d node_id=%s analysis_id=%s err=%v", analysisNodeID, runtimeNodeID, relationID, dispatchErr)
+			logger.Warnf(context.Background(), "[NodeOrchestrator] dispatch failed, analysis_node_db_id=%d node_id=%s err=%v", analysisNodeID, runtimeNodeID, dispatchErr)
 		}
-	}(node.ID, node.AnalysisID, node.NodeID)
+	}(node.ID, node.NodeID)
 
 	return nil
 }

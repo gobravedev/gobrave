@@ -40,7 +40,7 @@ func (s *EdgeStage) Run(ctx *CompileContext) error {
 	return nil
 }
 
-func (b *RuntimeEdgeBuilder) Build(analysisID string, sourceNode string, targetNode string, sourceHandle string, targetHandle string) map[string]any {
+func (b *RuntimeEdgeBuilder) Build(analysisID int64, sourceNode string, targetNode string, sourceHandle string, targetHandle string) map[string]any {
 	return map[string]any{
 		"analysis_id":   analysisID,
 		"source_node":   sourceNode,
