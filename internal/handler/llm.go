@@ -1104,8 +1104,13 @@ func buildRuntimeSystemMessage(userID string, env map[string]any, workingDir str
 			fmt.Sprintf("env.type: %s", envType),
 			fmt.Sprintf("env.id: %s", envID),
 		)
-		if strings.EqualFold(envType, "analsyisNode") || strings.EqualFold(envType, "analysisNode") {
-			lines = append(lines, "When you need to run or inspect the current analysis node, use env.id as the analysis_node_id and do not guess a different ID.")
+		if strings.EqualFold(envType, "analysisNode") {
+			lines = append(lines,
+				"When you need to run or inspect the current analysis node, use env.id as the analysis_node_id and do not guess a different ID.",
+				"For executing workflow scripts in this analysis node context (for example main.R, main.py, or similar entry scripts), you must call the tool run_analysis_node with analysis_node_id=env.id.",
+				"Do not execute scripts directly via shell/system calls such as Rscript, python, python3, bash, sh, or equivalent runtime commands.",
+				"The runtime will execute the node in the correct container automatically through run_analysis_node.",
+			)
 		} else if strings.EqualFold(envType, "script") {
 			lines = append(lines, "When you need to run a script-based task, resolve the script workspace from env.id through the runtime context.")
 		}
