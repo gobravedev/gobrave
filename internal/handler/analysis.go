@@ -860,8 +860,14 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 			return err
 		}
 	}
-
-	runScript, err := buildStandaloneRunScript(script.ScriptType, scriptPath, string(scriptContent), paramsPayload, artifacts.ParamsPath, artifacts.OutputDir)
+	node := &types.AnalysisNode{
+		ParamsPath:   artifacts.ParamsPath,
+		OutputDir:    artifacts.OutputDir,
+		WorkspaceDir: artifacts.WorkspaceDir,
+		CommandPath:  artifacts.CommandPath,
+		LogPath:      artifacts.LogPath,
+	}
+	runScript, err := buildStandaloneRunScript(node, script.ScriptType, scriptPath, string(scriptContent), paramsPayload)
 	if err != nil {
 		return err
 	}
@@ -883,17 +889,13 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 }
 
 func buildStandaloneRunScript(
+	node *types.AnalysisNode,
 	scriptType string,
 	scriptPath string,
 	scriptContent string,
 	params map[string]interface{},
-	paramsPath string,
-	outputDir string,
 ) (string, error) {
-	node := &types.AnalysisNode{
-		ParamsPath: paramsPath,
-		OutputDir:  outputDir,
-	}
+
 	return dagruntime.BuildRunScript(node, scriptType, scriptPath, scriptContent, params)
 }
 

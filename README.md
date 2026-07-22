@@ -132,3 +132,20 @@ JOIN nextflow p
   ON t.analysis_id_ = p.analysis_id
 SET t.analysis_id = p.id
 ```
+
+
+```
+docker run --rm -it  -v /data2/brave_analys
+is_workspace:/data2/brave_analysis_workspace -w /data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/analysis_node/2079851110381654016 registry.cn-
+hangzhou.aliyuncs.com/wybioinfo/maaslin2:1.22 bash
+```
+
+```
+
+
+quarto render \
+"/data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/pipeline/script/00b458e0-1210-4138-8c48-77379a468ecf/main.qmd" \
+--execute-dir  /data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/analysis_node/2079851110381654016
+--to md  --no-cache \
+--output-dir "/data2/brave_analysis_workspace/data/7b3b510e-cf76-40bc-b3c9-cf2d3a81af34/analysis_node/2079851110381654016/output"
+```

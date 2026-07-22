@@ -82,8 +82,18 @@ func (o *nodeOrchestrator) StartAsync(ctx context.Context, analysisNodeID int64)
 		}
 		// 删除outputDir下的所有内容，，直接判断文件夹是否存在，如果存在就删除，如果不存在就不删除
 		if _, err := os.Stat(outputDir); err == nil {
-			if err := os.RemoveAll(outputDir); err != nil {
-				logger.Warnf(ctx, "[NodeOrchestrator] failed to delete output dir=%s, err=%v", outputDir, err)
+			// 不删除outputDir本身，只删除里面的内容
+			files, err := os.ReadDir(outputDir)
+			if err != nil {
+				logger.Warnf(ctx, "[NodeOrchestrator] failed to read output dir=%s, err=%v", outputDir, err)
+				return err
+			}
+			for _, file := range files {
+				filePath := filepath.Join(outputDir, file.Name())
+				if err := os.RemoveAll(filePath); err != nil {
+					logger.Warnf(ctx, "[NodeOrchestrator] failed to delete file=%s in output dir=%s, err=%v", filePath, outputDir, err)
+					return err
+				}
 			}
 		}
 
