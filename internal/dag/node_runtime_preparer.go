@@ -93,7 +93,7 @@ func (p *FileSystemNodeRuntimePreparer) Prepare(ctx context.Context, node *types
 	if err := cleanDirContents(node.OutputDir); err != nil {
 		return fmt.Errorf("clean output dir failed: %w", err)
 	}
-
+	// 构建参数
 	params, err := p.buildNodeParams(node, analysis)
 	if err != nil {
 		return err

@@ -193,6 +193,7 @@ func (c *NodeCompletionCoordinator) reconcileContainer(ctx context.Context, inst
 
 	nodeStatus := strings.TrimSpace(strings.ToLower(node.Status))
 	if IsTerminalStatus(nodeStatus) {
+		c.cleanupOrphanContainer(ctx, inst, source, "analysis node terminal")
 		return
 	}
 	if nodeStatus != StatusRunning && nodeStatus != StatusSubmitted && nodeStatus != StatusStopping {

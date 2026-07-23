@@ -83,6 +83,11 @@ outputs <- list(
 jsonlite::write_json(outputs, file.path(output_dir, "outputs.json"), auto_unbox = TRUE, pretty = TRUE)
     `
 	case "qmd":
+		rCode := `library(tidyverse)
+params <- jsonlite::fromJSON("params.json", simplifyVector = FALSE)`
+
+		// 用双引号包裹反引号，再和原始字符串拼接
+		fullCode := "\n```{r}\n" + rCode + "\n```"
 		return `
 ---
 title: "title"
@@ -95,7 +100,7 @@ editor: source
 #   opts_chunk:
 #     cache.path: "../cache/title/"
 ---
-        `
+        ` + fullCode
 	default:
 		return `
     `

@@ -246,10 +246,16 @@ func (m *ContainerManager) resolveProjectIDByOwner(ctx context.Context, ownerTyp
 		if err != nil || node == nil {
 			return 0
 		}
+		// TODO dag analysis 创建的 analysisNode 暂时没有projectID
+
+		if node.ProjectID != 0 {
+			return node.ProjectID
+		}
 		analysis, err := m.analysisRepo.GetAnalysisByID(ctx, node.AnalysisID)
 		if err != nil || analysis == nil {
 			return 0
 		}
+		logger.Warn(context.Background(), "use analysis projectid for resolveProjectIDByOwner")
 		return analysis.ProjectID
 	default:
 		return 0
@@ -331,7 +337,8 @@ func (m *ContainerManager) Delete(ctx context.Context, id int64) error {
 	}
 	if inst.RuntimeID != "" {
 		if err := rt.Delete(ctx, inst.RuntimeID); err != nil {
-			return err
+			logger.Error(context.Background(), err.Error())
+			// return err
 		}
 	}
 

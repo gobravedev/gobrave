@@ -769,6 +769,7 @@ type standaloneNodeArtifacts struct {
 	OutputDir    string
 	ParamsPath   string
 	CommandPath  string
+	projectDir   string
 	LogPath      string
 }
 
@@ -783,6 +784,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 		}
 	}
 	analsyisNodeDir := utils.GetAnalysisNodeDir(baseDir, projectID)
+	projectDir := utils.GetProjectDir(baseDir, projectID)
 	workspaceDir := filepath.Join(analsyisNodeDir, strconv.FormatInt(analysisNodeID, 10))
 	outputDir := filepath.Join(workspaceDir, "output")
 	paramsPath := filepath.Join(workspaceDir, "params.json")
@@ -792,6 +794,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 	return &standaloneNodeArtifacts{
 		WorkspaceDir: workspaceDir,
 		OutputDir:    outputDir,
+		projectDir:   projectDir,
 		ParamsPath:   paramsPath,
 		CommandPath:  commandPath,
 		LogPath:      logPath,
@@ -814,6 +817,7 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 
 	paramsPayload := cloneAnyMapForNode(params)
 	paramsPayload["output_dir"] = artifacts.OutputDir
+	paramsPayload["project_dir"] = artifacts.projectDir
 	paramsBytes, err := json.MarshalIndent(paramsPayload, "", "  ")
 	if err != nil {
 		return err
