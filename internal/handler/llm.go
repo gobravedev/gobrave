@@ -831,7 +831,10 @@ func (h *LLMHandler) runBridgeSession(ctx context.Context, session *llmBridgeSes
 	permissionHandler := func(request copilot.PermissionRequest, invocation copilot.PermissionInvocation) (copilotrpc.PermissionDecision, error) {
 		requiresWriteConfirm := requiresWriteApproval(request)
 		requestID := uuid.NewString()
-
+		// if request.Kind() == copilotrpc.PermissionRequestKindWrite {
+		// 	// fmt.Println("xxx")
+		// 	fmt.Printf("[Permission Check] invocation: %s, Kind: %v, Request: %+v\n", invocation.SessionID, request.Kind(), request)
+		// }
 		h.pushBridgeEvent(session.userID, session.sessionID, "permission.request", gin.H{
 			"request_id":             requestID,
 			"kind":                   string(request.Kind()),
