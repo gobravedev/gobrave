@@ -80,6 +80,7 @@ type VisualizationNodeFileResponse struct {
 	Result       VisualizationResultResponse `json:"result"`
 	Status       string                      `json:"status"`
 	ServerStatus string                      `json:"server_status"`
+	UrlPrefix    string                      `json:"url_prefix"`
 }
 
 type VisualizationNodeTreeItem struct {
@@ -1148,6 +1149,47 @@ func (h *AnalysisHandler) StopAnalysisNode(c *gin.Context) {
 	})
 }
 
+// DeleteAnalysisNode godoc
+// @Summary      删除分析节点
+// @Description  按 analysisNodeId 删除分析节点记录
+// @Tags         分析
+// @Produce      json
+// @Param        analysisNodeId  path      string             true  "分析节点 ID"
+// @Success      200             {object}  map[string]string
+// @Failure      400             {object}  errors.AppError
+// @Failure      401             {object}  errors.AppError
+// @Failure      404             {object}  errors.AppError
+// @Failure      500             {object}  errors.AppError
+// @Security     Bearer
+// @Router       /analysis/node/delete/{analysisNodeId} [post]
+func (h *AnalysisHandler) DeleteAnalysisNode(c *gin.Context) {
+	if _, ok := getCurrentUserID(c); !ok {
+		return
+	}
+
+	analysisNodeIDParam := strings.TrimSpace(c.Param("analysisNodeId"))
+	if analysisNodeIDParam == "" {
+		c.Error(errors.NewValidationError("analysisNodeId is required"))
+		return
+	}
+
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDParam, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("analysisNodeId must be a positive integer"))
+		return
+	}
+
+	if err := h.analysisService.DeleteAnalysisNode(c.Request.Context(), analysisNodeID); err != nil {
+		c.Error(errors.NewInternalServerError("failed to delete analysis node").WithDetails(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"analysis_node_id": analysisNodeID,
+		"message":          "analysis node deleted successfully",
+	})
+}
+
 // PageAnalysisByProject godoc
 // @Summary      按当前项目分页查询分析任务
 // @Description  默认按当前用户 active project 的 project_id 过滤，支持可选 query 条件
@@ -1559,12 +1601,22 @@ func (h *AnalysisHandler) VisualizationNodeFile(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("failed to list visualization files").WithDetails(err.Error()))
 		return
 	}
-
+	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisNode.ProjectID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get project").WithDetails(err.Error()))
+		return
+	}
+	prefix := ""
+	if analysisNode.CreationSource == "standalone" {
+		// http://localhost:5174/data-analysis/default/analysis_node/2079940227312390144/2080304958791487488/output/iris.png?t=1784819748658
+		prefix = fmt.Sprintf("/data-analysis/%s/analysis_node/%d/%d/output/", project.ProjectID, analysisNode.ScriptID, analysisNode.ID)
+	}
 	c.JSON(http.StatusOK, VisualizationNodeFileResponse{
 		Node:         nodePayload,
 		Result:       result,
 		Status:       analysisNode.Status,
 		ServerStatus: analysisNode.ServerStatus,
+		UrlPrefix:    prefix,
 	})
 }
 func (h *AnalysisHandler) GetAnalysisNode(c *gin.Context) *types.AnalysisNode {

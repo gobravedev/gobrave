@@ -17,6 +17,7 @@ type AnalysisService interface {
 	GetAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string) (*types.AnalysisNode, error)
 	ListAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) ([]*types.AnalysisNode, error)
 	SaveAnalysisController(ctx context.Context, input *types.AnalysisControllerSaveInput) (*types.Analysis, error)
+	DeleteAnalysisNode(ctx context.Context, id int64) error
 }
 
 type AnalysisRepository interface {
@@ -40,6 +41,7 @@ type AnalysisRepository interface {
 	UpdateAnalysisNodeByAnalysisNodeID(ctx context.Context, analysisNodeID string, values map[string]any) error
 	ClaimNextReadyNode(ctx context.Context, analysisID int64, fromStatus string, toStatus string) (*types.AnalysisNode, error)
 	DeleteAnalysisNodesByAnalysisID(ctx context.Context, analysisID int64) error
+	DeleteAnalysisNodeByID(ctx context.Context, id int64) error
 	CreateAnalysisNodes(ctx context.Context, items []*types.AnalysisNode) error
 	DeleteAnalysisEdgesByAnalysisID(ctx context.Context, analysisID int64) error
 	CreateAnalysisEdges(ctx context.Context, items []*types.AnalysisEdge) error

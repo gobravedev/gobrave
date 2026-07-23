@@ -12,6 +12,7 @@ import (
 
 	"github.com/gobravedev/gobrave/internal/config"
 	dagruntime "github.com/gobravedev/gobrave/internal/dag"
+	"github.com/gobravedev/gobrave/internal/logger"
 	"github.com/gobravedev/gobrave/internal/types"
 	"github.com/gobravedev/gobrave/internal/types/interfaces"
 	"github.com/gobravedev/gobrave/internal/utils"
@@ -21,11 +22,12 @@ import (
 type analysisService struct {
 	analysisRepo interfaces.AnalysisRepository
 	workflowRepo interfaces.WorkflowRepository
+	projectRepo  interfaces.ProjectRepository
 	cfg          *config.Config
 }
 
-func NewAnalysisService(analysisRepo interfaces.AnalysisRepository, workflowRepo interfaces.WorkflowRepository, cfg *config.Config) interfaces.AnalysisService {
-	return &analysisService{analysisRepo: analysisRepo, workflowRepo: workflowRepo, cfg: cfg}
+func NewAnalysisService(analysisRepo interfaces.AnalysisRepository, workflowRepo interfaces.WorkflowRepository, projectRepo interfaces.ProjectRepository, cfg *config.Config) interfaces.AnalysisService {
+	return &analysisService{analysisRepo: analysisRepo, workflowRepo: workflowRepo, projectRepo: projectRepo, cfg: cfg}
 }
 
 func (s *analysisService) GetAnalysisByAnalysisID(ctx context.Context, analysisID string) (*types.Analysis, error) {
@@ -256,6 +258,34 @@ func (s *analysisService) SaveAnalysisController(ctx context.Context, input *typ
 	}
 
 	return saved, nil
+}
+
+func (s *analysisService) DeleteAnalysisNode(ctx context.Context, id int64) error {
+	node, err := s.analysisRepo.GetAnalysisNodeByID(ctx, id)
+	if err != nil {
+		logger.Warnf(ctx, "[NodeOrchestrator] failed to get analysis node by id=%d, err=%v", id, err)
+		return err
+	}
+	project, err := s.projectRepo.GetProjectByID(ctx, node.ProjectID)
+	if err != nil {
+		logger.Warnf(ctx, "[NodeOrchestrator] failed to get project by id=%d, err=%v", node.ProjectID, err)
+		return err
+	}
+	prefix := filepath.Join(s.cfg.Storage.BaseDir, "data", project.ProjectID)
+	//判断是否以prefix开头 如果不是就不删除
+	if !strings.HasPrefix(node.WorkspaceDir, prefix) {
+		logger.Warnf(ctx, "[NodeOrchestrator] workspace dir=%s is not under project data dir=%s, skip delete", node.WorkspaceDir, prefix)
+		return fmt.Errorf("workspace dir is not under project data dir")
+	}
+	// 	删除工作目录
+	if err := os.RemoveAll(node.WorkspaceDir); err != nil {
+		logger.Warnf(ctx, "[NodeOrchestrator] failed to remove workspace dir=%s, err=%v", node.WorkspaceDir, err)
+		return err
+	}
+	if id <= 0 {
+		return fmt.Errorf("invalid analysis node id: %d", id)
+	}
+	return s.analysisRepo.DeleteAnalysisNodeByID(ctx, id)
 }
 
 func (s *analysisService) persistDagRuntime(ctx context.Context, repo interfaces.AnalysisRepository, analysis *types.Analysis, dagRuntime map[string]any) error {

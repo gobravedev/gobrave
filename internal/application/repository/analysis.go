@@ -286,6 +286,10 @@ func (r *analysisRepository) DeleteAnalysisNodesByAnalysisID(ctx context.Context
 	return r.db.WithContext(ctx).Where("analysis_id = ?", analysisID).Delete(&types.AnalysisNode{}).Error
 }
 
+func (r *analysisRepository) DeleteAnalysisNodeByID(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&types.AnalysisNode{}).Error
+}
+
 func (r *analysisRepository) CreateAnalysisNodes(ctx context.Context, items []*types.AnalysisNode) error {
 	if len(items) == 0 {
 		return nil
