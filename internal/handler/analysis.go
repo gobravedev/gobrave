@@ -486,6 +486,38 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *AnalysisHandler) PublishToDocByAnalysisNodeID(c *gin.Context) {
+
+	analysisNodeIDStr := strings.TrimSpace(c.Param("analysisNodeId"))
+	analysisNodeID, err := strconv.ParseInt(analysisNodeIDStr, 10, 64)
+	if err != nil || analysisNodeID <= 0 {
+		c.Error(errors.NewValidationError("invalid analysis_node_id").WithDetails(err.Error()))
+		return
+	}
+	analysisNode, err := h.analysisService.GetAnalysisNodeByID(c.Request.Context(), analysisNodeID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get analysis node").WithDetails(err.Error()))
+		return
+	}
+	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisNode.ProjectID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get project").WithDetails(err.Error()))
+		return
+	}
+	projectDocDir := utils.GetProjectDocDir(h.config.Storage.BaseDir, project.ProjectID)
+	analsyisNodeOutputDir := analysisNode.OutputDir
+	// 拷贝 analsyisNodeOutputDir 下的所有文件到 projectDocDir 下
+	err = utils.CopyDir(analsyisNodeOutputDir, projectDocDir)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to copy analysis node output to project doc dir").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "analysis node output published to project doc dir successfully",
+	})
+
+}
+
 func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 	userID, ok := getCurrentUserID(c)
 	if !ok {
@@ -765,6 +797,7 @@ func (h *AnalysisHandler) RunAnalysisNodeWithID(ctx context.Context, analsyisNod
 }
 
 type standaloneNodeArtifacts struct {
+	ID           int64
 	WorkspaceDir string
 	OutputDir    string
 	ParamsPath   string
@@ -792,6 +825,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 	logPath := filepath.Join(workspaceDir, "command.log")
 
 	return &standaloneNodeArtifacts{
+		ID:           analysisNodeID,
 		WorkspaceDir: workspaceDir,
 		OutputDir:    outputDir,
 		projectDir:   projectDir,
@@ -865,6 +899,7 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 		}
 	}
 	node := &types.AnalysisNode{
+		ID:           artifacts.ID,
 		ParamsPath:   artifacts.ParamsPath,
 		OutputDir:    artifacts.OutputDir,
 		WorkspaceDir: artifacts.WorkspaceDir,

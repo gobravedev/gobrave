@@ -32,6 +32,10 @@ func GetAnalysisNodeDir(baseDir, projectId string) string {
 func GetProjectDir(baseDir, projectId string) string {
 	return filepath.Join(baseDir, "data", projectId)
 }
+
+func GetProjectDocDir(baseDir, projectId string) string {
+	return filepath.Join(baseDir, "data", projectId, "docs", "src")
+}
 func mainFileByScriptType(scriptType string) string {
 	switch strings.ToLower(strings.TrimSpace(scriptType)) {
 	case "r":

@@ -2,6 +2,7 @@ package dag
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/flosch/pongo2/v6"
 	"github.com/gobravedev/gobrave/internal/types"
@@ -45,12 +46,14 @@ type QmdScriptBuilder struct{}
 
 func (QmdScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ string, _ map[string]any) (string, error) {
 	// quarto preview chapter_5.qmd --to md --no-watch-inputs --no-browse
-	return fmt.Sprintf(`#!/usr/bin/env bash
+	outputFileName := fmt.Sprintf("%d.md", node.ID)
+	outputFile := filepath.Join(node.OutputDir, outputFileName)
+	return fmt.Sprintf(`#!/usr/bin/env bashName
 set -euo pipefail
 export HOME=$PWD/.home
 export XDG_CACHE_HOME=$HOME/.cache
-quarto render %q --to md --output-dir %q --execute-dir %q 
-`, scriptPath, node.OutputDir, node.WorkspaceDir), nil
+quarto render %q --to md --output-dir %q --execute-dir %q --output - > %q
+`, scriptPath, node.OutputDir, node.WorkspaceDir, outputFile), nil
 
 }
 
