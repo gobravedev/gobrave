@@ -46,7 +46,7 @@ type QmdScriptBuilder struct{}
 
 func (QmdScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ string, _ map[string]any) (string, error) {
 	// quarto preview chapter_5.qmd --to md --no-watch-inputs --no-browse
-	outputFileName := fmt.Sprintf("%d.md", node.ID)
+	outputFileName := "output.md"
 	outputFile := filepath.Join(node.OutputDir, outputFileName)
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail

@@ -25,8 +25,8 @@ func GetWorkflowDir(baseDir, projectId string) string {
 func GetAnalysisDir(baseDir, projectId string) string {
 	return filepath.Join(baseDir, "data", projectId, "analysis")
 }
-func GetAnalysisNodeDir(baseDir, projectId string) string {
-	return filepath.Join(baseDir, "data", projectId, "analysis_node")
+func GetAnalysisNodeDir(baseDir, projectId, scriptID string) string {
+	return filepath.Join(baseDir, "data", projectId, "analysis_node", scriptID)
 }
 
 func GetProjectDir(baseDir, projectId string) string {

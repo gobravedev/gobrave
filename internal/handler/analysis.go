@@ -506,8 +506,9 @@ func (h *AnalysisHandler) PublishToDocByAnalysisNodeID(c *gin.Context) {
 	}
 	projectDocDir := utils.GetProjectDocDir(h.config.Storage.BaseDir, project.ProjectID)
 	analsyisNodeOutputDir := analysisNode.OutputDir
+	projectDocNodeDir := filepath.Join(projectDocDir, fmt.Sprint(analysisNode.ID))
 	// 拷贝 analsyisNodeOutputDir 下的所有文件到 projectDocDir 下
-	err = utils.CopyDir(analsyisNodeOutputDir, projectDocDir)
+	err = utils.CopyDir(analsyisNodeOutputDir, projectDocNodeDir)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to copy analysis node output to project doc dir").WithDetails(err.Error()))
 		return
@@ -627,7 +628,7 @@ func (h *AnalysisHandler) SaveAnalysisNodeControllerWithScript(c *gin.Context) {
 		executorName = "local"
 	}
 
-	artifacts := h.buildStandaloneNodeArtifactPaths(projectID, nodePrimaryID)
+	artifacts := h.buildStandaloneNodeArtifactPaths(projectID, scriptIDInt, nodePrimaryID)
 	// requestParam add AnalysisNodeID
 	req.RequestParam["analysis_node_id"] = nodePrimaryID
 
@@ -808,6 +809,7 @@ type standaloneNodeArtifacts struct {
 
 func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 	projectID string,
+	scriptID int64,
 	analysisNodeID int64,
 ) *standaloneNodeArtifacts {
 	baseDir := "."
@@ -816,7 +818,7 @@ func (h *AnalysisHandler) buildStandaloneNodeArtifactPaths(
 			baseDir = v
 		}
 	}
-	analsyisNodeDir := utils.GetAnalysisNodeDir(baseDir, projectID)
+	analsyisNodeDir := utils.GetAnalysisNodeDir(baseDir, projectID, fmt.Sprint(scriptID))
 	projectDir := utils.GetProjectDir(baseDir, projectID)
 	workspaceDir := filepath.Join(analsyisNodeDir, strconv.FormatInt(analysisNodeID, 10))
 	outputDir := filepath.Join(workspaceDir, "output")

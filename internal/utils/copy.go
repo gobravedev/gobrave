@@ -9,6 +9,14 @@ import (
 // CopyDir copies the contents of srcDir into dstDir, preserving the directory structure.
 // dstDir is created if it does not exist. Existing files in dstDir may be overwritten.
 func CopyDir(srcDir, dstDir string) error {
+	// dstDir 不存在则创建
+	if _, err := os.Stat(dstDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dstDir, 0o755); err != nil {
+			return err
+		}
+	}
+
+	// Walk the source directory and copy each file/directory to the destination.
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
