@@ -498,21 +498,56 @@ func (h *AnalysisHandler) PublishScriptAnalysisNodeToDoc(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	projectDocDir := utils.GetProjectDocDir(h.config.Storage.BaseDir, project.ProjectID)
+
 	scriptIDStr := strings.TrimSpace(c.Param("scriptId"))
 	scriptID, err := strconv.ParseInt(scriptIDStr, 10, 64)
 	if err != nil || scriptID <= 0 {
 		c.Error(errors.NewValidationError("invalid script_id").WithDetails(err.Error()))
 		return
 	}
-	// script, err := h.workflowService.GetScriptByID(c.Request.Context(), scriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get script").WithDetails(err.Error()))
+		return
+	}
 	analysisNodes, err := h.analysisService.ListAnalysisNodesByProjectIDAndScriptID(c.Request.Context(), project.ID, scriptID)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to list analysis nodes").WithDetails(err.Error()))
 		return
 	}
-	// analysisNodeDir := utils.GetAnalysisNodeDir(h.config.Storage.BaseDir, project.ProjectID, fmt.Sprint(script.ID))
+	script, err := h.workflowService.GetScriptByID(c.Request.Context(), scriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get script file").WithDetails(err.Error()))
+		return
+	}
+	scriptDir, scriptFile, err := utils.GetScriptFile(h.config.Storage.BaseDir, project.ProjectID, script.ScriptType, script.ScriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to get script file").WithDetails(err.Error()))
+		return
+	}
+	scriptFilePath := filepath.Join(scriptDir, scriptFile)
+	if _, err := os.Stat(scriptFilePath); os.IsNotExist(err) {
+		c.Error(errors.NewInternalServerError("script file does not exist").WithDetails(err.Error()))
+		return
+	}
+	targetScriptFile := filepath.Join(projectDocDir, fmt.Sprint(scriptID), "script.md")
+	// 读取脚本文件内容，写入到 markdown 文件中，添加代码块标记
+	scriptContent, err := os.ReadFile(scriptFilePath)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to read script file").WithDetails(err.Error()))
+		return
+	}
+	codeLang := scriptTypeToMarkdownLang(script.ScriptType)
+	markdownContent := fmt.Sprintf("# %s\n\n```%s\n%s\n```\n", script.ComponentName, codeLang, string(scriptContent))
+	if err := os.MkdirAll(filepath.Dir(targetScriptFile), 0o755); err != nil {
+		c.Error(errors.NewInternalServerError("failed to create target script dir").WithDetails(err.Error()))
+		return
+	}
+	if err := os.WriteFile(targetScriptFile, []byte(markdownContent), 0o644); err != nil {
+		c.Error(errors.NewInternalServerError("failed to write script markdown file").WithDetails(err.Error()))
+		return
+	}
 
-	projectDocDir := utils.GetProjectDocDir(h.config.Storage.BaseDir, project.ProjectID)
 	for _, node := range analysisNodes {
 		sourceDir := node.OutputDir
 		destDir := filepath.Join(projectDocDir, fmt.Sprint(node.ScriptID), fmt.Sprint(node.ID))
@@ -522,6 +557,7 @@ func (h *AnalysisHandler) PublishScriptAnalysisNodeToDoc(c *gin.Context) {
 			return
 		}
 	}
+
 	summaryFilePath := filepath.Join(projectDocDir, "SUMMARY.md")
 	if _, err := os.Stat(summaryFilePath); os.IsNotExist(err) {
 		f, err := os.Create(summaryFilePath)
@@ -538,6 +574,18 @@ func (h *AnalysisHandler) PublishScriptAnalysisNodeToDoc(c *gin.Context) {
 		return
 	}
 	defer f.Close()
+	content, err := os.ReadFile(summaryFilePath)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to read SUMMARY.md").WithDetails(err.Error()))
+		return
+	}
+	if !strings.Contains(string(content), fmt.Sprintf("./%d/script.md", scriptID)) {
+		line := fmt.Sprintf("- [%s](./%d/script.md)\n", script.ComponentName, scriptID)
+		if _, err := f.WriteString(line); err != nil {
+			c.Error(errors.NewInternalServerError("failed to write to SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
+	}
 	for _, node := range analysisNodes {
 		// 实现避免重复写入的逻辑，先读取 SUMMARY.md 的内容，检查是否已经存在该节点的链接
 		content, err := os.ReadFile(summaryFilePath)
@@ -548,7 +596,7 @@ func (h *AnalysisHandler) PublishScriptAnalysisNodeToDoc(c *gin.Context) {
 		if strings.Contains(string(content), fmt.Sprintf("./%d/%d/output.md", node.ScriptID, node.ID)) {
 			continue // 如果已经存在该节点的链接，则跳过写入
 		}
-		line := fmt.Sprintf("- [%s](./%d/%d/output.md)\n", node.NodeName, node.ScriptID, node.ID)
+		line := fmt.Sprintf("	- [%s](./%d/%d/output.md)\n", node.NodeName, node.ScriptID, node.ID)
 		if _, err := f.WriteString(line); err != nil {
 			c.Error(errors.NewInternalServerError("failed to write to SUMMARY.md").WithDetails(err.Error()))
 			return
@@ -2328,6 +2376,42 @@ func readDelimitedTable(path string, sep rune, rowLimit int) (map[string]interfa
 		"ncol":   ncol,
 		"tables": tables,
 	}, nil
+}
+
+// scriptTypeToMarkdownLang maps a script type to a markdown code fence language identifier.
+func scriptTypeToMarkdownLang(scriptType string) string {
+	switch strings.ToLower(strings.TrimSpace(scriptType)) {
+	case "python", "py":
+		return "python"
+	case "r", "rscript":
+		return "r"
+	case "shell", "bash", "sh":
+		return "bash"
+	case "perl":
+		return "perl"
+	case "ruby":
+		return "ruby"
+	case "javascript", "js", "node":
+		return "javascript"
+	case "typescript", "ts":
+		return "typescript"
+	case "go", "golang":
+		return "go"
+	case "java":
+		return "java"
+	case "rust":
+		return "rust"
+	case "c":
+		return "c"
+	case "cpp", "c++":
+		return "cpp"
+	case "sql":
+		return "sql"
+	case "nextflow", "nf":
+		return "groovy"
+	default:
+		return ""
+	}
 }
 
 func buildAnalysisFileURL(path string, cfg *config.Config) string {

@@ -34,7 +34,7 @@ func CopyDir(srcDir, dstDir string) error {
 			return os.MkdirAll(targetPath, info.Mode())
 		}
 
-		return copyFile(path, targetPath, info.Mode())
+		return CopyFile(path, targetPath, info.Mode())
 	})
 }
 
@@ -53,7 +53,7 @@ func CopyDirectory(srcDir, dstParentDir string) error {
 	return CopyDir(srcDir, dstDir)
 }
 
-func copyFile(src, dst string, perm os.FileMode) error {
+func CopyFile(src, dst string, perm os.FileMode) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
