@@ -195,6 +195,15 @@ func (r *analysisRepository) ListAnalysisNodesByAnalysisID(ctx context.Context, 
 	return items, nil
 }
 
+func (r *analysisRepository) ListAnalysisNodesByProjectIDAndScriptID(ctx context.Context, projectID, scriptID int64) ([]*types.AnalysisNode, error) {
+	items := make([]*types.AnalysisNode, 0)
+	err := r.db.WithContext(ctx).Where("project_id = ? AND script_id = ?", projectID, scriptID).Order("updated_at DESC").Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (r *analysisRepository) PageAnalysisNodesByProjectID(ctx context.Context, pagination *types.Pagination, projectID, scriptID int64) ([]*types.AnalysisNode, int64, error) {
 	items := make([]*types.AnalysisNode, 0)
 	query := r.db.WithContext(ctx).Model(&types.AnalysisNode{}).Where("project_id = ?", projectID)

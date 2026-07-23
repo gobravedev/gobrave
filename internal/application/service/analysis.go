@@ -65,6 +65,10 @@ func (s *analysisService) ListAnalysisNodesByAnalysisID(ctx context.Context, ana
 	return s.analysisRepo.ListAnalysisNodesByAnalysisID(ctx, analysisID)
 }
 
+func (s *analysisService) ListAnalysisNodesByProjectIDAndScriptID(ctx context.Context, projectID, scriptID int64) ([]*types.AnalysisNode, error) {
+	return s.analysisRepo.ListAnalysisNodesByProjectIDAndScriptID(ctx, projectID, scriptID)
+}
+
 func (s *analysisService) SaveAnalysisController(ctx context.Context, input *types.AnalysisControllerSaveInput) (*types.Analysis, error) {
 	if input == nil || input.RequestParam == nil {
 		return nil, fmt.Errorf("request_param is required")

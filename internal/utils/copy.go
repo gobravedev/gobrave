@@ -38,6 +38,21 @@ func CopyDir(srcDir, dstDir string) error {
 	})
 }
 
+// CopyDirectory copies the entire srcDir directory (not just its contents) into dstParentDir.
+// For example, CopyDirectory("/a/foo", "/b") creates /b/foo/ with all files/dirs from /a/foo.
+func CopyDirectory(srcDir, dstParentDir string) error {
+	srcName := filepath.Base(srcDir)
+	dstDir := filepath.Join(dstParentDir, srcName)
+
+	if _, err := os.Stat(dstParentDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dstParentDir, 0o755); err != nil {
+			return err
+		}
+	}
+
+	return CopyDir(srcDir, dstDir)
+}
+
 func copyFile(src, dst string, perm os.FileMode) error {
 	srcFile, err := os.Open(src)
 	if err != nil {

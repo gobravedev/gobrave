@@ -487,6 +487,80 @@ func (h *AnalysisHandler) SaveAnalysisControllerV2(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *AnalysisHandler) PublishScriptAnalysisNodeToDoc(c *gin.Context) {
+
+	userID, ok := getCurrentUserID(c)
+	if !ok {
+		return
+	}
+	project, err := h.projectService.GetActiveProjectByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	scriptIDStr := strings.TrimSpace(c.Param("scriptId"))
+	scriptID, err := strconv.ParseInt(scriptIDStr, 10, 64)
+	if err != nil || scriptID <= 0 {
+		c.Error(errors.NewValidationError("invalid script_id").WithDetails(err.Error()))
+		return
+	}
+	// script, err := h.workflowService.GetScriptByID(c.Request.Context(), scriptID)
+	analysisNodes, err := h.analysisService.ListAnalysisNodesByProjectIDAndScriptID(c.Request.Context(), project.ID, scriptID)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to list analysis nodes").WithDetails(err.Error()))
+		return
+	}
+	// analysisNodeDir := utils.GetAnalysisNodeDir(h.config.Storage.BaseDir, project.ProjectID, fmt.Sprint(script.ID))
+
+	projectDocDir := utils.GetProjectDocDir(h.config.Storage.BaseDir, project.ProjectID)
+	for _, node := range analysisNodes {
+		sourceDir := node.OutputDir
+		destDir := filepath.Join(projectDocDir, fmt.Sprint(node.ScriptID), fmt.Sprint(node.ID))
+		err = utils.CopyDir(sourceDir, destDir)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to copy analysis node output to project doc dir").WithDetails(err.Error()))
+			return
+		}
+	}
+	summaryFilePath := filepath.Join(projectDocDir, "SUMMARY.md")
+	if _, err := os.Stat(summaryFilePath); os.IsNotExist(err) {
+		f, err := os.Create(summaryFilePath)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to create SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
+		defer f.Close()
+		f.WriteString("# Summary\n\n")
+	}
+	f, err := os.OpenFile(summaryFilePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to open SUMMARY.md").WithDetails(err.Error()))
+		return
+	}
+	defer f.Close()
+	for _, node := range analysisNodes {
+		// 实现避免重复写入的逻辑，先读取 SUMMARY.md 的内容，检查是否已经存在该节点的链接
+		content, err := os.ReadFile(summaryFilePath)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to read SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
+		if strings.Contains(string(content), fmt.Sprintf("./%d/%d/output.md", node.ScriptID, node.ID)) {
+			continue // 如果已经存在该节点的链接，则跳过写入
+		}
+		line := fmt.Sprintf("- [%s](./%d/%d/output.md)\n", node.NodeName, node.ScriptID, node.ID)
+		if _, err := f.WriteString(line); err != nil {
+			c.Error(errors.NewInternalServerError("failed to write to SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "script analysis node output published to project doc dir successfully",
+	})
+
+}
+
 func (h *AnalysisHandler) PublishToDocByAnalysisNodeID(c *gin.Context) {
 
 	analysisNodeIDStr := strings.TrimSpace(c.Param("analysisNodeId"))
@@ -513,6 +587,35 @@ func (h *AnalysisHandler) PublishToDocByAnalysisNodeID(c *gin.Context) {
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to copy analysis node output to project doc dir").WithDetails(err.Error()))
 		return
+	}
+	// 将 SUMMARY.md 中添加该分析节点的链接
+	summaryFilePath := filepath.Join(projectDocDir, "SUMMARY.md")
+	if _, err := os.Stat(summaryFilePath); os.IsNotExist(err) {
+		f, err := os.Create(summaryFilePath)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to create SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
+		defer f.Close()
+		f.WriteString("# Summary\n\n")
+	}
+	f, err := os.OpenFile(summaryFilePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to open SUMMARY.md").WithDetails(err.Error()))
+		return
+	}
+	defer f.Close()
+	content, err := os.ReadFile(summaryFilePath)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("failed to read SUMMARY.md").WithDetails(err.Error()))
+		return
+	}
+	if !strings.Contains(string(content), fmt.Sprintf("./%d/output.md", analysisNode.ID)) {
+		line := fmt.Sprintf("- [%s](./%d/output.md)\n", analysisNode.NodeName, analysisNode.ID)
+		if _, err := f.WriteString(line); err != nil {
+			c.Error(errors.NewInternalServerError("failed to write to SUMMARY.md").WithDetails(err.Error()))
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "analysis node output published to project doc dir successfully",
