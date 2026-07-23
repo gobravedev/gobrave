@@ -48,7 +48,7 @@ func (QmdScriptBuilder) Build(node *types.AnalysisNode, scriptPath string, _ str
 	// quarto preview chapter_5.qmd --to md --no-watch-inputs --no-browse
 	outputFileName := fmt.Sprintf("%d.md", node.ID)
 	outputFile := filepath.Join(node.OutputDir, outputFileName)
-	return fmt.Sprintf(`#!/usr/bin/env bashName
+	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 export HOME=$PWD/.home
 export XDG_CACHE_HOME=$HOME/.cache
