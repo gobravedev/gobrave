@@ -1768,7 +1768,18 @@ func (h *AnalysisHandler) VisualizationNodeFile(c *gin.Context) {
 		c.Error(errors.NewInternalServerError("failed to list visualization files").WithDetails(err.Error()))
 		return
 	}
-	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), analysisNode.ProjectID)
+	projectID := analysisNode.ProjectID
+	if projectID == 0 {
+		analysis, err := h.analysisService.GetAnalysisByID(c.Request.Context(), analysisNode.AnalysisID)
+		if err != nil {
+			c.Error(errors.NewInternalServerError("failed to find project").WithDetails(err.Error()))
+			return
+		}
+		projectID = analysis.ProjectID
+
+	}
+
+	project, err := h.projectRepo.GetProjectByID(c.Request.Context(), projectID)
 	if err != nil {
 		c.Error(errors.NewInternalServerError("failed to get project").WithDetails(err.Error()))
 		return
