@@ -91,14 +91,17 @@ params <- jsonlite::fromJSON("params.json", simplifyVector = FALSE)`
 		return `
 ---
 title: "title"
-format: md
+format:
+  md:
+    variant: gfm
 editor: source
-# execute:
-#   freeze: auto
-#   cache: true
-# knitr:
-#   opts_chunk:
-#     cache.path: "../cache/title/"
+execute:
+  echo: false
+knitr:
+  opts_chunk:
+    cache.path: "../cache/"
+editor_options: 
+  chunk_output_type: console
 ---
         ` + fullCode
 	default:

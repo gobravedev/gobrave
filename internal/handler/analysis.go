@@ -1068,6 +1068,20 @@ func (h *AnalysisHandler) initializeStandaloneNodeArtifacts(
 			return err
 		}
 	}
+	// synlink io_schema.json
+	ioSchemaPath := filepath.Join(scriptDir, "io_schema.json")
+	scriptWorkspaceIoSchemaPath := filepath.Join(artifacts.WorkspaceDir, "io_schema.json")
+	if _, err := os.Lstat(ioSchemaPath); err == nil {
+		if _, err := os.Lstat(scriptWorkspaceIoSchemaPath); err != nil {
+
+			if os.IsNotExist(err) {
+				if err := os.Symlink(ioSchemaPath, scriptWorkspaceIoSchemaPath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	node := &types.AnalysisNode{
 		ID:           artifacts.ID,
 		ParamsPath:   artifacts.ParamsPath,
